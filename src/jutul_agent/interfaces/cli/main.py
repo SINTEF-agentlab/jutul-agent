@@ -105,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         from jutul_agent.interfaces.cli import simulator as simulator_cmd
 
         return simulator_cmd.run(argv[1:])
-    
+
     if argv and argv[0] == "tool":
         from jutul_agent.interfaces.cli import tool as tool_cmd
 

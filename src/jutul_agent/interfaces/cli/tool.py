@@ -7,10 +7,10 @@ Usage
   jutul-agent tool list
   jutul-agent tool remove <name>      [--sim <simulator>]
 
-``add`` with a bare name creates a scaffold tool file in the user tools directory.  ``add`` with a path to an
-existing tool file registers it by creating a
-symlink at the conventional location (falls back to copying on platforms where
-symlinks are unavailable).
+``add`` with a bare name creates a scaffold tool file in the user tools
+directory.  ``add`` with a path to an existing tool file registers it by
+creating a symlink at the conventional location (falls back to copying on
+platforms where symlinks are unavailable).
 
 ``list`` shows user-defined tools.
 """
@@ -23,7 +23,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from jutul_agent.paths import user_tools_dir, user_simulators_dir
+from jutul_agent.paths import user_simulators_dir, user_tools_dir
 from jutul_agent.simulators import registry
 
 _TOOL_TEMPLATE = '''\
@@ -174,7 +174,7 @@ def _cmd_list() -> int:
         for tool_file in sorted(global_dir.glob("*.py")):
             print(f"User tool: {tool_file.name}  ({tool_file})")
             found_any = True
-    
+
     sims_dir = user_simulators_dir()
     if sims_dir.is_dir():
         for sim_dir in sorted(sims_dir.iterdir()):
@@ -186,7 +186,10 @@ def _cmd_list() -> int:
 
     if not found_any:
         print("No user-defined tools found.")
-        print("Use 'jutul-agent tool add <name>' to create a new tool scaffold, or 'jutul-agent tool add <path-to-file>' to register an existing tool file.")
+        print(
+            "Use 'jutul-agent tool add <name>' to create a new tool scaffold, "
+            "or 'jutul-agent tool add <path-to-file>' to register an existing tool file."
+        )
     return 0
 
 

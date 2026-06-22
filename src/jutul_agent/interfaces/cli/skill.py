@@ -170,7 +170,7 @@ def _cmd_list() -> int:
 
     if not found_any:
         print("No user skills found.")
-        print(f"Add one with: jutul-agent skill add <name>")
+        print("Add one with: jutul-agent skill add <name>")
     return 0
 
 

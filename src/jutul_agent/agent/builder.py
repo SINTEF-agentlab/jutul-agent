@@ -409,7 +409,8 @@ def build_agent(
         make_record_attempt_tool(session),
         make_write_report_tool(session),
         make_remember_tool(memory_dir),
-    ] + user_tools
+        *user_tools,
+    ]
     mode = (
         approval_mode
         if isinstance(approval_mode, ApprovalMode)
