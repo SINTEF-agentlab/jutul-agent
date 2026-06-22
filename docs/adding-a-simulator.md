@@ -36,8 +36,6 @@ the agent is told it can `using`, and `primary_package` is what `doctor`
 checks is actually resolved in the env. Adapters can also contribute simulator
 subagents through `subagent_factories`.
 
-Register it in `simulators/registry.py`.
-
 ## 2. The Julia environment template
 
 `julia_env/Project.toml` lists the packages a workspace gets. Keep compat
@@ -77,13 +75,28 @@ Frontmatter is YAML and must parse (quote a `description:` that contains a
 colon). A repo test checks every skill, and a malformed one is skipped at
 runtime with only a warning.
 
-## 5. CI
+## 5. Add the Simulator
+
+### Built-in Simulator (Development)
+
+Add your simulator folder to the `src/jutul_agent/simulators` directory
 
 Add the simulator to the `simulators.yml` matrix. It instantiates the env
 template and runs the simulator's integration smoke on PRs and weekly, which
 catches upstream releases that break the template.
 
+### Local Simulator
+
+Add the simulator to your jutul-agent by using the `jutul-agent simulator add` command.
+This will create a symlink between your installation of jutul-agent and the simulator folder,
+such that if you change any of the files in `/path/to/simulator`, jutul-agent automatically gets updated
+```
+jutul-agent simulator add /path/to/simulator
+```
+
 ## Trying it
+
+
 
 ```sh
 mkdir try-mysim && cd try-mysim

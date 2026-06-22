@@ -64,6 +64,24 @@ saves it. Local models through [Ollama](https://ollama.com) need no key.
 Details in the
 [installation and usage guide](https://sintef-agentlab.github.io/jutul-agent/usage/).
 
+## Adding your own simulators and skills
+
+Add a predefined skill by entering the path to a skills directory, with an optional simulator argument
+if you want to specify which simulators should have access to the skill.
+
+```sh
+jutul-agent skill add /path/to/skill [--sim mysim]
+jutul-agent skill add /path/to/skill
+jutul-agent skill list
+```
+
+Add a predefined simulator to jutul-agent by entering the path to a simulator directory.
+
+```sh
+jutul-agent simulator add /path/to/simulator
+jutul-agent simulator list
+```
+
 ## First run
 
 jutul-agent works in the directory you launch it from: that directory
