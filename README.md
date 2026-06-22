@@ -66,11 +66,10 @@ Details in the
 
 ## Adding your own simulators and skills
 
-Add a predefined skill by entering the path to a skills directory, with an optional simulator argument
-if you want to specify which simulators should have access to the skill.
+Add a predefined skill by entering the path to a skills directory, with an optional simulator argument `--sim <simulator>`
+if you want to specify which simulator should have access to the skill.
 
 ```sh
-jutul-agent skill add /path/to/skill [--sim mysim]
 jutul-agent skill add /path/to/skill
 jutul-agent skill list
 ```
