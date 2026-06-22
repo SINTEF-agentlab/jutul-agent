@@ -80,12 +80,11 @@ def user_simulators_dir() -> Path:
     """
     return state_home() / "simulators"
 
+
 def user_tools_dir() -> Path:
-    """User-global tools directory: tools applied to every simulator.
-
-
-    """
+    """User-global tools directory: tools applied to every simulator."""
     return state_home() / "tools"
+
 
 def is_host_path(text: str) -> bool:
     """Whether ``text`` names a real host location rather than a virtual workspace path.

@@ -111,7 +111,6 @@ def main(argv: list[str] | None = None) -> int:
 
         return tool_cmd.run(argv[1:])
 
-
     args = run_cmd.build_parser().parse_args(argv)
     apply_workspace_flags(args)
     return run_cmd.dispatch(args)

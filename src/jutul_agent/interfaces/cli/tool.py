@@ -50,9 +50,7 @@ def build_parser(prog: str = "jutul-agent tool") -> argparse.ArgumentParser:
     add_p.add_argument(
         "name_or_path",
         metavar="name-or-path",
-        help=(
-            "Bare tool name (creates scaffold) or path to existing tool file."
-        ),
+        help=("Bare tool name (creates scaffold) or path to existing tool file."),
     )
     add_p.add_argument(
         "--sim",
@@ -76,6 +74,7 @@ def build_parser(prog: str = "jutul-agent tool") -> argparse.ArgumentParser:
     )
 
     return parser
+
 
 def _target_file(name: str, sim: str | None) -> Path:
     if not name.endswith(".py"):
