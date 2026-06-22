@@ -1,10 +1,11 @@
-"""``jutul-agent simulator`` subcommand: add and list simulators.
+"""``jutul-agent simulator`` subcommand: add, list, and remove simulators.
 
 Usage
 -----
   jutul-agent simulator add <name>         [--display-name X] [--packages Pkg1,Pkg2]
   jutul-agent simulator add <path-to-dir>
   jutul-agent simulator list
+  jutul-agent simulator remove <name>
 
 ``add`` with a bare name creates a scaffold simulator folder (``adapter.py`` +
 ``skills/``) in the user simulators directory.  ``add`` with a path to an
@@ -87,6 +88,10 @@ def build_parser(prog: str = "jutul-agent simulator") -> argparse.ArgumentParser
     )
 
     sub.add_parser("list", help="List all simulators (built-in and user-defined).")
+
+    remove_p = sub.add_parser("remove", help="Remove a user-defined simulator.")
+    remove_p.add_argument("name", help="Name of the simulator to remove.")
+
     return parser
 
 
@@ -190,6 +195,28 @@ def _cmd_list() -> int:
     return 0
 
 
+def _cmd_remove(args: argparse.Namespace) -> int:
+    name = args.name
+    if name in registry.names():
+        builtin_dir = user_simulators_dir() / name
+        if not builtin_dir.exists() and not builtin_dir.is_symlink():
+            print(
+                f"{name!r} is a built-in simulator and cannot be removed.",
+                file=sys.stderr,
+            )
+            return 1
+    target = user_simulators_dir() / name
+    if not target.exists() and not target.is_symlink():
+        print(f"User simulator {name!r} not found.", file=sys.stderr)
+        return 1
+    if target.is_symlink():
+        target.unlink()
+    else:
+        shutil.rmtree(target)
+    print(f"Removed: {target}")
+    return 0
+
+
 def run(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -197,5 +224,7 @@ def run(argv: list[str]) -> int:
         return _cmd_add(args)
     if args.action == "list":
         return _cmd_list()
+    if args.action == "remove":
+        return _cmd_remove(args)
     parser.print_help()
     return 1

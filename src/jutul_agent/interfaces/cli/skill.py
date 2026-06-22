@@ -1,10 +1,11 @@
-"""``jutul-agent skill`` subcommand: add and list user skills.
+"""``jutul-agent skill`` subcommand: add, list, and remove user skills.
 
 Usage
 -----
   jutul-agent skill add <name>          [--sim <simulator>]
   jutul-agent skill add <path-to-dir>   [--sim <simulator>]
   jutul-agent skill list
+  jutul-agent skill remove <name>       [--sim <simulator>]
 
 ``add`` with a bare name creates a scaffold skill folder (and ``SKILL.md``) in
 the conventional user skills directory.  ``add`` with a path to an existing
@@ -68,6 +69,16 @@ def build_parser(prog: str = "jutul-agent skill") -> argparse.ArgumentParser:
     )
 
     sub.add_parser("list", help="List all user-defined skills.")
+
+    remove_p = sub.add_parser("remove", help="Remove a user-defined skill.")
+    remove_p.add_argument("name", help="Name of the skill to remove.")
+    remove_p.add_argument(
+        "--sim",
+        metavar="SIMULATOR",
+        default=None,
+        help="Simulator the skill is scoped to (omit for global skills).",
+    )
+
     return parser
 
 
@@ -163,6 +174,27 @@ def _cmd_list() -> int:
     return 0
 
 
+def _cmd_remove(args: argparse.Namespace) -> int:
+    sim: str | None = args.sim
+    if sim and sim not in registry.names():
+        print(
+            f"Unknown simulator {sim!r}. Known: {', '.join(registry.names())}",
+            file=sys.stderr,
+        )
+        return 1
+    target = _target_dir(args.name, sim)
+    if not target.exists() and not target.is_symlink():
+        scope = f" (simulator: {sim})" if sim else " (global)"
+        print(f"Skill {args.name!r}{scope} not found.", file=sys.stderr)
+        return 1
+    if target.is_symlink():
+        target.unlink()
+    else:
+        shutil.rmtree(target)
+    print(f"Removed: {target}")
+    return 0
+
+
 def run(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -170,5 +202,7 @@ def run(argv: list[str]) -> int:
         return _cmd_add(args)
     if args.action == "list":
         return _cmd_list()
+    if args.action == "remove":
+        return _cmd_remove(args)
     parser.print_help()
     return 1
