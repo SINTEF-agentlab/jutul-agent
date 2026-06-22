@@ -50,6 +50,7 @@ from jutul_agent.agent.tools import (
     make_run_julia_tool,
     make_write_report_tool,
 )
+from jutul_agent.agent.user_tools import load_user_tools
 from jutul_agent.agent.windows_paths import enable_windows_real_paths
 from jutul_agent.models import PROVIDERS, provider_of
 from jutul_agent.paths import (
@@ -397,6 +398,8 @@ def build_agent(
         artifacts_root=session.state_dir,
     )
 
+    user_tools = load_user_tools(session)
+
     tools = [
         make_run_julia_tool(session),
         make_reset_julia_tool(session),
@@ -406,7 +409,7 @@ def build_agent(
         make_record_attempt_tool(session),
         make_write_report_tool(session),
         make_remember_tool(memory_dir),
-    ]
+    ] + user_tools
     mode = (
         approval_mode
         if isinstance(approval_mode, ApprovalMode)
