@@ -64,6 +64,23 @@ def user_config_path() -> Path:
     return state_home() / "config.toml"
 
 
+def user_skills_dir() -> Path:
+    """User-global skills directory: skills applied to every simulator.
+
+    Each subdirectory is a skill folder containing a ``SKILL.md``.
+    """
+    return state_home() / "skills"
+
+
+def user_simulators_dir() -> Path:
+    """Root for user-defined simulators and per-simulator user skills.
+
+    Each subdirectory either holds an ``adapter.py`` (a user simulator) or
+    a ``skills/`` subdirectory (per-simulator user skills for a built-in).
+    """
+    return state_home() / "simulators"
+
+
 def is_host_path(text: str) -> bool:
     """Whether ``text`` names a real host location rather than a virtual workspace path.
 

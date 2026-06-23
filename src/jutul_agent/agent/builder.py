@@ -52,7 +52,13 @@ from jutul_agent.agent.tools import (
 )
 from jutul_agent.agent.windows_paths import enable_windows_real_paths
 from jutul_agent.models import PROVIDERS, provider_of
-from jutul_agent.paths import SHARED_SKILLS_DIR, workspace_memory_dir, workspace_root
+from jutul_agent.paths import (
+    SHARED_SKILLS_DIR,
+    user_simulators_dir,
+    user_skills_dir,
+    workspace_memory_dir,
+    workspace_root,
+)
 from jutul_agent.session import Session
 from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.trace import TraceRecorder
@@ -338,8 +344,10 @@ def skill_sources(adapter: SimulatorAdapter) -> list[str | tuple[str, str]]:
 
     Bundled skills ship with the package (so they resolve at a real path even
     from a pip install, no repo checkout needed). The middleware reads their
-    ``SKILL.md`` through the real-path backend. Labels are explicit. This is the
-    seam for user/project skills later (append their real dirs, last wins).
+    ``SKILL.md`` through the real-path backend. Labels are explicit.
+
+    Precedence (each layer can override the previous):
+    built-in shared → built-in simulator → user global → user per-simulator → workspace-local
     """
 
     sources: list[str | tuple[str, str]] = []
@@ -347,6 +355,15 @@ def skill_sources(adapter: SimulatorAdapter) -> list[str | tuple[str, str]]:
         sources.append((str(SHARED_SKILLS_DIR), "Built-in"))
     if adapter.skills_dir.exists():
         sources.append((str(adapter.skills_dir), adapter.display_name))
+    global_user = user_skills_dir()
+    if global_user.exists():
+        sources.append((str(global_user), "User"))
+    sim_user = user_simulators_dir() / adapter.name / "skills"
+    if sim_user.exists():
+        sources.append((str(sim_user), f"User ({adapter.display_name})"))
+    ws_skills = workspace_root() / ".jutul-agent" / "skills"
+    if ws_skills.exists():
+        sources.append((str(ws_skills), "Workspace"))
     return sources
 
 

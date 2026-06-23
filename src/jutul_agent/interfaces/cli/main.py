@@ -9,6 +9,8 @@ Three modes, dispatched on the first argument:
 - ``jutul-agent sessions``                  list resumable sessions.
 - ``jutul-agent eval [<suite>...]``          run bench suites through Inspect.
 - ``jutul-agent review [<id>]``              list review findings, or review a session.
+- ``jutul-agent skill <add|list>``           manage user-defined skills.
+- ``jutul-agent simulator <add|list>``       manage user-defined simulators.
 - ``jutul-agent [--sim <name>] [prompt]``   launch the TUI, or run one turn.
 
 The active *workspace* is ``--workspace`` if given, else the current
@@ -93,6 +95,16 @@ def main(argv: list[str] | None = None) -> int:
         args = review_cmd.build_parser().parse_args(argv[1:])
         apply_workspace_flags(args)
         return review_cmd.run(args)
+
+    if argv and argv[0] == "skill":
+        from jutul_agent.interfaces.cli import skill as skill_cmd
+
+        return skill_cmd.run(argv[1:])
+
+    if argv and argv[0] == "simulator":
+        from jutul_agent.interfaces.cli import simulator as simulator_cmd
+
+        return simulator_cmd.run(argv[1:])
 
     args = run_cmd.build_parser().parse_args(argv)
     apply_workspace_flags(args)
