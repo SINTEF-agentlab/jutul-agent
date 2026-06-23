@@ -156,7 +156,10 @@ def test_skill_remove_unlinks_symlink_without_deleting_source(
 ) -> None:
     src = tmp_path / "shared-skill"
     src.mkdir()
-    (src / "SKILL.md").write_text("---\nname: shared-skill\ndescription: x\n---\n", encoding="utf-8")
+
+    (src / "SKILL.md").write_text(
+        "---\nname: shared-skill\ndescription: x\n---\n", encoding="utf-8"
+    )
     main(["skill", "add", str(src)])
     capsys.readouterr()
 

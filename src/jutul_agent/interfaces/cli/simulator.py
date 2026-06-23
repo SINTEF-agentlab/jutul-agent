@@ -164,7 +164,7 @@ def _cmd_add(args: argparse.Namespace) -> int:
     )
 
     print(f"Created simulator scaffold: {sim_dir}")
-    print(f"  adapter.py  — fill in domain_hints and Julia package details")
+    print("  adapter.py  — fill in domain_hints and Julia package details")
     print(f"  skills/{name}-overview/SKILL.md  — add domain knowledge")
     return 0
 
@@ -191,7 +191,7 @@ def _cmd_list() -> int:
             print(f"  {d.name}  ({d})")
     else:
         print("User simulators: (none)")
-        print(f"Add one with: jutul-agent simulator add <name>")
+        print("Add one with: jutul-agent simulator add <name>")
     return 0
 
 

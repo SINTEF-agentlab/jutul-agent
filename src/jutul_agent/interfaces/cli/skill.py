@@ -163,14 +163,12 @@ def _cmd_list() -> int:
             if skills_subdir.is_dir():
                 for skill_dir in sorted(skills_subdir.iterdir()):
                     if (skill_dir / "SKILL.md").exists():
-                        print(
-                            f"  [{sim_dir.name}]  {skill_dir.name}  ({skill_dir})"
-                        )
+                        print(f"  [{sim_dir.name}]  {skill_dir.name}  ({skill_dir})")
                         found_any = True
 
     if not found_any:
         print("No user skills found.")
-        print(f"Add one with: jutul-agent skill add <name>")
+        print("Add one with: jutul-agent skill add <name>")
     return 0
 
 
