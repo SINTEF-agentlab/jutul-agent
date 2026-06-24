@@ -24,7 +24,9 @@ JUTULDARCY = SimulatorAdapter(
         "sys; wells=...)` → initial state + controls + forces → `simulate_reservoir`. "
         "Units come from `si_units(:darcy, :bar, :day, ...)`. Examples live under "
         "`examples/` in the installed source (`pkgdir(JutulDarcy)`): `wells_intro.jl`, "
-        "`intro_example.jl`, `compositional_5components.jl`, `data_input_file.jl`."
+        "`intro_example.jl`, `compositional_5components.jl`, `data_input_file.jl`. "
+        "Spatially-correlated permeability/porosity fields (optionally conditioned on "
+        "well data) come from GeoStats.jl — see the `jutuldarcy-geostatistics` skill."
     ),
     review_hints=(
         "Reservoir flow: permeability in m^2 (~1e-16..1e-11; a much larger value usually "

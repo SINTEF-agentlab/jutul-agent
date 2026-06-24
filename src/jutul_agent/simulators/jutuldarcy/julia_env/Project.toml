@@ -3,6 +3,7 @@ CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 GeoEnergyIO = "3b1dd628-313a-45bb-9d8d-8f3c48dcb5d4"
+GeoStats = "dcc97b0b-8ce5-5539-9008-bb190f959ef6"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 GraphMakie = "1ecd5474-83a3-4783-bb4f-06765db800d2"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
@@ -27,5 +28,5 @@ JutulDarcy = "0.3.8"
 # env_setup copies in at bootstrap. JutulAgentJutulDarcy is this env's per-simulator
 # warm-up package (the solve/plot bake + @recompile_invalidations).
 [sources]
-JutulAgent = {path = "JutulAgent"}
-JutulAgentJutulDarcy = {path = "JutulAgentJutulDarcy"}
+JutulAgent = { path = "JutulAgent" }
+JutulAgentJutulDarcy = { path = "JutulAgentJutulDarcy" }
