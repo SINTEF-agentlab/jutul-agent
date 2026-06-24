@@ -169,6 +169,97 @@ def test_tool_add_rejects_directory(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert "Not a file" in captured.err
 
 
+def test_tool_add_wraps_bare_decorated_function_in_factory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = tmp_path / "bare_tool.py"
+    src.write_text(
+        '''\
+from langchain_core.tools import tool
+
+@tool
+async def bare_tool() -> str:
+    """A bare tool, not yet wrapped in a factory."""
+    return "ok"
+''',
+        encoding="utf-8",
+    )
+
+    code = main(["tool", "add", str(src)])
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.err
+    dest = user_tools_dir() / "bare_tool.py"
+    assert dest.is_file() and not dest.is_symlink()
+    text = dest.read_text(encoding="utf-8")
+    assert "def make_bare_tool_tool(session: Session):" in text
+    assert text.count("@tool") == 1  # not duplicated alongside the original decorator
+    compile(text, str(dest), "exec")
+    assert "Wrapped" in captured.out
+
+
+def test_tool_add_wraps_bare_undecorated_function_in_factory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = tmp_path / "undecorated_tool.py"
+    src.write_text("def undecorated_tool() -> str:\n    return 'ok'\n", encoding="utf-8")
+
+    code = main(["tool", "add", str(src)])
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.err
+    dest = user_tools_dir() / "undecorated_tool.py"
+    text = dest.read_text(encoding="utf-8")
+    assert "@tool" in text
+    assert "def make_undecorated_tool_tool(session: Session):" in text
+    compile(text, str(dest), "exec")
+
+
+def test_tool_add_wrapping_preserves_helper_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = tmp_path / "helper_tool.py"
+    src.write_text(
+        """\
+import math
+from langchain_core.tools import tool
+
+def helper(x):
+    return x * 2
+
+@tool(name="helper_tool")
+def helper_tool() -> str:
+    return str(helper(math.pi))
+""",
+        encoding="utf-8",
+    )
+
+    code = main(["tool", "add", str(src)])
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.err
+    dest = user_tools_dir() / "helper_tool.py"
+    text = dest.read_text(encoding="utf-8")
+    assert "def helper(x):" in text
+    assert "import math" in text
+    compile(text, str(dest), "exec")
+
+
+def test_tool_add_wrapping_refuses_to_overwrite_existing_registration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = tmp_path / "again_bare_tool.py"
+    src.write_text("def again_bare_tool() -> str:\n    return 'ok'\n", encoding="utf-8")
+    assert main(["tool", "add", str(src)]) == 0
+    capsys.readouterr()
+
+    code = main(["tool", "add", str(src)])
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert "Already registered" in captured.err
+
+
 def test_tool_add_rejects_file_without_matching_factory(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

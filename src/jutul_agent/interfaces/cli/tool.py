@@ -21,6 +21,7 @@ import argparse
 import ast
 import shutil
 import sys
+import textwrap
 from pathlib import Path
 
 from jutul_agent.paths import user_simulators_dir, user_tools_dir
@@ -84,8 +85,8 @@ def _target_file(name: str, sim: str | None) -> Path:
     return user_tools_dir() / name
 
 
-def _defines_factory(path: Path, factory_name: str) -> bool:
-    """Whether ``path`` defines a top-level ``factory_name`` function.
+def _defines_function(path: Path, function_name: str) -> bool:
+    """Whether ``path`` defines a top-level ``function_name`` function.
 
     Uses ``ast`` rather than importing the module so a bad registration
     candidate can't run arbitrary code as a side effect of the check.
@@ -95,8 +96,58 @@ def _defines_factory(path: Path, factory_name: str) -> bool:
     except (OSError, SyntaxError, UnicodeDecodeError):
         return False
     return any(
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == factory_name
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name
         for node in tree.body
+    )
+
+
+def _wrap_function_as_factory(source: str, function_name: str) -> str:
+    """Build a ``make_<function_name>_tool`` factory module wrapping a bare function.
+
+    Module-level code other than the target function (imports, helpers) is kept
+    verbatim; the function itself — decorators included — is reindented into the
+    factory body, gaining an ``@tool`` decorator only if it doesn't already have one.
+    """
+    tree = ast.parse(source)
+    lines = source.splitlines()
+    target = next(
+        (
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == function_name
+        ),
+        None,
+    )
+    if target is None:
+        raise ValueError(f"{function_name!r} not found at module level")
+
+    start = (target.decorator_list[0].lineno if target.decorator_list else target.lineno) - 1
+    end = target.end_lineno
+    func_lines = lines[start:end]
+    other_lines = lines[:start] + lines[end:]
+
+    has_tool_decorator = any(
+        (isinstance(d, ast.Name) and d.id == "tool")
+        or (isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "tool")
+        for d in target.decorator_list
+    )
+    if not has_tool_decorator:
+        func_lines = ["@tool", *func_lines]
+
+    needed_imports = []
+    if not any("langchain_core.tools import tool" in ln for ln in other_lines):
+        needed_imports.append("from langchain_core.tools import tool")
+    if not any("jutul_agent.session import Session" in ln for ln in other_lines):
+        needed_imports.append("from jutul_agent.session import Session")
+
+    factory_body = textwrap.indent("\n".join(func_lines), "    ")
+    preamble = "\n".join([*needed_imports, *other_lines]).strip("\n")
+    return (
+        f"{preamble}\n\n\n"
+        f"def make_{function_name}_tool(session: Session):\n"
+        f"{factory_body}\n"
+        f"    return {function_name}\n"
     )
 
 
@@ -152,16 +203,29 @@ def _cmd_add(args: argparse.Namespace) -> int:
         if not candidate.is_file():
             print(f"Not a file: {candidate}", file=sys.stderr)
             return 1
+
         dest = _target_file(candidate.name, sim)
         factory_name = f"make_{dest.stem}_tool"
-        if not _defines_factory(candidate, factory_name):
+
+        if _defines_function(candidate, factory_name):
+            _register_path(candidate, dest)
+            return 0
+        elif _defines_function(candidate, dest.stem):
+            if dest.exists() or dest.is_symlink():
+                print(f"Already registered: {dest}", file=sys.stderr)
+                return 1
+            factory_code = _wrap_function_as_factory(candidate.read_text(), dest.stem)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(factory_code)
+            print(f"Wrapped `{dest.stem}` in a factory and registered: {dest}")
+            return 0
+        else:
             print(
-                f"{candidate} does not define `{factory_name}()` — jutul-agent "
+                f"{candidate} does not define `{factory_name}()`  or `{dest.stem}()` — jutul-agent "
                 "would not be able to load it as a tool.",
                 file=sys.stderr,
             )
             return 1
-        _register_path(candidate, dest)
     return 0
 
 
