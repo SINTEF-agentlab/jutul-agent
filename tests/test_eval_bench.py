@@ -139,6 +139,7 @@ def test_task_suites_import_and_build() -> None:
         filesystem,
         filesystem_source,
         fimbul,
+        geostatistics,
         guardrails,
         jutuldarcy,
         mocca,
@@ -155,6 +156,7 @@ def test_task_suites_import_and_build() -> None:
         (battmo, battmo.battmo),
         (fimbul, fimbul.fimbul),
         (mocca, mocca.mocca),
+        (geostatistics, geostatistics.geostatistics),
         (filesystem, filesystem.filesystem),
         (filesystem_source, filesystem_source.filesystem_source),
         (search, search.search),
@@ -178,6 +180,7 @@ def test_eval_cli_lists_suites_and_rejects_unknown(capsys) -> None:
         "battmo",
         "fimbul",
         "mocca",
+        "geostatistics",
         "filesystem",
         "filesystem_source",
         "search",
@@ -396,7 +399,7 @@ async def test_no_repeated_identical_calls_spots_stuck_loops(tmp_path: Path) -> 
 
 
 def test_suite_modules_expose_all_tasks_via_tasks_list() -> None:
-    from jutul_agent.eval.tasks import battmo, jutuldarcy, mocca
+    from jutul_agent.eval.tasks import battmo, geostatistics, jutuldarcy, mocca
 
     assert [f.__name__ for f in battmo.TASKS] == ["battmo", "battmo_sweep"]
     assert [f.__name__ for f in jutuldarcy.TASKS] == [
@@ -405,7 +408,11 @@ def test_suite_modules_expose_all_tasks_via_tasks_list() -> None:
         "jutuldarcy_unit_conversion",
     ]
     assert [f.__name__ for f in mocca.TASKS] == ["mocca", "mocca_honesty"]
-    for factory in (*battmo.TASKS, *jutuldarcy.TASKS, *mocca.TASKS):
+    assert [f.__name__ for f in geostatistics.TASKS] == [
+        "geostatistics",
+        "geostatistics_conditioning",
+    ]
+    for factory in (*battmo.TASKS, *jutuldarcy.TASKS, *mocca.TASKS, *geostatistics.TASKS):
         assert factory().dataset
 
 
