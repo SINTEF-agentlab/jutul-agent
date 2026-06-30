@@ -85,8 +85,6 @@ scatter!([Float64(i) for (i, j) in wells], [Float64(j) for (i, j) in wells])
 
 The second uses coordinate space with the GeoStats `viz` recipe. `viz(domain(real[1]), color = real[1].porosity)` draws each cell at its true coordinate. Scatter the wells at `(i-0.5, j-0.5)`, which are the coordinates you passed to `georef`.
 
-Two mistakes put the data in the wrong place. Transposing the reshaped field with `M'` or `reshape(field, ny, nx)` scrambles it. Mixing the two spaces offsets the markers by half a cell, which happens if you scatter at `(i-0.5, j-0.5)` on an index-space heatmap or at `(i, j)` on a `viz` plot. As a check, confirm that `reshape(vec(field), nx, ny)[i, j]` equals the observation at well `(i, j)`. When you run as the agent, render through the `plot_julia` tool so the figures are saved with the session (`plotting-basics`).
-
 ## Quantifying uncertainty
 
 Report uncertainty as a field rather than as a single number. The ensemble of realizations carries the information, so summarize it across the realizations at each cell.
@@ -114,4 +112,4 @@ run_julia("@doc GaussianProcess")
 read_file(joinpath(pkgdir(JutulDarcy), "examples/workflow/five_spot_ensemble.jl"))
 ```
 
-That example builds an unconditional porosity ensemble. Conditioning on data with the `data=` keyword shown above is the step it leaves out. The online documentation covers kriging, anisotropy, 3D, indicator and categorical facies, and co-simulation at `https://juliaearth.github.io/GeoStatsDocs/stable`.
+That example builds an unconditional porosity ensemble. Conditioning on data with the `data=` keyword shown above is the step it leaves out.
