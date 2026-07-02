@@ -106,23 +106,42 @@ def test_transcript_html_to_stdout(tmp_path: Path, capsys) -> None:
     assert "hello" in captured.out
 
 
-def test_transcript_bundle_writes_zip(tmp_path: Path, capsys) -> None:
+def test_transcript_bundle_zips_artifacts_from_the_output_dir(tmp_path: Path, capsys) -> None:
+    """Plots are written under the workspace output dir, not the state dir; the
+    bundle and the embedded images must come from there."""
+    import base64
+    import zipfile
+
+    from jutul_agent.paths import session_output_dir
+    from jutul_agent.trace import TraceLog
+    from jutul_agent.trace.schema import ARTIFACT, artifact_payload
+
     workspace = tmp_path / "ws"
     workspace.mkdir()
     state_home = tmp_path / "state"
     sid = "bundle-session"
     sess_dir = _make_trace(workspace, state_home, sid)
-    artifacts = sess_dir / "artifacts"
+    png = b"\x89PNG\r\n\x1a\n" + b"fake"
+    artifacts = session_output_dir(sid) / "artifacts"
     artifacts.mkdir(parents=True, exist_ok=True)
-    (artifacts / "plot-test.png").write_bytes(b"\x89PNG\r\n")
+    (artifacts / "plot-test.png").write_bytes(png)
+    with TraceLog(sess_dir / "trace.sqlite") as log:
+        log.append(
+            ARTIFACT,
+            artifact_payload(path="artifacts/plot-test.png", mime="image/png", caption="a plot"),
+        )
 
     code = main(["transcript", sid, "--bundle", *_cli_flags(workspace, state_home)])
     captured = capsys.readouterr()
     assert code == 0, captured.err
     lines = [line.strip() for line in captured.out.splitlines() if line.strip()]
-    assert any(line.endswith("transcript.html") for line in lines)
+    html_path = Path(next(line for line in lines if line.endswith("transcript.html")))
+    encoded = base64.standard_b64encode(png).decode("ascii")
+    assert encoded in html_path.read_text(encoding="utf-8")
     bundle = sess_dir / "transcript-bundle.zip"
     assert bundle.exists()
+    with zipfile.ZipFile(bundle) as archive:
+        assert "artifacts/plot-test.png" in archive.namelist()
 
 
 def test_transcript_missing_session_returns_nonzero(tmp_path: Path, capsys) -> None:

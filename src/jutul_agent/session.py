@@ -15,6 +15,7 @@ from jutul_agent.julia.session import JuliaSession
 from jutul_agent.paths import session_output_dir, workspace_state_dir
 from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.trace import TraceLog
+from jutul_agent.trace.schema import SESSION_END, SESSION_RESUME, SESSION_START, SESSION_TITLE
 
 TITLE_FILENAME = "title"
 _SLUG_MAX_CHARS = 32
@@ -75,7 +76,7 @@ class SessionInfo:
     started: datetime
 
 
-def _started_from_id(session_id: str) -> datetime | None:
+def started_from_id(session_id: str) -> datetime | None:
     try:
         return datetime.strptime(session_id[:15], "%Y-%m-%d-%H%M")
     except ValueError:
@@ -96,7 +97,7 @@ def list_sessions(state_root: Path | None = None) -> list[SessionInfo]:
     for entry in root.iterdir():
         if not entry.is_dir() or not (entry / "trace.sqlite").exists():
             continue
-        started = _started_from_id(entry.name)
+        started = started_from_id(entry.name)
         if started is None:
             started = datetime.fromtimestamp(entry.stat().st_mtime)
         infos.append(
@@ -157,7 +158,7 @@ def write_last_session(session_id: str, *, state_root: Path | None = None) -> No
     p.write_text(session_id, encoding="utf-8")
 
 
-def _existing_output_dir(session_id: str) -> Path | None:
+def existing_output_dir(session_id: str) -> Path | None:
     """The session's existing output dir, accounting for an adopted title slug.
 
     ``adopt_title`` renames ``sessions/<sid>/`` to ``sessions/<sid>-<slug>/``, so a
@@ -272,7 +273,7 @@ class Session:
 
         trace = TraceLog(dir_ / "trace.sqlite")
         trace.append(
-            "session_start",
+            SESSION_START,
             {"session_id": sid, "simulator": simulator.name},
         )
         # The agent builder seeds the memory index when it mounts the dir.
@@ -315,7 +316,7 @@ class Session:
         if not (dir_ / "trace.sqlite").exists():
             raise FileNotFoundError(f"no session trace at {dir_}")
 
-        out_dir = _existing_output_dir(session_id) or session_output_dir(session_id)
+        out_dir = existing_output_dir(session_id) or session_output_dir(session_id)
         try:
             (out_dir / "artifacts").mkdir(parents=True, exist_ok=True)
             _ensure_jutul_agent_gitignore(out_dir)
@@ -324,7 +325,7 @@ class Session:
 
         trace = TraceLog(dir_ / "trace.sqlite")
         trace.append(
-            "session_resume",
+            SESSION_RESUME,
             {"session_id": session_id, "simulator": simulator.name},
         )
         ephemeral_dir = (
@@ -369,7 +370,7 @@ class Session:
         self.title = title
         with contextlib.suppress(OSError):
             (self.state_dir / TITLE_FILENAME).write_text(title + "\n", encoding="utf-8")
-        self.trace.append("session_title", {"session_id": self.session_id, "title": title})
+        self.trace.append(SESSION_TITLE, {"session_id": self.session_id, "title": title})
 
         slug = _slugify_title(title)
         if not slug or self.output_dir == self.state_dir:
@@ -396,7 +397,7 @@ class Session:
         self.title = title
         with contextlib.suppress(OSError):
             (self.state_dir / TITLE_FILENAME).write_text(title + "\n", encoding="utf-8")
-        self.trace.append("session_title", {"session_id": self.session_id, "title": title})
+        self.trace.append(SESSION_TITLE, {"session_id": self.session_id, "title": title})
 
     def note_report(self, report_path: Path) -> None:
         """Remember a report so its sidecar transcript is refreshed at turn end.
@@ -425,7 +426,7 @@ class Session:
                 write_sidecar_transcript(directory, events)
 
     def finalize(self) -> None:
-        self.trace.append("session_end", {"session_id": self.session_id})
+        self.trace.append(SESSION_END, {"session_id": self.session_id})
         self.trace.close()
         if self.ephemeral_memory and self._ephemeral_memory_dir is not None:
             shutil.rmtree(self._ephemeral_memory_dir, ignore_errors=True)

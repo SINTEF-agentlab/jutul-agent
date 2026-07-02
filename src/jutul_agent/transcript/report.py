@@ -25,7 +25,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-from jutul_agent.trace import Event
+from jutul_agent.trace import Event, schema
 from jutul_agent.transcript.attempts import Attempt, build_attempt_tree
 from jutul_agent.transcript.markdown_html import render_markdown_html
 
@@ -398,8 +398,10 @@ def render_report(
 
     event_list = list(events)
     flat = _flatten(build_attempt_tree(event_list))
-    sid = session_id or _event_field(event_list, "session_start", "session_id")
-    sim = simulator or _event_field(event_list, "session_start", "simulator", default="unknown")
+    sid = session_id or _event_field(event_list, schema.SESSION_START, "session_id")
+    sim = simulator or _event_field(
+        event_list, schema.SESSION_START, "simulator", default="unknown"
+    )
     heading = title or f"{sim} investigation report"
     dirs = artifact_dirs or ()
 

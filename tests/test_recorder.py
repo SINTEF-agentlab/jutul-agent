@@ -46,14 +46,21 @@ async def test_trace_recorder_records_compaction_once(tmp_path) -> None:
 
     summary = HumanMessage(content="a summary", id="sum-1")
     event = {"cutoff_index": 4, "summary_message": summary, "file_path": "/conv/t.md"}
-    state = {"messages": [AIMessage(content="done")], "_summarization_event": event}
+    # Six messages of which the leading four were folded into the summary.
+    state = {"messages": [AIMessage(content=str(n)) for n in range(6)]}
+    state["_summarization_event"] = event
 
     await recorder.aafter_model(state, runtime=None)
     await recorder.aafter_model(state, runtime=None)  # same event: must not re-record
 
     compactions = [e for e in log.iter_events() if e.kind == "context_compaction"]
     assert len(compactions) == 1
-    assert compactions[0].payload == {"cutoff_index": 4, "offloaded": True}
+    assert compactions[0].payload == {
+        "summarized": 4,
+        "kept": 2,
+        "offloaded": True,
+        "manual": False,
+    }
     log.close()
 
 
