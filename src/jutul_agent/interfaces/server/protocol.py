@@ -19,16 +19,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import AIMessage, AIMessageChunk
-
 from jutul_agent.agent.approval import (
     SupportsInterrupt,
     allowed_decisions_for_interrupt,
     always_allow_categories,
 )
-from jutul_agent.agent.turns import TurnReasoningDelta, TurnToolEvent
+from jutul_agent.agent.turns import (
+    TurnReasoningDelta,
+    TurnTextDelta,
+    TurnTextEnd,
+    TurnToolEvent,
+    final_assistant_text,
+    usage_from_messages,
+)
 from jutul_agent.tool_labels import tool_label
-from jutul_agent.trace.messages import content_to_str
 
 __all__ = [
     "artifact_to_wire",
@@ -68,6 +72,14 @@ def to_wire(event: Any) -> dict[str, Any] | None:
     (and an empty text/reasoning delta) returns ``None`` so the caller can skip it.
     """
 
+    if isinstance(event, TurnTextDelta):
+        return {"type": "text", "text": event.text} if event.text else None
+
+    if isinstance(event, TurnTextEnd):
+        # The end-of-turn signal on the wire is ``turn_end``, built from the
+        # final messages; the flush marker carries nothing for a network client.
+        return None
+
     if isinstance(event, TurnReasoningDelta):
         return {"type": "reasoning", "text": event.text} if event.text else None
 
@@ -81,10 +93,6 @@ def to_wire(event: Any) -> dict[str, Any] | None:
             "args": event.args,
             "content": event.content,
         }
-
-    if isinstance(event, AIMessageChunk):
-        text = _chunk_text(event)
-        return {"type": "text", "text": text} if text else None
 
     return None
 
@@ -123,11 +131,7 @@ def interrupt_to_wire(interrupt: SupportsInterrupt) -> dict[str, Any]:
 def usage_to_wire(messages: list[Any]) -> dict[str, Any] | None:
     """Token usage for the turn, from the newest model message that reported it."""
 
-    usages = [
-        msg.usage_metadata
-        for msg in messages
-        if isinstance(msg, AIMessage) and getattr(msg, "usage_metadata", None)
-    ]
+    usages = usage_from_messages(messages)
     if not usages:
         return None
     last = usages[-1]
@@ -143,14 +147,11 @@ def usage_to_wire(messages: list[Any]) -> dict[str, Any] | None:
 def turn_end_to_wire(messages: list[Any]) -> dict[str, Any]:
     """Signal the turn finished, carrying the final assistant text.
 
-    Picks the last *assistant* message, not just the last message: a turn can end with
-    a ToolMessage last (e.g. a respond decision injects a synthetic one), and sending
-    its content as the assistant's final text would surface raw tool output as prose.
+    ``final_assistant_text`` picks the last *assistant* message, not just the
+    last message, so a trailing ToolMessage never surfaces as prose.
     """
 
-    last_ai = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
-    text = _message_text(last_ai) if last_ai is not None else ""
-    return {"type": "turn_end", "text": text}
+    return {"type": "turn_end", "text": final_assistant_text(messages)}
 
 
 def artifact_to_wire(payload: dict[str, Any], *, url: str) -> dict[str, Any]:
@@ -205,26 +206,3 @@ def ui_command(action: str, payload: dict[str, Any] | None = None) -> dict[str, 
     return {"type": "ui", "action": action, "payload": payload or {}}
 
 
-def _chunk_text(msg: AIMessageChunk) -> str:
-    """Assistant text from a streamed chunk (content blocks first, then content)."""
-
-    blocks = getattr(msg, "content_blocks", None)
-    if isinstance(blocks, list):
-        parts = [
-            str(block.get("text") or "")
-            for block in blocks
-            if isinstance(block, dict) and block.get("type") == "text"
-        ]
-        if parts:
-            return "".join(parts)
-    content = getattr(msg, "content", "")
-    if isinstance(content, str):
-        return content
-    return content_to_str(content)
-
-
-def _message_text(msg: Any) -> str:
-    content = getattr(msg, "content", "")
-    if isinstance(content, str):
-        return content
-    return content_to_str(content)

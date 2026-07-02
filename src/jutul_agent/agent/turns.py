@@ -14,11 +14,12 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_core.messages import AIMessageChunk, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.types import Command
 
 from jutul_agent.agent.tool_output import is_interrupt_payload, normalize_tool_output
 from jutul_agent.trace import TraceLog
+from jutul_agent.trace.messages import content_to_str
 from jutul_agent.trace.schema import HITL_REQUEST, HITL_RESPONSE, MESSAGE_USER
 
 MessageCallback = Callable[[Any], Awaitable[None] | None]
@@ -49,6 +50,18 @@ class TurnRunResult:
 
     messages: list[BaseMessage]
     interrupts: list[TurnInterrupt]
+
+
+@dataclass(frozen=True)
+class TurnTextDelta:
+    """Incremental assistant answer text."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class TurnTextEnd:
+    """The model finished one reply; buffered text can be flushed/finalized."""
 
 
 @dataclass(frozen=True)
@@ -187,7 +200,7 @@ async def _drain_messages(run: Any, on_message: MessageCallback | None) -> None:
             _drain_tool_call_chunks(message_stream, emit),
         )
         if on_message is not None and is_model:
-            await _emit(on_message, AIMessageChunk(content="", chunk_position="last"))
+            await _emit(on_message, TurnTextEnd())
 
 
 async def _drain_text(message_stream: Any, on_message: MessageCallback | None) -> None:
@@ -197,7 +210,7 @@ async def _drain_text(message_stream: Any, on_message: MessageCallback | None) -
         return
     async for delta in message_stream.text:
         if delta:
-            await _emit(on_message, AIMessageChunk(content=delta))
+            await _emit(on_message, TurnTextDelta(text=str(delta)))
 
 
 async def _drain_reasoning(message_stream: Any, on_message: MessageCallback | None) -> None:
@@ -338,6 +351,37 @@ async def _final_messages(run: Any) -> list[BaseMessage]:
         items = output.get("messages") or []
         return [m for m in items if isinstance(m, BaseMessage)]
     return []
+
+
+# ---------------------------------------------------------------------------
+# Shared views over a turn's final messages (used by every interface).
+
+
+def usage_from_messages(messages: list[Any]) -> list[dict[str, Any]]:
+    """The turn's ``usage_metadata`` dicts, one per model call, oldest first."""
+
+    return [
+        dict(message.usage_metadata)
+        for message in messages
+        if isinstance(message, AIMessage) and getattr(message, "usage_metadata", None)
+    ]
+
+
+def final_assistant_text(messages: list[Any]) -> str:
+    """Text of the turn's last *assistant* message (``""`` when there is none).
+
+    Picks the last ``AIMessage``, not just the last message: a turn can end
+    with a ``ToolMessage`` (e.g. a respond decision injects a synthetic one),
+    and surfacing its content as prose would leak raw tool output.
+    """
+
+    last_ai = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
+    if last_ai is None:
+        return ""
+    content = getattr(last_ai, "content", "")
+    if isinstance(content, str):
+        return content
+    return content_to_str(content)
 
 
 # ---------------------------------------------------------------------------

@@ -26,14 +26,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from langchain_core.messages import AIMessage, AIMessageChunk
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -54,7 +52,10 @@ from jutul_agent.agent.turns import (
     TurnReasoningDelta,
     TurnRunner,
     TurnRunResult,
+    TurnTextDelta,
+    TurnTextEnd,
     TurnToolEvent,
+    usage_from_messages,
 )
 from jutul_agent.interfaces.tui.approval import render_interrupt_cards
 from jutul_agent.interfaces.tui.approval_menu import ApprovalMenu, build_approval_options
@@ -92,7 +93,6 @@ from jutul_agent.paths import workspace_root
 from jutul_agent.recent_models import record_recent_model
 from jutul_agent.session import Session
 from jutul_agent.trace import TraceLog
-from jutul_agent.trace.messages import content_to_str
 from jutul_agent.transcript import render_html, render_markdown
 
 if TYPE_CHECKING:
@@ -390,16 +390,12 @@ class TUIApp(App[None]):
         self._refresh_context_status()
 
     def _update_usage_from_messages(self, messages: list[Any]) -> None:
-        usages = [
-            message.usage_metadata
-            for message in messages
-            if isinstance(message, AIMessage) and getattr(message, "usage_metadata", None)
-        ]
+        usages = usage_from_messages(messages)
         if not usages:
             return
         self._model_calls = len(usages)
-        self._first_usage = dict(usages[0])
-        self._last_usage = dict(usages[-1])  # measured: clears any estimate flag
+        self._first_usage = usages[0]
+        self._last_usage = usages[-1]  # measured: clears any estimate flag
         self._refresh_context_status()
 
     def _apply_compaction_estimate(self, freed_tokens: int) -> None:
@@ -1400,18 +1396,24 @@ class TUIApp(App[None]):
         return names
 
     async def _render_message(self, msg: Any) -> None:
-        # TurnRunner emits exactly these three event types (see agent/turns.py);
+        # TurnRunner emits exactly these four event types (see agent/turns.py);
         # tool results arrive as TurnToolEvents, never as raw ToolMessages.
+        if isinstance(msg, TurnTextDelta):
+            if msg.text:
+                self._assistant_text_rendered = True
+                await self._stream.append_prose(self._log, msg.text)
+            return
+
+        if isinstance(msg, TurnTextEnd):
+            await self._flush_stream()
+            return
+
         if isinstance(msg, TurnReasoningDelta):
             await self._render_reasoning_delta(msg)
             return
 
         if isinstance(msg, TurnToolEvent):
             await self._render_tool_event(msg)
-            return
-
-        if isinstance(msg, AIMessageChunk):
-            await self._render_message_chunk(msg)
 
     async def _render_reasoning_delta(self, msg: TurnReasoningDelta) -> None:
         await self._stream.append_reasoning(self._log, msg.text)
@@ -1449,21 +1451,6 @@ class TUIApp(App[None]):
         await block.set_result(msg.content, is_error=msg.event == "error")
         self._set_status("thinking…")
 
-    async def _render_message_chunk(self, msg: AIMessageChunk) -> None:
-        text = self._extract_chunk_text(msg)
-        if text:
-            self._assistant_text_rendered = True
-            await self._stream.append_prose(self._log, text)
-
-        tool_calls = self._extract_chunk_tool_calls(msg)
-        if tool_calls:
-            await self._flush_stream()
-            for call in tool_calls:
-                await self._mount_tool_call(call)
-
-        if getattr(msg, "chunk_position", None) == "last" and not tool_calls:
-            await self._flush_stream()
-
     async def _flush_stream(self) -> None:
         await self._stream.flush(reasoning_expanded=self._tools_expanded)
 
@@ -1487,68 +1474,6 @@ class TUIApp(App[None]):
         if name in {"run_julia", "plot_julia"}:
             block.start_elapsed_timer()
         self._set_status("updating plan…" if name == "write_todos" else f"running {name}…")
-
-    def _extract_chunk_text(self, msg: AIMessageChunk) -> str:
-        blocks = getattr(msg, "content_blocks", None)
-        if isinstance(blocks, list):
-            text_parts = [
-                str(block.get("text") or "")
-                for block in blocks
-                if isinstance(block, dict) and block.get("type") == "text"
-            ]
-            if text_parts:
-                return "".join(text_parts)
-
-        content = getattr(msg, "content", "")
-        if isinstance(content, str):
-            return content
-        return content_to_str(content)
-
-    def _extract_chunk_tool_calls(self, msg: AIMessageChunk) -> list[dict[str, Any]]:
-        raw_calls = getattr(msg, "tool_calls", None)
-        if isinstance(raw_calls, list) and raw_calls:
-            return [
-                call
-                for raw_call in raw_calls
-                if (call := self._normalize_tool_call(raw_call)) is not None
-            ]
-
-        blocks = getattr(msg, "content_blocks", None)
-        if not isinstance(blocks, list):
-            return []
-
-        calls: list[dict[str, Any]] = []
-        for block in blocks:
-            if not isinstance(block, dict) or block.get("type") not in {
-                "tool_call",
-                "tool_call_chunk",
-            }:
-                continue
-            normalized = self._normalize_tool_call(block)
-            if normalized is not None:
-                calls.append(normalized)
-        return calls
-
-    def _normalize_tool_call(self, raw_call: dict[str, Any]) -> dict[str, Any] | None:
-        name = raw_call.get("name")
-        if not isinstance(name, str) or not name:
-            return None
-
-        args = raw_call.get("args")
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except json.JSONDecodeError:
-                return None
-        if args is None:
-            args = {}
-        if not isinstance(args, dict):
-            args = {"value": args}
-
-        normalized: dict[str, Any] = {"name": name, "args": args}
-        if raw_call.get("id"):
-            normalized["id"] = str(raw_call["id"])
-        return normalized
 
     async def _render_interrupts(self, interrupts: list[TurnInterrupt]) -> None:
         self._active_approval_blocks = []

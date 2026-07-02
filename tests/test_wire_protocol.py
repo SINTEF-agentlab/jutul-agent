@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.messages import AIMessage
 
 from jutul_agent.agent.approval import (
     SUPPORTED_APPROVAL_DECISIONS,
@@ -10,7 +10,13 @@ from jutul_agent.agent.approval import (
     build_resume_payload,
     pending_allowed_decisions,
 )
-from jutul_agent.agent.turns import TurnInterrupt, TurnReasoningDelta, TurnToolEvent
+from jutul_agent.agent.turns import (
+    TurnInterrupt,
+    TurnReasoningDelta,
+    TurnTextDelta,
+    TurnTextEnd,
+    TurnToolEvent,
+)
 from jutul_agent.interfaces.server import protocol
 from jutul_agent.tool_labels import tool_label
 
@@ -18,14 +24,15 @@ from jutul_agent.tool_labels import tool_label
 
 
 def test_text_chunk_wire() -> None:
-    assert protocol.to_wire(AIMessageChunk(content="hello")) == {
+    assert protocol.to_wire(TurnTextDelta(text="hello")) == {
         "type": "text",
         "text": "hello",
     }
 
 
 def test_empty_text_chunk_is_skipped() -> None:
-    assert protocol.to_wire(AIMessageChunk(content="")) is None
+    assert protocol.to_wire(TurnTextDelta(text="")) is None
+    assert protocol.to_wire(TurnTextEnd()) is None
 
 
 def test_reasoning_delta_wire() -> None:
