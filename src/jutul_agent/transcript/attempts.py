@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from jutul_agent.trace import Event
+from jutul_agent.trace import Event, schema
 
 
 @dataclass
@@ -49,7 +49,7 @@ def build_attempt_tree(events: list[Event]) -> list[Attempt]:
     order: list[str] = []
 
     for event in events:
-        if event.kind != "attempt":
+        if event.kind != schema.ATTEMPT:
             continue
         attempt = _attempt_from_event(event)
         by_id[attempt.id] = attempt

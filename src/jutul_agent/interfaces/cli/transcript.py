@@ -8,7 +8,7 @@ from pathlib import Path
 
 from jutul_agent.interfaces.cli._helpers import add_workspace_flags
 from jutul_agent.paths import workspace_state_dir
-from jutul_agent.session import read_last_session, session_dir
+from jutul_agent.session import existing_output_dir, read_last_session, session_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,11 +61,16 @@ def run(args: argparse.Namespace) -> int:
     if not db.exists():
         print(f"No trace at {db}", file=sys.stderr)
         return 1
-    log = TraceLog(db)
+    # Artifacts live in the session's visible output dir under the workspace;
+    # the state dir is the fallback for sessions where output fell back there.
+    artifacts_root = existing_output_dir(session_id) or session_dir(session_id)
+    log = TraceLog.open_readonly(db)
     try:
         events = log.iter_events()
         if args.format == "html":
-            content = render_html(events)
+            content = render_html(
+                events, artifact_dirs=[artifacts_root, artifacts_root / "artifacts"]
+            )
             ext = "html"
         else:
             content = render_markdown(events)
@@ -91,7 +96,7 @@ def run(args: argparse.Namespace) -> int:
         bundle_path = session_path / "transcript-bundle.zip"
         if out_path != session_path / "transcript.html":
             bundle_path = out_path.with_suffix(".zip")
-        bundle_transcript(session_path, out_path, bundle_path)
+        bundle_transcript(artifacts_root, out_path, bundle_path)
         print(bundle_path)
 
     return 0

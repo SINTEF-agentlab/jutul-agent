@@ -38,15 +38,13 @@ def _real_started(trace_path) -> str:
     ``DiscoveredSession.started``, which falls back to the directory mtime."""
     import sqlite3
 
+    from jutul_agent.trace import TraceLog
+
     try:
-        con = sqlite3.connect(f"file:{trace_path}?mode=ro", uri=True)
-        try:
-            row = con.execute("SELECT timestamp FROM events ORDER BY id LIMIT 1").fetchone()
-        finally:
-            con.close()
+        with TraceLog.open_readonly(trace_path) as log:
+            return log.first_timestamp() or ""
     except sqlite3.Error:
         return ""
-    return str(row[0]) if row and row[0] else ""
 
 
 def _priority(severity: str, count: int, last_seen: str, now: datetime) -> float:

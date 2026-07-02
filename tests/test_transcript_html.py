@@ -347,7 +347,9 @@ def test_lifecycle_kinds_render_as_markers_not_raw_dumps() -> None:
         make_event(2, "session_title", {"session_id": "abc", "title": "Discharge the chen cell"}),
         make_event(3, "message_user", {"content": "go"}),
         make_event(
-            4, "context_compaction", {"messages_before": 30, "messages_after": 9, "manual": True}
+            4,
+            "context_compaction",
+            {"summarized": 21, "kept": 9, "offloaded": True, "manual": True},
         ),
         make_event(5, "session_end", {"session_id": "abc"}),
         make_event(6, "session_resume", {"session_id": "abc", "simulator": "battmo"}),
@@ -358,12 +360,12 @@ def test_lifecycle_kinds_render_as_markers_not_raw_dumps() -> None:
     html = render_html(events)
     assert "Discharge the chen cell" in html
     assert "Session resumed" in html
-    assert "Context compacted (manual): 30 messages" in html
+    assert "Context compacted (manual): 21 messages summarized, 9 kept" in html
     for kind in ("session_title", "session_resume", "context_compaction"):
         assert f"Event · {kind}" not in html
 
     markdown = render_markdown(events)
     assert "**Discharge the chen cell**" in markdown
     assert "_Session resumed:" in markdown
-    assert "Context compacted (manual): 30 messages → 9" in markdown
+    assert "Context compacted (manual): 21 messages summarized, 9 kept" in markdown
     assert "### Event `session_resume`" not in markdown

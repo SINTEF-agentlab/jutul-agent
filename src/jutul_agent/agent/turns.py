@@ -19,6 +19,7 @@ from langgraph.types import Command
 
 from jutul_agent.agent.tool_output import is_interrupt_payload, normalize_tool_output
 from jutul_agent.trace import TraceLog
+from jutul_agent.trace.schema import HITL_REQUEST, HITL_RESPONSE, MESSAGE_USER
 
 MessageCallback = Callable[[Any], Awaitable[None] | None]
 ResumePayload = dict[str, dict[str, list[dict[str, str]]]]
@@ -89,7 +90,7 @@ class TurnRunner:
         on_message: MessageCallback | None = None,
     ) -> TurnRunResult:
         if self._trace is not None:
-            self._trace.append("message_user", {"content": prompt})
+            self._trace.append(MESSAGE_USER, {"content": prompt})
         return await self._run(
             {"messages": [{"role": "user", "content": prompt}]},
             on_message=on_message,
@@ -104,7 +105,7 @@ class TurnRunner:
         if self._trace is not None:
             for interrupt_id, payload in resume_payload.items():
                 self._trace.append(
-                    "hitl_response",
+                    HITL_RESPONSE,
                     {"interrupt_id": interrupt_id, "payload": payload},
                 )
         return await self._run(Command(resume=resume_payload), on_message=on_message)
@@ -325,7 +326,7 @@ async def _collect_interrupts(run: Any, trace: TraceLog | None) -> list[TurnInte
         interrupts.append(TurnInterrupt(interrupt_id=interrupt_id, value=value))
         if trace is not None:
             trace.append(
-                "hitl_request",
+                HITL_REQUEST,
                 {"interrupt_id": interrupt_id, "value": value},
             )
     return interrupts

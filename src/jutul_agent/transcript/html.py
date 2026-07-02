@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from jutul_agent.tool_labels import tool_label
-from jutul_agent.trace import Event
+from jutul_agent.trace import Event, schema
 from jutul_agent.transcript.events import ArtifactPayload
 from jutul_agent.transcript.highlight import (
     PLAIN_OUTPUT_TOOLS,
@@ -365,14 +365,14 @@ _CSP = (
 )
 
 _FILTER_GROUPS: dict[str, str] = {
-    "message_user": "user",
-    "message_assistant": "assistant",
-    "message_reasoning": "reasoning",
-    "tool_call": "tools",
+    schema.MESSAGE_USER: "user",
+    schema.MESSAGE_ASSISTANT: "assistant",
+    schema.MESSAGE_REASONING: "reasoning",
+    schema.TOOL_CALL: "tools",
     "tool_result": "tools",
-    "hitl_request": "approval",
-    "hitl_response": "approval",
-    "artifact": "artifact",
+    schema.HITL_REQUEST: "approval",
+    schema.HITL_RESPONSE: "approval",
+    schema.ARTIFACT: "artifact",
 }
 
 _FILTER_LABELS: dict[str, str] = {
@@ -381,18 +381,24 @@ _FILTER_LABELS: dict[str, str] = {
     "reasoning": "Reasoning",
     "tools": "Tools",
     "approval": "Approval",
-    "artifact": "Artifact",
+    schema.ARTIFACT: "Artifact",
 }
 
 # Lifecycle markers: rendered as dividers/header metadata, not filterable cards.
 _SESSION_MARKER_KINDS = frozenset(
-    {"session_start", "session_end", "session_resume", "session_title", "context_compaction"}
+    {
+        schema.SESSION_START,
+        schema.SESSION_END,
+        schema.SESSION_RESUME,
+        schema.SESSION_TITLE,
+        schema.CONTEXT_COMPACTION,
+    }
 )
 
 # Internal telemetry the trace keeps for cost/efficiency analysis and eval grading,
 # but which is not part of the conversation: dropped entirely from the human
 # transcript (no card, no filter chip).
-_INTERNAL_KINDS = frozenset({"model_usage", "eval_target"})
+_INTERNAL_KINDS = frozenset({schema.MODEL_USAGE, schema.EVAL_TARGET})
 
 _KIND_LABELS: dict[str, str] = {
     **{kind: "Session" for kind in _SESSION_MARKER_KINDS},
@@ -663,7 +669,7 @@ def _event_attrs(kind: str) -> str:
 def _index_tool_results(events: list[Event]) -> dict[str, dict[str, Any]]:
     indexed: dict[str, dict[str, Any]] = {}
     for ev in events:
-        if ev.kind != "tool_result":
+        if ev.kind != schema.TOOL_RESULT:
             continue
         tool_call_id = ev.payload.get("tool_call_id")
         if tool_call_id is not None:
@@ -674,7 +680,7 @@ def _index_tool_results(events: list[Event]) -> dict[str, dict[str, Any]]:
 def _index_artifacts_by_tool_call(events: list[Event]) -> dict[str, ArtifactPayload]:
     indexed: dict[str, ArtifactPayload] = {}
     for ev in events:
-        if ev.kind != "artifact":
+        if ev.kind != schema.ARTIFACT:
             continue
         artifact = ArtifactPayload.from_payload(ev.payload)
         if artifact.tool_call_id is not None:
@@ -686,7 +692,7 @@ def _index_hitl_responses(events: list[Event]) -> dict[str, dict[str, Any]]:
     """interrupt_id -> response payload, so a request can show its outcome inline."""
     indexed: dict[str, dict[str, Any]] = {}
     for ev in events:
-        if ev.kind == "hitl_response":
+        if ev.kind == schema.HITL_RESPONSE:
             interrupt_id = ev.payload.get("interrupt_id")
             if interrupt_id is not None:
                 indexed[str(interrupt_id)] = ev.payload
@@ -788,41 +794,43 @@ def _render_body(
             continue
         kind_counts[kind] = kind_counts.get(kind, 0) + 1
 
-        if kind == "session_start":
+        if kind == schema.SESSION_START:
             session_id = payload.get("session_id") or session_id
             simulator = payload.get("simulator") or "(none)"
             started = ts
             continue
 
-        if kind == "session_end":
+        if kind == schema.SESSION_END:
             parts.append(
                 f'<div class="session-marker">Session ended · <time datetime="{_esc_attr(ts)}">'
                 f"{_esc(ts)}</time></div>"
             )
             continue
 
-        if kind == "session_resume":
+        if kind == schema.SESSION_RESUME:
             parts.append(
                 f'<div class="session-marker">Session resumed · '
                 f'<time datetime="{_esc_attr(ts)}">{_esc(ts)}</time></div>'
             )
             continue
 
-        if kind == "session_title":
+        if kind == schema.SESSION_TITLE:
             session_title = str(payload.get("title") or "").strip() or session_title
             continue
 
-        if kind == "context_compaction":
+        if kind == schema.CONTEXT_COMPACTION:
             trigger = "manual" if payload.get("manual") else "automatic"
+            summarized = payload.get("summarized")
+            kept = payload.get("kept")
             parts.append(
                 f'<div class="session-marker">Context compacted ({trigger}): '
-                f"{_esc(payload.get('messages_before', '?'))} messages &rarr; "
-                f"{_esc(payload.get('messages_after', '?'))} · "
+                f"{_esc(summarized if summarized is not None else '?')} messages summarized, "
+                f"{_esc(kept if kept is not None else '?')} kept · "
                 f'<time datetime="{_esc_attr(ts)}">{_esc(ts)}</time></div>'
             )
             continue
 
-        if kind == "message_user":
+        if kind == schema.MESSAGE_USER:
             parts.append(
                 f'<article class="event" {_event_attrs(kind)}>'
                 f"{_event_header(kind, 'User', ts, 'user')}"
@@ -831,7 +839,7 @@ def _render_body(
             )
             continue
 
-        if kind == "message_reasoning":
+        if kind == schema.MESSAGE_REASONING:
             content = str(payload.get("content", ""))
             if not content.strip():
                 continue
@@ -846,7 +854,7 @@ def _render_body(
             )
             continue
 
-        if kind == "message_assistant":
+        if kind == schema.MESSAGE_ASSISTANT:
             content = str(payload.get("content", ""))
             if not content.strip():
                 continue
@@ -858,7 +866,7 @@ def _render_body(
             )
             continue
 
-        if kind == "tool_call":
+        if kind == schema.TOOL_CALL:
             name = payload.get("name", "?")
             tool_call_id = payload.get("id")
             result_payload = None
@@ -888,7 +896,7 @@ def _render_body(
             )
             continue
 
-        if kind == "tool_result":
+        if kind == schema.TOOL_RESULT:
             tool_call_id = payload.get("tool_call_id")
             if tool_call_id is not None and str(tool_call_id) in consumed_results:
                 continue
@@ -905,7 +913,7 @@ def _render_body(
             )
             continue
 
-        if kind == "hitl_request":
+        if kind == schema.HITL_REQUEST:
             interrupt_id = str(payload.get("interrupt_id") or "")
             outcome = ""
             response = hitl_responses.get(interrupt_id)
@@ -920,7 +928,7 @@ def _render_body(
             )
             continue
 
-        if kind == "hitl_response":
+        if kind == schema.HITL_RESPONSE:
             # Already shown inline under its request; only a response with no
             # matching request (shouldn't happen) falls through to its own card.
             if str(payload.get("interrupt_id") or "") in consumed_responses:
@@ -933,7 +941,7 @@ def _render_body(
             )
             continue
 
-        if kind == "artifact":
+        if kind == schema.ARTIFACT:
             artifact = ArtifactPayload.from_payload(payload)
             meta_html = _artifact_meta_html(artifact)
             source_html = _artifact_source_html(artifact)
@@ -991,7 +999,7 @@ def _render_body(
     # shows no card of its own, so it must not inflate the tally.
     rendered_counts = dict(kind_counts)
     rendered_counts["tool_result"] = rendered_counts.get("tool_result", 0) - len(consumed_results)
-    rendered_counts["hitl_response"] = rendered_counts.get("hitl_response", 0) - len(
+    rendered_counts[schema.HITL_RESPONSE] = rendered_counts.get(schema.HITL_RESPONSE, 0) - len(
         consumed_responses
     )
     group_counts: dict[str, int] = {}

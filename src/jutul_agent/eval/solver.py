@@ -205,6 +205,7 @@ async def _run_jutul_session(
     from jutul_agent.paths import set_workspace_root
     from jutul_agent.session import Session
     from jutul_agent.simulators import registry
+    from jutul_agent.trace.schema import EVAL_TARGET
 
     adapter = registry.get(simulator)
     workspace = scratch / "workspace"
@@ -265,7 +266,7 @@ async def _run_jutul_session(
             # Record the known answer so a later review can judge the result against
             # ground truth, the sharpest signal an eval run offers.
             if ground_truth:
-                session.trace.append("eval_target", {"expected": ground_truth})
+                session.trace.append(EVAL_TARGET, {"expected": ground_truth})
             try:
                 agent, _backend = build_agent(
                     session,

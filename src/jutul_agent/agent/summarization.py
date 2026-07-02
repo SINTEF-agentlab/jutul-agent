@@ -19,6 +19,7 @@ from deepagents.middleware.summarization import SummarizationEvent, Summarizatio
 from langchain_core.messages.utils import count_tokens_approximately
 
 from jutul_agent.trace import TraceLog
+from jutul_agent.trace.schema import CONTEXT_COMPACTION, compaction_payload
 
 # The share of the window at which the stock summarizer triggers, mirrored here
 # only so /context can show the figure. Matches deepagents'
@@ -109,8 +110,13 @@ async def compact_thread(
     )
     if trace is not None:
         trace.append(
-            "context_compaction",
-            {"cutoff_index": state_cutoff, "offloaded": file_path is not None, "manual": True},
+            CONTEXT_COMPACTION,
+            compaction_payload(
+                summarized=len(to_summarize),
+                kept=len(to_keep),
+                offloaded=file_path is not None,
+                manual=True,
+            ),
         )
     return CompactResult(
         messages_summarized=len(to_summarize),

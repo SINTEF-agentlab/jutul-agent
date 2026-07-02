@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from jutul_agent.trace import Event
+from jutul_agent.trace import Event, schema
 from jutul_agent.transcript.events import ArtifactPayload
 
 
@@ -41,6 +41,12 @@ def _fmt_args(args: Any) -> str:
     return repr(args)
 
 
+def _count(payload: dict[str, Any], key: str) -> Any:
+    """A numeric payload field for display; unknown counts render as ``?``."""
+    value = payload.get(key)
+    return value if value is not None else "?"
+
+
 def render_markdown(events: Iterable[Event]) -> str:
     lines: list[str] = []
     session_id: str | None = None
@@ -50,7 +56,7 @@ def render_markdown(events: Iterable[Event]) -> str:
         ts = ev.timestamp
         kind = ev.kind
 
-        if kind == "session_start":
+        if kind == schema.SESSION_START:
             session_id = payload.get("session_id") or session_id
             sim = payload.get("simulator") or "(none)"
             lines += [
@@ -60,35 +66,36 @@ def render_markdown(events: Iterable[Event]) -> str:
                 f"- Simulator: `{sim}`",
                 "",
             ]
-        elif kind == "session_end":
+        elif kind == schema.SESSION_END:
             lines += ["---", f"_Session ended: `{ts}`_", ""]
-        elif kind == "session_resume":
+        elif kind == schema.SESSION_RESUME:
             lines += ["---", f"_Session resumed: `{ts}`_", ""]
-        elif kind == "session_title":
+        elif kind == schema.SESSION_TITLE:
             title = str(payload.get("title") or "").strip()
             if title:
                 lines += [f"**{title}**", ""]
-        elif kind == "context_compaction":
+        elif kind == schema.CONTEXT_COMPACTION:
             trigger = "manual" if payload.get("manual") else "automatic"
-            before = payload.get("messages_before", "?")
-            after = payload.get("messages_after", "?")
+            summarized = _count(payload, "summarized")
+            kept = _count(payload, "kept")
             lines += [
-                f"_Context compacted ({trigger}): {before} messages → {after} · `{ts}`_",
+                f"_Context compacted ({trigger}): {summarized} messages summarized, "
+                f"{kept} kept · `{ts}`_",
                 "",
             ]
-        elif kind == "message_user":
+        elif kind == schema.MESSAGE_USER:
             lines += [f"## User · `{ts}`", "", str(payload.get("content", "")), ""]
-        elif kind == "message_reasoning":
+        elif kind == schema.MESSAGE_REASONING:
             content = str(payload.get("content", ""))
             if not content.strip():
                 continue
             lines += [f"## Reasoning · `{ts}`", "", content, ""]
-        elif kind == "message_assistant":
+        elif kind == schema.MESSAGE_ASSISTANT:
             content = str(payload.get("content", ""))
             if not content.strip():
                 continue
             lines += [f"## Assistant · `{ts}`", "", content, ""]
-        elif kind == "tool_call":
+        elif kind == schema.TOOL_CALL:
             name = payload.get("name", "?")
             lines += [
                 f"### Tool call · `{name}` · `{ts}`",
@@ -96,7 +103,7 @@ def render_markdown(events: Iterable[Event]) -> str:
                 _fmt_args(payload.get("args")),
                 "",
             ]
-        elif kind == "tool_result":
+        elif kind == schema.TOOL_RESULT:
             name = payload.get("name", "?")
             content = str(payload.get("content", ""))
             lines += [
@@ -107,21 +114,21 @@ def render_markdown(events: Iterable[Event]) -> str:
                 "```",
                 "",
             ]
-        elif kind == "hitl_request":
+        elif kind == schema.HITL_REQUEST:
             lines += [
                 f"### Approval request · `{ts}`",
                 "",
                 _fmt_hitl_request(payload),
                 "",
             ]
-        elif kind == "hitl_response":
+        elif kind == schema.HITL_RESPONSE:
             lines += [
                 f"### Approval response · `{ts}`",
                 "",
                 _fmt_hitl_response(payload),
                 "",
             ]
-        elif kind == "artifact":
+        elif kind == schema.ARTIFACT:
             artifact = ArtifactPayload.from_payload(payload)
             lines += [
                 f"### Artifact · `{ts}`",

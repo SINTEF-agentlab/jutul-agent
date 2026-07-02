@@ -20,7 +20,9 @@ CREATE TABLE events (
 
 Payloads are JSON, so new event kinds and new fields are additive: no
 migrations, and old traces stay readable. The `TraceLog` class is the
-writer and reader API, though plain `sqlite3` works too.
+writer and reader API, though plain `sqlite3` works too. Kind names live
+in `trace/schema.py`; writers and readers import the constants rather
+than restating the strings, and the table below is the payload contract.
 
 ## Event kinds
 
@@ -34,13 +36,17 @@ writer and reader API, though plain `sqlite3` works too.
 | `message_reasoning` | recorder middleware | `content` (the model's reasoning text) |
 | `message_assistant` | recorder middleware | `content` |
 | `model_usage` | recorder middleware | `input_tokens`, `output_tokens`, `total_tokens`, provider detail fields |
-| `context_compaction` | summarization middleware / `/compact` | `messages_before`, `messages_after`, `manual` (when user-triggered) |
+| `context_compaction` | summarization middleware / `/compact` | `summarized`, `kept` (message counts, null when unknown), `offloaded`, `manual` |
 | `tool_call` | recorder middleware | `id`, `name`, `args` |
 | `tool_result` | recorder middleware | `tool_call_id`, `name`, `content`, `status` |
 | `hitl_request` | `TurnRunner` | the pending tool call awaiting approval |
 | `hitl_response` | `TurnRunner` | `interrupt_id`, the decision payload |
-| `artifact` | `plot_julia` / `recapture_plot` | `path` (relative to the session output dir), `mime`, `caption`, `tool_call_id`, `format`, `size_px`, `dpi`, `slot`, `source_code` |
+| `artifact` | `plot_julia` / `recapture_plot` / `write_report` | `path` (relative to the session output dir), `mime`, `caption`, `tool_call_id`, `format`, `kind` (`plot`/`report`, routes the browser viz), `size_px`, `dpi`, `slot`, `source_code`, `poster` (thumbnail for an interactive plot), `live_url` |
 | `attempt` | `record_attempt` | `id`, `parent_id`, `rationale`, `parameters_changed`, `metrics`, `candidate_path`, `plot_artifact_path`, `notes` |
+| `upload` | web server | `path` of a file the user uploaded into the workspace |
+| `ui_event` | web server | `payload` of an interaction the front end reported (recorded for later analysis) |
+| `eval_target` | bench solver | `expected` golden answer for an eval session |
+| `eval_result` | `jutul-agent review eval-link` | `passed`, `task`, `scores` (written onto the session after scoring) |
 
 The recorder is an agent middleware (`trace/recorder.py`), so it observes
 the same stream the model produces: every model turn and every tool
@@ -68,11 +74,14 @@ the bench's process scorers both read that structure.
 ```python
 from jutul_agent.trace import TraceLog
 
-log = TraceLog(path_to_trace)
-for event in log.iter_events():
-    print(event.timestamp, event.kind, event.payload)
-log.close()
+with TraceLog.open_readonly(path_to_trace) as log:
+    for event in log.iter_events():
+        print(event.timestamp, event.kind, event.payload)
 ```
+
+`open_readonly` inspects a trace without touching it (no schema creation,
+no journal-mode change), which is the right way to read another session's
+file, possibly one still being written.
 
 Traces live under the state home, at
 `workspaces/<hash>/sessions/<id>/trace.sqlite` (see

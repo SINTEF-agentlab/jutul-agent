@@ -12,6 +12,15 @@ from langgraph.types import Command
 
 from jutul_agent.trace import TraceLog
 from jutul_agent.trace.messages import content_to_str, reasoning_to_str
+from jutul_agent.trace.schema import (
+    CONTEXT_COMPACTION,
+    MESSAGE_ASSISTANT,
+    MESSAGE_REASONING,
+    MODEL_USAGE,
+    TOOL_CALL,
+    TOOL_RESULT,
+    compaction_payload,
+)
 
 
 class TraceRecorder(AgentMiddleware):
@@ -37,12 +46,21 @@ class TraceRecorder(AgentMiddleware):
         if marker == self._last_compaction:
             return
         self._last_compaction = marker
+        # The cutoff is the count of leading raw messages the summary replaced;
+        # the state still holds the full list (the middleware is non-mutating),
+        # so what remains after the cut is directly computable.
+        cutoff = event.get("cutoff_index")
+        messages = state.get("messages")
+        kept = None
+        if isinstance(messages, list) and isinstance(cutoff, int) and len(messages) >= cutoff:
+            kept = len(messages) - cutoff
         self._trace.append(
-            "context_compaction",
-            {
-                "cutoff_index": event.get("cutoff_index"),
-                "offloaded": event.get("file_path") is not None,
-            },
+            CONTEXT_COMPACTION,
+            compaction_payload(
+                summarized=cutoff if isinstance(cutoff, int) else None,
+                kept=kept,
+                offloaded=event.get("file_path") is not None,
+            ),
         )
 
     async def aafter_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
@@ -61,15 +79,15 @@ class TraceRecorder(AgentMiddleware):
         blocks = getattr(last, "content_blocks", None) or last.content
         reasoning = reasoning_to_str(blocks)
         if reasoning.strip():
-            self._trace.append("message_reasoning", {"content": reasoning})
+            self._trace.append(MESSAGE_REASONING, {"content": reasoning})
         content = content_to_str(blocks)
         if content.strip():
-            self._trace.append("message_assistant", {"content": content})
+            self._trace.append(MESSAGE_ASSISTANT, {"content": content})
         usage = getattr(last, "usage_metadata", None)
         if usage:
             # Token accounting per model turn; cost and efficiency analyses
             # read these events instead of re-deriving counts from text.
-            self._trace.append("model_usage", dict(usage))
+            self._trace.append(MODEL_USAGE, dict(usage))
         return None
 
     async def awrap_tool_call(
@@ -79,7 +97,7 @@ class TraceRecorder(AgentMiddleware):
     ) -> ToolMessage | Command[Any]:
         call = request.tool_call
         self._trace.append(
-            "tool_call",
+            TOOL_CALL,
             {"id": call.get("id"), "name": call.get("name"), "args": call.get("args")},
         )
         try:
@@ -99,7 +117,7 @@ class TraceRecorder(AgentMiddleware):
 
         if isinstance(result, ToolMessage):
             self._trace.append(
-                "tool_result",
+                TOOL_RESULT,
                 {
                     "tool_call_id": getattr(result, "tool_call_id", None),
                     "name": getattr(result, "name", None),

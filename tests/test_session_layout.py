@@ -108,7 +108,7 @@ def test_existing_output_dir_prefers_the_folder_with_artifacts(tmp_path: Path) -
     # must not shadow it on resume, or the resumed session's artifacts 404. Prefer
     # whichever folder actually holds the ``artifacts/``.
     from jutul_agent.paths import session_output_dir
-    from jutul_agent.session import _existing_output_dir
+    from jutul_agent.session import existing_output_dir
 
     sid = "2026-06-12-0101-abcd"
     bare = session_output_dir(sid)  # workspace is the autouse tmp_path
@@ -117,7 +117,7 @@ def test_existing_output_dir_prefers_the_folder_with_artifacts(tmp_path: Path) -
     (slugged / "artifacts").mkdir(parents=True)
     (slugged / "artifacts" / "plot.png").write_bytes(b"x")  # the real output
 
-    assert _existing_output_dir(sid) == slugged
+    assert existing_output_dir(sid) == slugged
 
 
 def test_existing_output_dir_prefers_nonempty_dir_for_report_only_session(tmp_path: Path) -> None:
@@ -126,7 +126,7 @@ def test_existing_output_dir_prefers_nonempty_dir_for_report_only_session(tmp_pa
     # the artifacts check matches neither, so it must fall back to the NON-EMPTY dir
     # (the slug one holding the report), not the empty ``<sid>/`` that sorts first.
     from jutul_agent.paths import session_output_dir
-    from jutul_agent.session import _existing_output_dir
+    from jutul_agent.session import existing_output_dir
 
     sid = "2026-06-12-0202-bbbb"
     bare = session_output_dir(sid)
@@ -135,7 +135,7 @@ def test_existing_output_dir_prefers_nonempty_dir_for_report_only_session(tmp_pa
     slugged.mkdir(parents=True)
     (slugged / "report.html").write_text("<html></html>", encoding="utf-8")  # the real output
 
-    assert _existing_output_dir(sid) == slugged
+    assert existing_output_dir(sid) == slugged
 
 
 def test_existing_output_dir_ignores_stray_with_empty_artifacts_subdir(tmp_path: Path) -> None:
@@ -143,7 +143,7 @@ def test_existing_output_dir_ignores_stray_with_empty_artifacts_subdir(tmp_path:
     # not count as having output and win over the real ``<sid>-<slug>/`` that holds
     # report.html at its root.
     from jutul_agent.paths import session_output_dir
-    from jutul_agent.session import _existing_output_dir
+    from jutul_agent.session import existing_output_dir
 
     sid = "2026-06-12-0303-cccc"
     bare = session_output_dir(sid)
@@ -152,7 +152,7 @@ def test_existing_output_dir_ignores_stray_with_empty_artifacts_subdir(tmp_path:
     slugged.mkdir(parents=True)
     (slugged / "report.html").write_text("<html></html>", encoding="utf-8")
 
-    assert _existing_output_dir(sid) == slugged
+    assert existing_output_dir(sid) == slugged
 
 
 def test_retitle_overwrites_title_but_keeps_output_dir(tmp_path: Path) -> None:

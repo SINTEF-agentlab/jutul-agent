@@ -42,6 +42,7 @@ from jutul_agent.agent.capabilities import HttpToolSpec, http_tool_capability
 from jutul_agent.interfaces.server import protocol
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
 from jutul_agent.interfaces.server.session_host import SessionHost
+from jutul_agent.trace.schema import UI_EVENT, UPLOAD
 
 # The web UI ships pre-built next to this module: ``web_dist`` is the Vite build of
 # ``webapp/`` (the React app), committed and shipped so an install needs no Node.
@@ -444,13 +445,13 @@ def create_app(
         # dir — the same fallback get_transcript uses — so a plot or report stays
         # fetchable after the session is evicted from the live registry or the server
         # restarts, instead of going dead (404) while the file is still on disk.
-        from jutul_agent.session import _existing_output_dir
+        from jutul_agent.session import existing_output_dir
 
         host = manager.get(session_id)
         if host is not None:
             out_dir: Path | None = host.session.output_dir
         elif _is_valid_session_id(session_id):
-            out_dir = _existing_output_dir(session_id)
+            out_dir = existing_output_dir(session_id)
         else:
             out_dir = None
         if out_dir is None:
@@ -598,7 +599,7 @@ def create_app(
         state_dir = host.session.state_dir if host else _session_state_dir(session_id)
         if state_dir is None:
             raise HTTPException(status_code=404, detail="no such session")
-        from jutul_agent.session import _existing_output_dir
+        from jutul_agent.session import existing_output_dir
         from jutul_agent.trace import TraceLog
         from jutul_agent.transcript import render_html, render_markdown
 
@@ -607,7 +608,7 @@ def create_app(
         md = format in ("md", "markdown")
         # Inline images so the downloaded transcript shows its plots on its own,
         # off the server (the artifacts live in the session's output folder).
-        out_dir = host.session.output_dir if host else _existing_output_dir(session_id)
+        out_dir = host.session.output_dir if host else existing_output_dir(session_id)
         artifact_dirs = [out_dir / "artifacts", out_dir] if out_dir else []
         body = render_markdown(events) if md else render_html(events, artifact_dirs=artifact_dirs)
         ext = "md" if md else "html"
@@ -720,7 +721,7 @@ def create_app(
                     raise HTTPException(status_code=413, detail="upload too large (max 100 MB)")
                 fh.write(chunk)
         rel = f"uploads/{safe}"
-        host.session.trace.append("upload", {"path": rel})
+        host.session.trace.append(UPLOAD, {"path": rel})
         return {"path": rel}
 
     @app.websocket("/sessions/{session_id}/stream")
@@ -1014,7 +1015,7 @@ class _StreamState:
         elif kind == "cancel":
             await self.cancel_turn()
         elif kind == "ui_event":
-            self._host.session.trace.append("ui_event", {"payload": message.get("payload")})
+            self._host.session.trace.append(UI_EVENT, {"payload": message.get("payload")})
         elif kind == "command":
             await self._handle_command(message)
         else:

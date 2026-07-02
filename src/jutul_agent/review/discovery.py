@@ -15,7 +15,8 @@ from datetime import datetime
 from pathlib import Path
 
 from jutul_agent.paths import state_home
-from jutul_agent.session import _started_from_id, read_session_title
+from jutul_agent.session import read_session_title, started_from_id
+from jutul_agent.trace import schema
 
 
 @dataclass(frozen=True)
@@ -51,44 +52,34 @@ def eval_sessions_state_root(simulator: str) -> Path:
 
 
 def _first_event_payload(trace_path: Path, kind: str) -> dict | None:
-    """The payload of the earliest event of ``kind`` in a trace, read cheaply."""
-    import json
+    """The payload of the earliest event of ``kind`` in a trace, read without touching it."""
     import sqlite3
 
+    from jutul_agent.trace import TraceLog
+
     try:
-        con = sqlite3.connect(f"file:{trace_path}?mode=ro", uri=True)
-        try:
-            row = con.execute(
-                "SELECT payload_json FROM events WHERE kind=? ORDER BY id LIMIT 1", (kind,)
-            ).fetchone()
-        finally:
-            con.close()
+        with TraceLog.open_readonly(trace_path) as log:
+            payload = log.first_payload(kind)
     except sqlite3.Error:
         return None
-    if not row:
-        return None
-    try:
-        payload = json.loads(row[0])
-        return payload if isinstance(payload, dict) else None
-    except json.JSONDecodeError:
-        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def session_simulator(trace_path: Path) -> str | None:
     """The simulator a session ran, read from its ``session_start`` event."""
-    payload = _first_event_payload(trace_path, "session_start")
+    payload = _first_event_payload(trace_path, schema.SESSION_START)
     return (payload or {}).get("simulator") or None
 
 
 def session_ground_truth(trace_path: Path) -> str | None:
     """The expected answer recorded for an eval session, if any (``eval_target``)."""
-    payload = _first_event_payload(trace_path, "eval_target")
+    payload = _first_event_payload(trace_path, schema.EVAL_TARGET)
     return (payload or {}).get("expected") or None
 
 
 def session_eval_result(trace_path: Path) -> dict | None:
     """The eval verdict linked onto a session (``eval_result``): passed, task, scores."""
-    return _first_event_payload(trace_path, "eval_result")
+    return _first_event_payload(trace_path, schema.EVAL_RESULT)
 
 
 def eval_review_context(trace_path: Path) -> str | None:
@@ -130,7 +121,7 @@ def discover_sessions(
                 trace = entry / "trace.sqlite"
                 if not entry.is_dir() or not trace.exists():
                     continue
-                started = _started_from_id(entry.name)
+                started = started_from_id(entry.name)
                 if started is None:
                     started = datetime.fromtimestamp(entry.stat().st_mtime)
                 found.append(
@@ -167,7 +158,8 @@ def render_trace(trace_path: Path) -> str:
     from jutul_agent.trace import TraceLog
     from jutul_agent.transcript import render_markdown
 
-    return render_markdown(TraceLog(trace_path).iter_events())
+    with TraceLog.open_readonly(trace_path) as log:
+        return render_markdown(log.iter_events())
 
 
 def render_trace_html(trace_path: Path) -> str:
@@ -175,4 +167,5 @@ def render_trace_html(trace_path: Path) -> str:
     from jutul_agent.trace import TraceLog
     from jutul_agent.transcript import render_html
 
-    return render_html(TraceLog(trace_path).iter_events())
+    with TraceLog.open_readonly(trace_path) as log:
+        return render_html(log.iter_events())

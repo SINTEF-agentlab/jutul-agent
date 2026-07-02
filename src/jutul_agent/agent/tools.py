@@ -17,6 +17,7 @@ from langchain_core.tools import tool
 from jutul_agent.juliakernel.result import OnChunk, OutputChunk
 from jutul_agent.paths import resolve_in_workspace, workspace_root
 from jutul_agent.session import Session
+from jutul_agent.trace.schema import ARTIFACT, ATTEMPT, artifact_payload
 
 # langgraph exposes the active tool call's output-delta writer only through this
 # ContextVar. Reading it directly keeps the tool's plain ``code: str`` signature (a
@@ -211,7 +212,7 @@ def make_record_attempt_tool(session: Session):
         parent_index = indices.get(parent_attempt_id) if parent_attempt_id else None
 
         session.trace.append(
-            "attempt",
+            ATTEMPT,
             {
                 "id": attempt_id,
                 "parent_id": parent_attempt_id,
@@ -332,15 +333,15 @@ def make_write_report_tool(session: Session, *, surface: str = "tui"):
             # than opening a desktop browser window the web user would never see.
             rel = out.relative_to(session.output_dir).as_posix()
             session.trace.append(
-                "artifact",
-                {
-                    "path": rel,
-                    "mime": "text/html",
-                    "caption": title or f"{session.simulator.display_name} report",
-                    "format": "html",
-                    "kind": "report",
-                    "slot": "report",
-                },
+                ARTIFACT,
+                artifact_payload(
+                    path=rel,
+                    mime="text/html",
+                    caption=title or f"{session.simulator.display_name} report",
+                    format="html",
+                    kind="report",
+                    slot="report",
+                ),
             )
             return f"wrote the report and showed it in the app ({rel})" + note
         open_path(out)

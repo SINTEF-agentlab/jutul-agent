@@ -53,6 +53,7 @@ def link_eval_results(logs: Any) -> int:
     """Record each scored sample's verdict on its session trace. Returns the count."""
     from jutul_agent.review.discovery import find_session
     from jutul_agent.trace import TraceLog
+    from jutul_agent.trace.schema import EVAL_RESULT
 
     linked = 0
     for log in logs:
@@ -65,13 +66,16 @@ def link_eval_results(logs: Any) -> int:
             if session is None:
                 continue
             scores = getattr(sample, "scores", None)
-            TraceLog(session.trace_path).append(
-                "eval_result",
-                {
-                    "passed": _passed(scores),
-                    "task": task,
-                    "scores": {k: str(getattr(v, "value", v)) for k, v in (scores or {}).items()},
-                },
-            )
+            with TraceLog(session.trace_path) as session_log:
+                session_log.append(
+                    EVAL_RESULT,
+                    {
+                        "passed": _passed(scores),
+                        "task": task,
+                        "scores": {
+                            k: str(getattr(v, "value", v)) for k, v in (scores or {}).items()
+                        },
+                    },
+                )
             linked += 1
     return linked

@@ -37,6 +37,7 @@ from jutul_agent.agent import plot_julia_src as jl
 from jutul_agent.paths import workspace_root
 from jutul_agent.session import Session
 from jutul_agent.simulators.base import SimulatorAdapter
+from jutul_agent.trace.schema import ARTIFACT, artifact_payload
 
 _SLOT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 
@@ -202,18 +203,19 @@ def _finalize(
     """
 
     session.trace.append(
-        "artifact",
-        {
-            "path": rel_path,
-            "mime": "image/png",
-            "caption": caption or slot or rel_path.rsplit("/", 1)[-1],
-            "tool_call_id": tool_call_id,
-            "format": "png",
-            "size_px": list(size) if size is not None else None,
-            "dpi": dpi,
-            "slot": slot,
-            "source_code": source_code,
-        },
+        ARTIFACT,
+        artifact_payload(
+            path=rel_path,
+            mime="image/png",
+            caption=caption or slot or rel_path.rsplit("/", 1)[-1],
+            tool_call_id=tool_call_id,
+            format="png",
+            kind="plot",
+            size_px=size,
+            dpi=dpi,
+            slot=slot,
+            source_code=source_code,
+        ),
     )
     try:
         shown = abs_path.relative_to(workspace_root()).as_posix()
@@ -257,19 +259,19 @@ def _finalize_web(
     else:
         rec_path, mime, fmt = html_rel, "text/html", "html"
     session.trace.append(
-        "artifact",
-        {
-            "path": rec_path,
-            "mime": mime,
-            "caption": caption or slot or rec_path.rsplit("/", 1)[-1],
-            "tool_call_id": tool_call_id,
-            "format": fmt,
-            "kind": "plot",
-            "poster": png_rel if has_poster else None,
-            "slot": slot,
-            "live_url": live_url,
-            "source_code": source_code,
-        },
+        ARTIFACT,
+        artifact_payload(
+            path=rec_path,
+            mime=mime,
+            caption=caption or slot or rec_path.rsplit("/", 1)[-1],
+            tool_call_id=tool_call_id,
+            format=fmt,
+            kind="plot",
+            poster=png_rel if has_poster else None,
+            slot=slot,
+            live_url=live_url,
+            source_code=source_code,
+        ),
     )
     summary = "served a live interactive plot" if live_url else "rendered an interactive plot"
     summary += f" ({rec_path})"
