@@ -6,7 +6,6 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-from fakes import make_fake_adapter
 from jutul_agent.juliakernel import JuliaKernel, KernelConfig
 from jutul_agent.juliakernel.connection import (
     EVAL_BUFFER_HEAD,
@@ -14,6 +13,7 @@ from jutul_agent.juliakernel.connection import (
     KernelConnection,
     PendingEval,
 )
+from jutul_agent.lab.fakes import make_fake_adapter
 
 
 async def test_eval_output_buffer_keeps_head_and_tail() -> None:

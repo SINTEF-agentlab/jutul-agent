@@ -6,13 +6,13 @@ import base64
 import hashlib
 import html
 import json
-import mimetypes
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from jutul_agent.tool_labels import tool_label
 from jutul_agent.trace import Event, schema
+from jutul_agent.transcript.embed import image_data_uri
 from jutul_agent.transcript.events import ArtifactPayload
 from jutul_agent.transcript.highlight import (
     PLAIN_OUTPUT_TOOLS,
@@ -699,31 +699,6 @@ def _index_hitl_responses(events: list[Event]) -> dict[str, dict[str, Any]]:
     return indexed
 
 
-# Largest artifact to base64-inline into a transcript; above this, keep the path.
-_MAX_INLINE_BYTES = 10 * 1024 * 1024
-
-
-def _resolve_artifact_file(path: str, artifact_dirs: Sequence[Path]) -> Path | None:
-    """Find the on-disk file for a recorded artifact path, contained to the run's dirs.
-
-    The transcript inlines file *bytes*, so a recorded path must resolve to a file
-    inside one of the run dirs; an absolute or ``..`` path that escapes every dir is
-    rejected (mirrors the server's ``_resolve_artifact`` guard) so a stray/crafted
-    artifact path can't pull arbitrary files into a shared transcript.
-    """
-    raw = Path(path)
-    for root in artifact_dirs:
-        base = root.resolve()
-        candidate = (base / raw).resolve()
-        if candidate.is_file() and candidate.is_relative_to(base):
-            return candidate
-        if path.startswith("artifacts/"):  # the transcript may sit inside artifacts/
-            tail = (base / raw.name).resolve()
-            if tail.is_file() and tail.is_relative_to(base):
-                return tail
-    return None
-
-
 def _image_src(path: str, artifact_dirs: Sequence[Path]) -> str:
     """A self-contained ``<img>`` src for an artifact path: a base64 data URI when
     the file resolves under the run's artifact dirs, else the path unchanged.
@@ -731,22 +706,11 @@ def _image_src(path: str, artifact_dirs: Sequence[Path]) -> str:
     Embedding makes the transcript show its plots regardless of where it's opened
     (a sidecar inside ``artifacts/``, a standalone download, or a bundle); the
     plain-path fallback still works when the file sits beside the transcript.
+    Containment and size limits live in ``transcript.embed``.
     """
     if not path or path.startswith(("data:", "http:", "https:")):
         return path
-    resolved = _resolve_artifact_file(path, artifact_dirs)
-    if resolved is None:
-        return path
-    try:
-        # Don't inline a very large file: it would bloat the transcript (and the
-        # server response) by ~1.33x its size, held in memory. Leave the path instead.
-        if resolved.stat().st_size > _MAX_INLINE_BYTES:
-            return path
-        data = base64.standard_b64encode(resolved.read_bytes()).decode("ascii")
-    except OSError:
-        return path
-    mime = mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
-    return f"data:{mime};base64,{data}"
+    return image_data_uri(path, artifact_dirs) or path
 
 
 def _inline_artifact_preview(

@@ -5,7 +5,7 @@ version = "0.5.0"
 # jutul-agent's simulator-agnostic Julia runtime (figure capture, ensemble helpers,
 # generic-Makie warm-up). One copy lives here; env_setup copies it into each
 # workspace env at bootstrap. The per-simulator solve/plot warm-up lives in the
-# JutulAgent<Sim> packages. See docs/design/warmup-and-jutulagent-package.md.
+# JutulAgent<Sim> packages. See docs/architecture.md and docs/adding-a-simulator.md.
 
 [deps]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"

@@ -215,6 +215,7 @@ def artifact_produced(suffix: str = ".png") -> Scorer:
     "a plot exists" is checked against the trace plus the file on disk; a
     textual claim of having plotted cannot pass.
     """
+
     async def score(state: TaskState, target: Target) -> Score:
         # Artifact paths are recorded relative to the session output dir
         # (plot_julia writes "artifacts/<name>.png"); the workspace is kept
@@ -360,10 +361,9 @@ def investigation_recorded(min_attempts: int = 3, metric: str | None = None) -> 
     attempt. This grades the recorded process: a model that explored
     without recording fails even if its final answer is right.
     """
+
     async def score(state: TaskState, target: Target) -> Score:
-        attempts = [
-            event.payload for event in _trace_events(state) if event.kind == schema.ATTEMPT
-        ]
+        attempts = [event.payload for event in _trace_events(state) if event.kind == schema.ATTEMPT]
         problems: list[str] = []
         if len(attempts) < min_attempts:
             problems.append(f"{len(attempts)} attempts recorded, need {min_attempts}")
@@ -435,14 +435,13 @@ def no_repeated_identical_calls() -> Scorer:
     clears the repeat; passive reads (read_file, ls, grep, write_todos) do
     not.
     """
+
     async def score(state: TaskState, target: Target) -> Score:
         repeats: list[str] = []
         events = _trace_events(state)  # a list, so the two passes below are safe
         failed: set[str] = set()
         results = {
-            e.payload.get("tool_call_id"): e.payload
-            for e in events
-            if e.kind == schema.TOOL_RESULT
+            e.payload.get("tool_call_id"): e.payload for e in events if e.kind == schema.TOOL_RESULT
         }
         for event in events:
             if event.kind != schema.TOOL_CALL:
@@ -592,6 +591,7 @@ def no_unresolvable_path_in_julia(
     :func:`jutul_agent.paths.is_host_path` with the workspace backend so grader
     and tool agree on which paths resolve.
     """
+
     def _unresolvable_paths(text: str, *, shell: bool) -> list[str]:
         text = _LINE_COMMENT.sub("", text)
         found = [match.group(2) for match in _QUOTED_PATH.finditer(text)]

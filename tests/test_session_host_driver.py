@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from fakes import FakeJulia, echo_agent, interrupt_agent, make_fake_adapter
+from jutul_agent.lab.fakes import FakeJulia, echo_agent, interrupt_agent, make_fake_adapter
 from jutul_agent.session import Session
 from jutul_agent.session_host import SessionHost
 
@@ -28,9 +28,7 @@ async def test_drive_turn_auto_resumes_in_auto_mode(tmp_path: Path) -> None:
     agent = interrupt_agent()
     host = _host(agent, tmp_path)
 
-    result = await host.drive_turn(
-        lambda: host.runner.run_prompt("do it"), approval_mode="auto"
-    )
+    result = await host.drive_turn(lambda: host.runner.run_prompt("do it"), approval_mode="auto")
 
     assert result.interrupts == []
     assert len(agent.resume_inputs) == 1  # the loop approved and resumed once
@@ -40,9 +38,7 @@ async def test_drive_turn_stops_for_a_human_in_ask_mode(tmp_path: Path) -> None:
     agent = interrupt_agent()
     host = _host(agent, tmp_path)
 
-    result = await host.drive_turn(
-        lambda: host.runner.run_prompt("do it"), approval_mode="ask"
-    )
+    result = await host.drive_turn(lambda: host.runner.run_prompt("do it"), approval_mode="ask")
 
     assert [i.interrupt_id for i in result.interrupts] == ["interrupt-1"]
     assert agent.resume_inputs == []

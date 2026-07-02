@@ -273,5 +273,3 @@ def ui_command(action: str, payload: dict[str, Any] | None = None) -> dict[str, 
     """
 
     return {"type": "ui", "action": action, "payload": payload or {}}
-
-

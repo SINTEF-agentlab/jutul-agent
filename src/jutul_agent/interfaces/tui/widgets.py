@@ -23,7 +23,12 @@ from jutul_agent.interfaces.tui.tool_display import (
 )
 from jutul_agent.juliakernel.text import render_terminal_output
 from jutul_agent.paths import is_dated_session_id
-from jutul_agent.preview import shorten, shorten_single_line
+from jutul_agent.preview import (
+    TOOL_STREAM_RENDER_INTERVAL,
+    TOOL_STREAM_TAIL_CAP,
+    shorten,
+    shorten_single_line,
+)
 from jutul_agent.tool_labels import tool_label
 
 if TYPE_CHECKING:
@@ -35,11 +40,9 @@ _TODO_PREVIEW_TEXT = 72
 _TODO_FULL_TEXT = 140
 # Cap on the live-streamed buffer re-rendered per delta, so a long solve's output
 # can't make each refresh cost grow without bound.
-_STREAM_RENDER_CAP = 256 * 1024
 # Streamed tool output is re-rendered at most this often. Rendering runs the
 # whole buffer through the terminal emulator and re-parses the markdown body,
 # so doing it per delta makes a chatty tool freeze the UI.
-_STREAM_REFRESH_SECONDS = 0.1
 
 
 def _link_friendly_parser() -> MarkdownIt:
@@ -650,7 +653,7 @@ class ToolBlock(Vertical):
             return
         # Keep only the tail so each re-render stays bounded. Rendering tolerates a
         # truncated escape at the cut; it sits far up in scrollback anyway.
-        self._streamed = (self._streamed + delta)[-_STREAM_RENDER_CAP:]
+        self._streamed = (self._streamed + delta)[-TOOL_STREAM_TAIL_CAP:]
         self._status = "running"
         await self._ensure_body()
         if not self.is_running:
@@ -659,7 +662,7 @@ class ToolBlock(Vertical):
             return
         if self._stream_refresh_timer is None:
             self._stream_refresh_timer = self.set_timer(
-                _STREAM_REFRESH_SECONDS, self._flush_streamed
+                TOOL_STREAM_RENDER_INTERVAL, self._flush_streamed
             )
 
     async def _render_streamed(self) -> None:

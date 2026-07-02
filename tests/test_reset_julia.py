@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fakes import FakeJulia, make_fake_adapter
 from jutul_agent.agent.tools import make_reset_julia_tool, make_run_julia_tool
 from jutul_agent.julia.session import EvalResult
+from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
 from jutul_agent.session import Session
 
 

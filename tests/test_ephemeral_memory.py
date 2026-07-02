@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fakes import FakeJulia, make_fake_adapter
 from jutul_agent.agent.memory import MEMORY_INDEX_FILENAME, ensure_memory_dir
+from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
 from jutul_agent.paths import workspace_memory_dir
 from jutul_agent.session import Session
 

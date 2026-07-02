@@ -6,15 +6,15 @@ from pathlib import Path
 
 from langgraph.checkpoint.memory import MemorySaver
 
-from fakes import (
+from jutul_agent.agent.builder import build_agent
+from jutul_agent.agent.turns import TurnRunner, TurnTextDelta
+from jutul_agent.lab.fakes import (
     FakeJulia,
     make_fake_adapter,
     make_scripted_model,
     scripted_final,
     scripted_tool_call,
 )
-from jutul_agent.agent.builder import build_agent
-from jutul_agent.agent.turns import TurnRunner, TurnTextDelta
 from jutul_agent.session import Session
 from jutul_agent.trace import TraceLog
 
@@ -89,9 +89,7 @@ async def test_tool_output_is_not_streamed_as_assistant_prose(tmp_path: Path) ->
         result = await runner.run_prompt(
             "Run the probe.",
             on_message=lambda msg: (
-                streamed.append(msg.text)
-                if isinstance(msg, TurnTextDelta) and msg.text
-                else None
+                streamed.append(msg.text) if isinstance(msg, TurnTextDelta) and msg.text else None
             ),
         )
     finally:
@@ -137,9 +135,7 @@ async def test_read_file_output_not_streamed_as_assistant_prose(tmp_path: Path) 
         await runner.run_prompt(
             "Read notes.md",
             on_message=lambda msg: (
-                streamed.append(msg.text)
-                if isinstance(msg, TurnTextDelta) and msg.text
-                else None
+                streamed.append(msg.text) if isinstance(msg, TurnTextDelta) and msg.text else None
             ),
         )
     finally:

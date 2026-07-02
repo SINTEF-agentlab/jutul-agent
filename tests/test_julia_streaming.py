@@ -13,9 +13,9 @@ from pathlib import Path
 
 from langgraph.pregel._tools import _tool_call_writer
 
-from fakes import FakeJulia, make_fake_adapter
 from jutul_agent.agent.tools import make_run_julia_tool
 from jutul_agent.julia.session import EvalResult
+from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
 from jutul_agent.session import Session
 
 

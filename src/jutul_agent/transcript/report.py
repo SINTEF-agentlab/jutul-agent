@@ -15,11 +15,9 @@ Page structure (rendered when the agent calls ``write_report``):
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import html
 import json
-import mimetypes
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -27,6 +25,7 @@ from typing import Any
 
 from jutul_agent.trace import Event, schema
 from jutul_agent.transcript.attempts import Attempt, build_attempt_tree
+from jutul_agent.transcript.embed import image_data_uri
 from jutul_agent.transcript.markdown_html import render_markdown_html
 
 # The report is opened from disk in the user's browser and embeds agent-authored
@@ -601,12 +600,10 @@ def _embed_narrative_images(html_body: str, artifact_dirs: Sequence[Path]) -> st
         src = match.group(1)
         if src.startswith("data:"):
             return match.group(0)
-        resolved = _resolve_plot(src, artifact_dirs)
-        if resolved is None:
+        inlined = image_data_uri(src, artifact_dirs)
+        if inlined is None:
             return match.group(0)
-        mime = mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
-        data = base64.standard_b64encode(resolved.read_bytes()).decode("ascii")
-        return f'src="data:{mime};base64,{data}"'
+        return f'src="{inlined}"'
 
     return re.sub(r'src="([^"]+)"', _inline, html_body)
 
@@ -1040,27 +1037,13 @@ def _is_param_noop(value) -> bool:
 
 
 def _embed_plot(path: str, artifact_dirs: Sequence[Path]) -> str:
-    resolved = _resolve_plot(path, artifact_dirs)
-    if resolved is None:
+    # Contained resolution (transcript.embed): a path that escapes the run's
+    # dirs must not pull bytes into a shareable report, exactly like the
+    # transcript. The report and the transcript used to disagree here.
+    inlined = image_data_uri(path, artifact_dirs)
+    if inlined is None:
         return f"<p><em>Plot not found: <code>{html.escape(path)}</code></em></p>"
-    mime = mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
-    data = base64.standard_b64encode(resolved.read_bytes()).decode("ascii")
-    return f'<img src="data:{mime};base64,{data}" alt="Attempt plot">'
-
-
-def _resolve_plot(path: str, artifact_dirs: Sequence[Path]) -> Path | None:
-    raw = Path(path)
-    if raw.is_absolute() and raw.is_file():
-        return raw
-    for root in artifact_dirs:
-        candidate = root / path
-        if candidate.is_file():
-            return candidate
-        if path.startswith("artifacts/"):
-            tail = root / raw.name
-            if tail.is_file():
-                return tail
-    return None
+    return f'<img src="{inlined}" alt="Attempt plot">'
 
 
 _TRANSCRIPT_FILENAME = "transcript.html"

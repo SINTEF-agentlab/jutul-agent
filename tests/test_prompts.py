@@ -62,8 +62,8 @@ def test_prompt_states_working_directory_when_given(tmp_path: Path) -> None:
 
 
 def test_session_prompt_resume_note(tmp_path) -> None:
-    from fakes import make_fake_adapter
     from jutul_agent.agent.prompts import assemble_session_prompt
+    from jutul_agent.lab.fakes import make_fake_adapter
 
     adapter = make_fake_adapter(tmp_path)
     fresh = assemble_session_prompt(adapter)
