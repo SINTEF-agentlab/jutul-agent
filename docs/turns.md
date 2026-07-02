@@ -7,10 +7,15 @@ feed back) until the model answers without requesting tools, or a gated
 tool needs approval.
 
 Everything that runs the agent funnels through one class,
-`TurnRunner` (`agent/turns.py`): the TUI, the headless CLI, the live
-smoke test, and the bench solver. That is deliberate: there is exactly
-one place where a turn's streaming, interrupts, and trace bookkeeping are
-defined, so every interface and the bench exercise the same behavior.
+`TurnRunner` (`agent/turns.py`): the TUI, the headless CLI, the web
+server, the live smoke test, and the bench solver. That is deliberate:
+there is exactly one place where a turn's streaming, interrupts, and
+trace bookkeeping are defined, so every interface and the bench exercise
+the same behavior. One level up, `SessionHost.drive_turn` wraps the
+runner with the shared policy loop: it auto-resumes past interrupts the
+approval mode or the session allowlist already permits, and runs the
+end-of-turn duties (report transcript refresh) when the turn settles, so
+those cannot drift between front ends either.
 
 ## Anatomy of a turn
 
@@ -43,8 +48,8 @@ A turn that hits a gated tool returns with `interrupts` set. The caller
 shows the request and resumes with the decision:
 
 ```python
-result = await runner.run_prompt(prompt)
-if result.interrupts:
+result = await host.drive_turn(lambda: runner.run_prompt(prompt), approval_mode=mode)
+if result.interrupts:  # only interrupts the policy could not answer itself
     decision = ask_the_user(result.interrupts)
     result = await runner.resume(decision)
 ```

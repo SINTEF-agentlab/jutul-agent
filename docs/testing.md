@@ -34,12 +34,15 @@ test suite.
 
 ## Fakes, not mocks
 
-`tests/fakes.py` provides hand-written fakes (a fake simulator adapter, a
-fake Julia session that returns scripted results) instead of patch-based
-mocks. Tests build real objects (`Session`, backends, tools) around a fake
-edge, so they exercise real wiring and survive refactors that would break
-patch paths. The eval scorer tests follow the same idea: they write a real
-`trace.sqlite` with synthetic events and run the actual scorer against it.
+`jutul_agent.lab.fakes` provides hand-written fakes (a fake simulator
+adapter, a fake Julia session that returns scripted results, scripted
+agents) instead of patch-based mocks. Tests build real objects (`Session`,
+backends, tools) around a fake edge, so they exercise real wiring and
+survive refactors that would break patch paths. They live in the package
+rather than under `tests/` because the same fakes drive the shipped lab
+harness and the example apps. The eval scorer tests follow the same idea:
+they write a real `trace.sqlite` with synthetic events and run the actual
+scorer against it.
 
 ## Snapshots
 

@@ -28,16 +28,22 @@ a past session, `eval` runs bench suites. The CLI entry points live in
 server plus its bundled web app in `interfaces/server/` (its protocol has its
 own page: [the server interface](server-interface.md)).
 
-Every interface funnels into the same place: build a `Session`, build the
-agent, hand prompts to `TurnRunner` (`agent/turns.py`). The TurnRunner
-consumes the agent's event stream, surfaces streaming output and approval
-interrupts, and writes the trace events that make a session reconstructable.
-The turn lifecycle has its own page: [turns](turns.md).
+Every interface funnels into the same place: `SessionHost.start`
+(`session_host.py`) stands up the session (env preparation, kernel, trace,
+checkpointer, capability discovery, agent build) for a named surface, and
+`host.drive_turn` runs each turn through `TurnRunner` (`agent/turns.py`) plus
+the shared approval-policy loop and end-of-turn duties. The TurnRunner consumes
+the agent's event stream, surfaces streaming output and approval interrupts,
+and writes the trace events that make a session reconstructable. The turn
+lifecycle has its own page: [turns](turns.md).
 
 ## Session and agent core
 
 A `Session` (`session.py`) is the unit of one invocation: a session id, a
-state directory, the trace log, and a handle to the Julia kernel.
+state directory, the trace log, and a handle to the Julia kernel. A
+`SessionHost` wraps it with everything needed to take a turn (the agent, the
+turn runner, rebuild-in-place for `/model` and `/approval-mode`, compaction,
+titling), so front ends stay presentation-only.
 
 `build_agent` (`agent/builder.py`) assembles a
 [deepagents](https://github.com/langchain-ai/deepagents) agent around the
@@ -105,12 +111,13 @@ or built from a host application's declarative HTTP tool specs
 (`http_tool_capability`, which lets an app in any language expose its routines as
 tools over HTTP).
 
-Simulators are discovered separately by the registry (`simulators/registry.py`).
-`_discover` collects adapters from two sources: **bundled** subpackages under
+Simulators are discovered separately by the registry (`simulators/registry.py`),
+which collects adapters from two sources: **bundled** subpackages under
 `jutul_agent.simulators` (found with `pkgutil`) and **installed** packages that
 publish a `SimulatorAdapter` under the `jutul_agent.simulators` entry-point group;
-an installed adapter overrides a bundled one of the same name. A broken adapter or
-capability is logged and skipped, never fatal.
+an installed adapter overrides a bundled one of the same name. A broken or
+invalid adapter (bad import, empty name, missing env template) warns and is
+skipped, never fatal, and the same holds for a broken capability.
 
 These are the extension points, and they are deliberately additive: new behavior
 is a `Capability` in the list `build_agent` composes (or one discovered alongside

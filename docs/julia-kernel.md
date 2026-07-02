@@ -55,7 +55,7 @@ stuck simulation cancels while the session and its loaded state survive. The ker
 is spawned in its own process group so the interrupt targets only Julia, never the
 agent:
 
-- **POSIX:** `SIGINT` to the kernel's session (spawned with `start_new_session`).
+- **POSIX:** `SIGINT` to the kernel's process group (spawned with `start_new_session`, so the group is the kernel and any Distributed workers it added; an ensemble's workers see the cancel too).
 - **Windows:** `CTRL_BREAK_EVENT` to the kernel's process group (spawned with
   `CREATE_NEW_PROCESS_GROUP`). There is no per-process `SIGINT` on Windows, but
   Julia's console handler turns Ctrl+Break into the *same* `InterruptException`
@@ -96,7 +96,10 @@ state was preserved.
   (the process working directory) rather than from the server script's own
   directory, which is where Julia would otherwise look.
 - Result payloads are capped (64 KiB) so a pathological error message
-  cannot balloon a frame. Streamed output has no cap.
+  cannot balloon a frame. Streamed output flows uncapped to live sinks, but
+  the buffered copy that becomes the result keeps a bounded head and tail
+  (512 KiB per stream) with an omission note, so a runaway print loop cannot
+  grow harness memory while the user decides to cancel.
 - If the process dies, every waiter fails fast with the reason the
   connection saw, and the startup log (`julia-startup.log` in the session
   directory) keeps Julia's own boot errors.
