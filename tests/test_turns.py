@@ -14,7 +14,13 @@ from fakes import (
     v3_tool_event,
     v3_values_event,
 )
-from jutul_agent.agent.turns import TurnReasoningDelta, TurnRunner, TurnToolEvent
+from jutul_agent.agent.turns import (
+    TurnReasoningDelta,
+    TurnRunner,
+    TurnTextDelta,
+    TurnTextEnd,
+    TurnToolEvent,
+)
 from jutul_agent.trace import TraceLog
 
 
@@ -92,8 +98,8 @@ def _v3_reasoning_and_tool_agent() -> ScriptedV3Agent:
     )
 
 
-async def test_turn_runner_emits_text_as_chunks() -> None:
-    """Typed projection streams deliver text as AIMessageChunk deltas only;
+async def test_turn_runner_emits_text_as_deltas() -> None:
+    """The runner surfaces text as TurnTextDelta events closed by a TurnTextEnd;
     full assembled messages live in ``result.messages``."""
 
     runner = TurnRunner(_message_agent(), thread_id="thread-1")
@@ -101,9 +107,9 @@ async def test_turn_runner_emits_text_as_chunks() -> None:
 
     result = await runner.run_prompt("hi", on_message=lambda msg: seen.append(msg))
 
-    chunks = [m for m in seen if isinstance(m, AIMessageChunk)]
-    assert "".join(str(c.content) for c in chunks) == "hello"
-    assert chunks[-1].chunk_position == "last"
+    deltas = [m for m in seen if isinstance(m, TurnTextDelta)]
+    assert "".join(d.text for d in deltas) == "hello"
+    assert isinstance(seen[-1], TurnTextEnd) or any(isinstance(m, TurnTextEnd) for m in seen)
     assert result.messages[-1].content == "hello"
     assert result.interrupts == []
 
@@ -114,8 +120,8 @@ async def test_turn_runner_streams_message_chunks() -> None:
 
     result = await runner.run_prompt("hi", on_message=lambda msg: seen.append(msg))
 
-    chunks = [m for m in seen if isinstance(m, AIMessageChunk)]
-    assert "".join(str(c.content) for c in chunks) == "hello"
+    deltas = [m for m in seen if isinstance(m, TurnTextDelta)]
+    assert "".join(d.text for d in deltas) == "hello"
     assert result.messages[-1].content == "hello"
     assert result.interrupts == []
 
@@ -129,8 +135,8 @@ async def test_turn_runner_streams_v3_reasoning_and_tool_events() -> None:
     reasoning = [m for m in seen if isinstance(m, TurnReasoningDelta)]
     assert any(r.text == "checking context" for r in reasoning)
 
-    text_chunks = [m for m in seen if isinstance(m, AIMessageChunk) and m.content]
-    assert "".join(str(c.content) for c in text_chunks) == "hello"
+    text_deltas = [m for m in seen if isinstance(m, TurnTextDelta) and m.text]
+    assert "".join(d.text for d in text_deltas) == "hello"
 
     tool_events = [m for m in seen if isinstance(m, TurnToolEvent)]
     events_by_kind = {e.event for e in tool_events}
@@ -163,9 +169,7 @@ async def test_tool_result_does_not_leak_into_assistant_text() -> None:
 
     await runner.run_prompt("read the skill", on_message=lambda msg: seen.append(msg))
 
-    streamed_text = "".join(
-        str(m.content) for m in seen if isinstance(m, AIMessageChunk) and m.content
-    )
+    streamed_text = "".join(m.text for m in seen if isinstance(m, TurnTextDelta) and m.text)
     assert streamed_text == "Read the overview skill; ready to proceed."
     assert tool_output not in streamed_text
     assert "SKILL TEXT" not in streamed_text

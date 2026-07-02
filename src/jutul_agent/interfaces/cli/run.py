@@ -535,19 +535,8 @@ async def _maybe_review(session: Any) -> None:
 
 
 def _print_final_message(messages: list[Any]) -> None:
-    if not messages:
-        return
-    last = messages[-1]
-    content = getattr(last, "content", None)
-    if isinstance(content, list):
-        parts: list[str] = []
-        for part in content:
-            if isinstance(part, dict) and "text" in part:
-                parts.append(part["text"])
-            else:
-                parts.append(str(part))
-        print("\n".join(parts))
-    elif content is not None:
-        print(content)
-    else:
-        print(last)
+    from jutul_agent.agent.turns import final_assistant_text
+
+    text = final_assistant_text(messages)
+    if text:
+        print(text)

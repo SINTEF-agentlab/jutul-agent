@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from textual.widgets import Footer
 
 from _tui import submit_prompt, wait_until_ready
@@ -17,7 +17,7 @@ from fakes import (
     v3_tool_event,
     v3_values_event,
 )
-from jutul_agent.agent.turns import TurnToolEvent
+from jutul_agent.agent.turns import TurnTextDelta, TurnToolEvent
 from jutul_agent.interfaces.tui import TUIApp
 from jutul_agent.interfaces.tui.approval_menu import ApprovalMenu
 from jutul_agent.interfaces.tui.prompt import PromptTextArea
@@ -1100,7 +1100,7 @@ async def test_log_stays_put_while_reading_scrollback(session: Session) -> None:
         # Stream through the production delta path: prose chunks and a
         # streaming tool call, the events that used to force-scroll the log.
         for index in range(8):
-            await app._render_message(AIMessageChunk(content=f"streamed {index}\n\n"))
+            await app._render_message(TurnTextDelta(text=f"streamed {index}\n\n"))
         await app._render_message(
             TurnToolEvent(event="started", tool_name="run_julia", tool_call_id="call_anchor_1")
         )
