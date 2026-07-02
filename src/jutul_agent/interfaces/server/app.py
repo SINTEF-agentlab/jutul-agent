@@ -41,7 +41,7 @@ from jutul_agent.agent.approval import (
 from jutul_agent.agent.capabilities import HttpToolSpec, http_tool_capability
 from jutul_agent.interfaces.server import protocol
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
-from jutul_agent.interfaces.server.session_host import SessionHost
+from jutul_agent.session_host import SessionHost
 from jutul_agent.trace.schema import UI_EVENT, UPLOAD
 
 # The web UI ships pre-built next to this module: ``web_dist`` is the Vite build of

@@ -27,8 +27,8 @@ from fakes import (
 from jutul_agent.agent.capabilities import Capability
 from jutul_agent.interfaces.server.app import artifact_wire_events, create_app
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
-from jutul_agent.interfaces.server.session_host import SessionHost
 from jutul_agent.session import Session, default_session_id
+from jutul_agent.session_host import SessionHost
 
 
 def _manager(

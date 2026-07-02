@@ -25,7 +25,6 @@ import re
 import tempfile
 import uuid
 from collections.abc import Mapping
-from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -117,28 +116,6 @@ def _final_text(messages: list[Any]) -> str:
     return ""
 
 
-async def _eval_package_sources(julia_project: Path | None) -> list[Any] | None:
-    """The installed package sources, resolved as a real session does.
-
-    A real CLI session enumerates the env's package sources and passes them to
-    ``build_agent`` (see ``run.py``) so the read-only guard protects the depot
-    while the agent reads source at its real ``pkgdir`` path. The eval must do
-    the same, so its filesystem matches a live session. Resolved from the env's
-    manifest (no compile); ``None`` for env-less samples, which have no packages
-    to browse.
-    """
-    if julia_project is None:
-        return None
-    from jutul_agent.agent.builder import PackageSource
-    from jutul_agent.simulators.env_setup import resolve_env_package_sources
-
-    env = await asyncio.to_thread(resolve_env_package_sources, julia_project)
-    return [
-        PackageSource(name=name, path=path, writable=is_dev)
-        for name, (path, is_dev) in sorted(env.items())
-    ]
-
-
 # Simulators whose golden env has been built or re-resolved by this process;
 # the alignment check runs once per run, not once per sample.
 _ALIGNED_ENVS: set[str] = set()
@@ -198,12 +175,7 @@ async def _run_jutul_session(
     store: Any,
     ground_truth: str | None = None,
 ) -> str:
-    from jutul_agent.agent.builder import build_agent
-    from jutul_agent.agent.turns import TurnRunner
-    from jutul_agent.display import managed_display, should_wrap_xvfb
-    from jutul_agent.juliakernel import JuliaKernel, KernelConfig
     from jutul_agent.paths import set_workspace_root
-    from jutul_agent.session import Session
     from jutul_agent.simulators import registry
     from jutul_agent.trace.schema import EVAL_TARGET
 
@@ -238,46 +210,45 @@ async def _run_jutul_session(
     from jutul_agent.eval.runconfig import build_runconfig
 
     store.set(STORE_RUNCONFIG, build_runconfig(adapter, julia_project=julia_project))
-    package_sources = await _eval_package_sources(julia_project)
 
-    with ExitStack() as stack:
-        env = None
-        if needs_display and should_wrap_xvfb():
-            env = {"DISPLAY": stack.enter_context(managed_display())}
-        # Persist the session trace to a discoverable eval workspace under the state
-        # home (not the temp scratch, which is cleaned up) so eval runs — where the
-        # answer is known and silent failures matter most — can be reviewed afterwards
-        # with `jutul-agent review`. Only the trace persists; the workspace and
-        # artifacts stay in scratch.
-        from jutul_agent.review.discovery import eval_sessions_state_root
+    # Persist the session trace to a discoverable eval workspace under the state
+    # home (not the temp scratch, which is cleaned up) so eval runs — where the
+    # answer is known and silent failures matter most — can be reviewed afterwards
+    # with `jutul-agent review`. Only the trace persists; the workspace and
+    # artifacts stay in scratch.
+    from jutul_agent.review.discovery import eval_sessions_state_root
+    from jutul_agent.session_host import SessionHost
 
-        config = KernelConfig(julia_project=julia_project, cwd=workspace, env=env)
-        async with JuliaKernel(config) as julia:
-            session = Session.create(
-                julia=julia,
-                simulator=adapter,
-                state_root=eval_sessions_state_root(simulator),
-                ephemeral_memory=True,
-            )
-            store.set(STORE_WORKSPACE, str(workspace))
-            store.set(STORE_TRACE_DB, str(session.state_dir / "trace.sqlite"))
-            store.set(STORE_SESSION_ID, session.session_id)
-            store.set(STORE_OUTPUT_DIR, str(session.output_dir))
-            # Record the known answer so a later review can judge the result against
-            # ground truth, the sharpest signal an eval run offers.
-            if ground_truth:
-                session.trace.append(EVAL_TARGET, {"expected": ground_truth})
-            try:
-                agent, _backend = build_agent(
-                    session,
-                    model=_bridge_model(),
-                    approval_mode="auto",
-                    package_sources=package_sources,
-                )
-                runner = TurnRunner(agent, thread_id=session.session_id, trace=session.trace)
-                result = await runner.run_prompt(prompt)
-            finally:
-                session.finalize()
+    # The shared bootstrap, parameterized for a hermetic run: the env was
+    # prepared above (golden copy), no ambient entry-point capabilities, no
+    # background warm-up competing with the sample's own Julia work, and a
+    # virtual display only when the task declares it needs one.
+    host = await SessionHost.start(
+        simulator=adapter,
+        surface="tui",
+        model=_bridge_model(),
+        approval_mode="auto",
+        workspace=workspace,
+        state_root=eval_sessions_state_root(simulator),
+        julia_project=julia_project,
+        ephemeral_memory=True,
+        prepare_env=False,
+        discover=False,
+        warmup=False,
+        virtual_display=needs_display,
+    )
+    try:
+        store.set(STORE_WORKSPACE, str(workspace))
+        store.set(STORE_TRACE_DB, str(host.session.state_dir / "trace.sqlite"))
+        store.set(STORE_SESSION_ID, host.session.session_id)
+        store.set(STORE_OUTPUT_DIR, str(host.session.output_dir))
+        # Record the known answer so a later review can judge the result against
+        # ground truth, the sharpest signal an eval run offers.
+        if ground_truth:
+            host.session.trace.append(EVAL_TARGET, {"expected": ground_truth})
+        result = await host.runner.run_prompt(prompt)
+    finally:
+        await host.aclose()
 
     if result.interrupts:
         return "[eval-error] the turn paused for tool approval in auto mode"

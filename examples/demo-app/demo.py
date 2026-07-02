@@ -108,7 +108,7 @@ def create_demo_app():
     """Build the demo server: the standard app and bundled UI, running DemoSim."""
     from jutul_agent.interfaces.server.app import create_app
     from jutul_agent.interfaces.server.manager import SessionManager
-    from jutul_agent.interfaces.server.session_host import SessionHost
+    from jutul_agent.session_host import SessionHost
 
     WORKSPACE.mkdir(exist_ok=True)
 

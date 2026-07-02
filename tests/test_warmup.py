@@ -7,14 +7,13 @@ import asyncio
 import pytest
 
 from fakes import FakeJulia
-from jutul_agent.interfaces.cli.run import _start_warmup
 from jutul_agent.julia.session import EvalResult
-from jutul_agent.simulators.warmup import GL_CONTEXT_WARMUP
+from jutul_agent.simulators.warmup import GL_CONTEXT_WARMUP, start_warmup
 
 
 async def test_start_warmup_loads_both_runtime_packages() -> None:
     julia = FakeJulia()
-    task = _start_warmup(julia, "JutulAgentBattMo")
+    task = start_warmup(julia, "JutulAgentBattMo")
     assert task is not None
     await task
     # First eval loads the shared runtime + the per-sim warm package; then the GL
@@ -26,7 +25,7 @@ async def test_start_warmup_loads_both_runtime_packages() -> None:
 
 async def test_start_warmup_without_warm_package_still_loads_shared() -> None:
     julia = FakeJulia()
-    task = _start_warmup(julia, "")
+    task = start_warmup(julia, "")
     assert task is not None
     await task
     # A placeholder sim with no warm package still loads the shared runtime and
@@ -41,7 +40,7 @@ async def test_start_warmup_swallows_errors_so_startup_does_not_break() -> None:
         raise RuntimeError("simulated env-load failure")
 
     julia = FakeJulia(eval_handler=boom)
-    task = _start_warmup(julia, "JutulAgentBattMo")
+    task = start_warmup(julia, "JutulAgentBattMo")
     assert task is not None
     # The task should finish without re-raising — startup must not block on
     # a broken simulator env.
@@ -57,7 +56,7 @@ async def test_start_warmup_can_be_cancelled_during_shutdown() -> None:
         return EvalResult(output="never")
 
     julia = FakeJulia(eval_handler=slow)
-    task = _start_warmup(julia, "JutulAgentJutulDarcy")
+    task = start_warmup(julia, "JutulAgentJutulDarcy")
     assert task is not None
     await started.wait()
     task.cancel()
