@@ -56,13 +56,13 @@ from jutul_agent.agent.turns import (
     TurnToolEvent,
     usage_from_messages,
 )
+from jutul_agent.approval_preview import render_interrupt_cards
 from jutul_agent.context_panel import (
     context_component_estimates,
     render_context_panel,
     status_label,
     usage_alert,
 )
-from jutul_agent.interfaces.tui.approval import render_interrupt_cards
 from jutul_agent.interfaces.tui.approval_menu import ApprovalMenu, build_approval_options
 from jutul_agent.interfaces.tui.commands import (
     ALL_COMMANDS,

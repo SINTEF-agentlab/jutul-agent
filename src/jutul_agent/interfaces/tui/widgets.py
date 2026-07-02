@@ -14,8 +14,7 @@ from textual.containers import Vertical
 from textual.widgets import Markdown, Static
 
 from jutul_agent.agent.tool_output import is_interrupt_payload, normalize_tool_output
-from jutul_agent.interfaces.tui._rendering import shorten, shorten_single_line
-from jutul_agent.interfaces.tui.approval import ApprovalCard
+from jutul_agent.approval_preview import ApprovalCard
 from jutul_agent.interfaces.tui.tool_display import (
     display_path,
     display_tool_body,
@@ -24,6 +23,7 @@ from jutul_agent.interfaces.tui.tool_display import (
 )
 from jutul_agent.juliakernel.text import render_terminal_output
 from jutul_agent.paths import is_dated_session_id
+from jutul_agent.preview import shorten, shorten_single_line
 from jutul_agent.tool_labels import tool_label
 
 if TYPE_CHECKING:

@@ -41,6 +41,7 @@ from jutul_agent.agent.capabilities import HttpToolSpec, http_tool_capability
 from jutul_agent.interfaces.server import protocol
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
 from jutul_agent.session_host import SessionHost
+from jutul_agent.trace import schema
 from jutul_agent.trace.schema import UI_EVENT, UPLOAD
 
 # The web UI ships pre-built next to this module: ``web_dist`` is the Vite build of
@@ -177,6 +178,9 @@ def create_app(
             "default": default_model or DEFAULT_MODEL,
             "providers": sorted(PROVIDERS),
             "models": models,
+            # The wire-contract version for third-party front ends (see
+            # docs/server-interface.md); the bundled UI ships in lockstep.
+            "protocol": protocol.PROTOCOL_VERSION,
         }
 
     @app.get("/models/window")
@@ -784,55 +788,45 @@ def replay_events(events: list[Any], session_id: str) -> list[dict[str, Any]]:
     testable place. Artifacts replay with ``live=False`` because the Julia process
     restarted, so a recorded live URL is dead and the figure falls back to its poster.
     """
-    from jutul_agent.tool_labels import tool_label
 
     items: list[dict[str, Any]] = []
     # Tool calls whose result was recorded. Some never record one (e.g. a
     # write_todos that ends a turn); without a terminal event their replayed
     # card would spin forever, so we synthesize a finished event for them.
-    result_ids = {e.payload.get("tool_call_id") for e in events if e.kind == "tool_result"}
+    result_ids = {e.payload.get("tool_call_id") for e in events if e.kind == schema.TOOL_RESULT}
+    replayed_kinds = {
+        schema.MESSAGE_USER: "user",
+        schema.MESSAGE_ASSISTANT: "assistant",
+        schema.MESSAGE_REASONING: "reasoning",
+    }
     for ev in events:
-        if ev.kind == "message_user":
+        if ev.kind in replayed_kinds:
             text = str(ev.payload.get("content", "")).strip()
             if text:
-                items.append({"type": "user", "text": text})
-        elif ev.kind == "message_assistant":
-            text = str(ev.payload.get("content", "")).strip()
-            if text:
-                items.append({"type": "assistant", "text": text})
-        elif ev.kind == "message_reasoning":
-            text = str(ev.payload.get("content", "")).strip()
-            if text:
-                items.append({"type": "reasoning", "text": text})
-        elif ev.kind == "tool_call":
+                items.append(protocol.replay_message(replayed_kinds[ev.kind], text))
+        elif ev.kind == schema.TOOL_CALL:
             name = ev.payload.get("name")
             cid = ev.payload.get("id")
             items.append(
-                {
-                    "type": "tool",
-                    "event": "requested",
-                    "name": name,
-                    "label": tool_label(name) if name else name,
-                    "tool_call_id": cid,
-                    "args": ev.payload.get("args"),
-                }
+                protocol.replay_tool_event(
+                    event="requested", name=name, tool_call_id=cid, args=ev.payload.get("args")
+                )
             )
             if cid not in result_ids:
                 items.append(
-                    {"type": "tool", "event": "finished", "name": name, "tool_call_id": cid}
+                    protocol.replay_tool_event(event="finished", name=name, tool_call_id=cid)
                 )
-        elif ev.kind == "tool_result":
+        elif ev.kind == schema.TOOL_RESULT:
             finished = "error" if ev.payload.get("status") == "error" else "finished"
             items.append(
-                {
-                    "type": "tool",
-                    "event": finished,
-                    "name": ev.payload.get("name"),
-                    "tool_call_id": ev.payload.get("tool_call_id"),
-                    "content": ev.payload.get("content"),
-                }
+                protocol.replay_tool_event(
+                    event=finished,
+                    name=ev.payload.get("name"),
+                    tool_call_id=ev.payload.get("tool_call_id"),
+                    content=ev.payload.get("content"),
+                )
             )
-        elif ev.kind == "artifact":
+        elif ev.kind == schema.ARTIFACT:
             items.extend(artifact_wire_events([ev.payload], session_id, live=False))
     return items
 
@@ -848,9 +842,9 @@ def _session_overview(state_dir: Path) -> tuple[str | None, str | None, str | No
     from jutul_agent.trace import TraceLog
 
     try:
-        with TraceLog(state_dir / "trace.sqlite") as log:
-            start = log.first_payload("session_start") or {}
-            user = log.first_payload("message_user") or {}
+        with TraceLog.open_readonly(state_dir / "trace.sqlite") as log:
+            start = log.first_payload(schema.SESSION_START) or {}
+            user = log.first_payload(schema.MESSAGE_USER) or {}
             sim = start.get("simulator")
             content = user.get("content")
             first_prompt = content if isinstance(content, str) else None
@@ -935,7 +929,7 @@ async def _serve_stream(websocket: WebSocket, manager: SessionManager, session_i
             if existing is not None and existing.attached
             else "no such session"
         )
-        await _safe_send(websocket, {"type": "error", "message": message})
+        await _safe_send(websocket, protocol.error_to_wire(message))
         await websocket.close()
         return
 
@@ -949,7 +943,7 @@ async def _serve_stream(websocket: WebSocket, manager: SessionManager, session_i
                 message = await websocket.receive_json()
             except ValueError:  # a non-JSON text frame (json.JSONDecodeError)
                 await _safe_send(
-                    websocket, {"type": "error", "message": "invalid message (expected JSON)"}
+                    websocket, protocol.error_to_wire("invalid message (expected JSON)")
                 )
                 continue
             await state.handle(message)
@@ -1002,7 +996,7 @@ class _StreamState:
         elif kind == "command":
             await self._handle_command(message)
         else:
-            await _safe_send(self._ws, {"type": "error", "message": f"unknown message {kind!r}"})
+            await _safe_send(self._ws, protocol.error_to_wire(f"unknown message {kind!r}"))
 
     async def _handle_command(self, message: dict[str, Any]) -> None:
         """Apply a session setting (model, approval policy) mid-conversation.
@@ -1013,7 +1007,7 @@ class _StreamState:
         if self._busy():
             await _safe_send(
                 self._ws,
-                {"type": "error", "message": "finish the current turn before changing settings"},
+                protocol.error_to_wire("finish the current turn before changing settings"),
             )
             return
         command = message.get("command")
@@ -1025,10 +1019,9 @@ class _StreamState:
                 if self._pending or await self._host.pending_interrupts():
                     await _safe_send(
                         self._ws,
-                        {
-                            "type": "error",
-                            "message": "answer the pending approval before switching models",
-                        },
+                        protocol.error_to_wire(
+                            "answer the pending approval before switching models"
+                        ),
                     )
                     return
                 # Mirror the TUI: a model whose key is missing prompts for it
@@ -1052,7 +1045,7 @@ class _StreamState:
                 # here with a reason, not opaquely on the next turn.
                 problem = await local_model_error(arg)
                 if problem is not None:
-                    await _safe_send(self._ws, {"type": "error", "message": problem})
+                    await _safe_send(self._ws, protocol.error_to_wire(problem))
                     return
                 self._host.reconfigure(model=arg)
             elif command == "set_approval":
@@ -1066,18 +1059,16 @@ class _StreamState:
                 note, _result = await self._host.compact()
                 await _safe_send(self._ws, protocol.notice_to_wire(note))
             else:
-                await _safe_send(
-                    self._ws, {"type": "error", "message": f"unknown command {command!r}"}
-                )
+                await _safe_send(self._ws, protocol.error_to_wire(f"unknown command {command!r}"))
                 return
         except Exception as exc:  # surface a bad model/mode, keep the session alive
             await _safe_send(
-                self._ws, {"type": "error", "message": f"could not apply {command}: {exc}"}
+                self._ws, protocol.error_to_wire(f"could not apply {command}: {exc}")
             )
 
     async def _start_prompt(self, text: str) -> None:
         if self._busy():
-            await _safe_send(self._ws, {"type": "error", "message": "a turn is already running"})
+            await _safe_send(self._ws, protocol.error_to_wire("a turn is already running"))
             return
         # Name the session from its first prompt, like the CLI/TUI do, so it reads
         # well in the history list. Idempotent (only the first prompt sets it).
@@ -1088,10 +1079,10 @@ class _StreamState:
 
     async def _start_decision(self, message: dict[str, Any]) -> None:
         if self._busy():
-            await _safe_send(self._ws, {"type": "error", "message": "a turn is already running"})
+            await _safe_send(self._ws, protocol.error_to_wire("a turn is already running"))
             return
         if not self._pending:
-            await _safe_send(self._ws, {"type": "error", "message": "no approval is pending"})
+            await _safe_send(self._ws, protocol.error_to_wire("no approval is pending"))
             return
         kind = str(message.get("decision") or "approve")
         # "always_allow" is approve plus a session policy: remember this interrupt's
@@ -1177,12 +1168,12 @@ class _StreamState:
             )
         except asyncio.CancelledError:
             await self._flush_side_outputs()
-            await _safe_send(self._ws, {"type": "turn_end", "text": "", "cancelled": True})
+            await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
             raise
         except Exception as exc:  # surface the failure, then end the turn
             await self._flush_side_outputs()  # surface anything produced before it failed
-            await _safe_send(self._ws, {"type": "error", "message": str(exc)})
-            await _safe_send(self._ws, {"type": "turn_end", "text": ""})
+            await _safe_send(self._ws, protocol.error_to_wire(str(exc)))
+            await _safe_send(self._ws, protocol.turn_end_to_wire([]))
             return
         finally:
             # A cancelled/errored turn can leave a tool mid-stream; clear streaming

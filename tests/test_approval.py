@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.interfaces.tui.approval import (
+from jutul_agent.approval_preview import (
     _apply_edit_preview,
     allowed_decisions_for_interrupt,
     render_interrupt_cards,
