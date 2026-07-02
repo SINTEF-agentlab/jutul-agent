@@ -444,7 +444,8 @@ def test_critic_prompt_is_general_and_injects_only_active_simulator_hints():
 
 
 def test_eval_sessions_state_root_is_discoverable(_state_home):
-    from jutul_agent.review.discovery import discover_sessions, eval_sessions_state_root
+    from jutul_agent.paths import eval_sessions_state_root
+    from jutul_agent.review.discovery import discover_sessions
 
     root = eval_sessions_state_root("jutuldarcy")
     assert root == _state_home / "workspaces" / "eval-jutuldarcy"

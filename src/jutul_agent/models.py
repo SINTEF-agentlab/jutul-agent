@@ -82,6 +82,42 @@ def is_ollama_cloud(model_id: str) -> bool:
     return provider_of(model_id) == "ollama" and model_id.endswith(":cloud")
 
 
+def resolve_model(
+    explicit: str | None = None,
+    *,
+    workspace_model: str | None = None,
+    user_model: str | None = None,
+) -> str:
+    """Resolve the model id by precedence, highest first.
+
+    ``--model`` (``explicit``) > workspace config > user-global config >
+    ``$JUTUL_AGENT_MODEL`` (a dev/CI override) > ``DEFAULT_MODEL``. Lives here
+    (not in the agent builder) so lightweight commands like ``doctor`` and
+    ``init`` can resolve a model without importing the agent stack.
+    """
+    import os
+
+    return (
+        explicit or workspace_model or user_model or os.environ.get(MODEL_ENV_VAR) or DEFAULT_MODEL
+    )
+
+
+def model_profile(model_id: str) -> dict:
+    """The provider package's bundled profile for the model (``{}`` when unknown).
+
+    Profiles are the maintained capability source: keying decisions on them
+    means new models are covered by upgrading the provider package, never by
+    editing a list here. Reading one builds the model, which needs the provider
+    key; any failure (no key, offline, unknown model) reads as an empty profile.
+    """
+    try:
+        from langchain.chat_models import init_chat_model
+
+        return init_chat_model(model_id).profile or {}
+    except Exception:
+        return {}
+
+
 def context_window(model_id: str) -> int | None:
     """Input-context size in tokens for ``model_id``, best effort.
 
@@ -93,17 +129,9 @@ def context_window(model_id: str) -> int | None:
     bundled data. ``None`` when no source can answer — callers should degrade to
     absolute counts.
     """
-    profile: dict | None = None
-    try:
-        from langchain.chat_models import init_chat_model
-
-        profile = init_chat_model(model_id).profile
-    except Exception:
-        profile = None
-    if isinstance(profile, dict):
-        value = profile.get("max_input_tokens")
-        if isinstance(value, int) and value > 0:
-            return value
+    value = model_profile(model_id).get("max_input_tokens")
+    if isinstance(value, int) and value > 0:
+        return value
     fallback = _WINDOW_FALLBACKS.get(provider_of(model_id))
     return fallback(model_id) if fallback else None
 

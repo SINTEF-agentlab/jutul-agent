@@ -14,7 +14,6 @@ This module wires everything ``create_deep_agent`` needs in one place:
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,7 +75,7 @@ __all__ = [
 
 # Re-exported from the light models module so importing it for these constants does
 # not pull the agent stack; kept here for the existing import sites.
-from jutul_agent.models import DEFAULT_MODEL, MODEL_ENV_VAR
+from jutul_agent.models import model_profile, resolve_model
 
 
 @dataclass(frozen=True)
@@ -113,22 +112,6 @@ def resolve_package_sources(julia_project: Path) -> list[PackageSource]:
 
 
 _provider_profiles_registered = False
-
-
-def resolve_model(
-    explicit: Any | None = None,
-    *,
-    workspace_model: str | None = None,
-    user_model: str | None = None,
-) -> Any:
-    """Resolve the model id by precedence, highest first.
-
-    ``--model`` (``explicit``) > workspace config > user-global config >
-    ``$JUTUL_AGENT_MODEL`` (a dev/CI override) > ``DEFAULT_MODEL``.
-    """
-    return (
-        explicit or workspace_model or user_model or os.environ.get(MODEL_ENV_VAR) or DEFAULT_MODEL
-    )
 
 
 def register_provider_profiles() -> None:
@@ -170,19 +153,6 @@ _ANTHROPIC_THINKING_BUDGET_TOKENS = 10_000
 _ANTHROPIC_MAX_TOKENS = 24_000
 
 
-def _model_profile(model_id: str) -> dict[str, Any]:
-    """The provider package's bundled profile for the model (``{}`` unknown).
-
-    Profiles are the maintained capability source. Keying decisions on them
-    means new models are covered by upgrading the provider package, never by
-    editing a list here. Reading one builds the model, which needs the
-    provider key; callers treat a raised error as "no settings".
-    """
-    from langchain.chat_models import init_chat_model
-
-    return init_chat_model(model_id).profile or {}
-
-
 def _ollama_settings(model_id: str) -> dict[str, Any]:
     from jutul_agent import ollama_client
 
@@ -203,14 +173,14 @@ def _openai_settings(model_id: str) -> dict[str, Any] | None:
     # The profile must also mark the temperature parameter unsupported: that
     # separates true reasoning models (which accept reasoning.effort) from
     # the -chat hybrids (which reject it).
-    profile = _model_profile(model_id)
+    profile = model_profile(model_id)
     if profile.get("reasoning_output") and profile.get("temperature") is False:
         return {"reasoning": dict(_OPENAI_REASONING)}
     return None
 
 
 def _anthropic_settings(model_id: str) -> dict[str, Any] | None:
-    if _model_profile(model_id).get("reasoning_output"):
+    if model_profile(model_id).get("reasoning_output"):
         return {
             "thinking": {
                 "type": "enabled",
@@ -226,7 +196,7 @@ def _google_settings(model_id: str) -> dict[str, Any] | None:
     # only makes the thinking visible. An empty profile means the model is
     # newer than the package's data, and those all think; the data marks the
     # legacy non-thinking models explicitly.
-    profile = _model_profile(model_id)
+    profile = model_profile(model_id)
     if profile.get("reasoning_output") or not profile:
         return {"include_thoughts": True}
     return None

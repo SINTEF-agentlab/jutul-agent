@@ -174,8 +174,10 @@ def test_precompile_runs_instantiate_and_precompile(
 
     class _Result:
         returncode = 0
+        stdout = ""
+        stderr = ""
 
-    def _fake_run(argv, check=False):
+    def _fake_run(argv, **_kwargs):
         captured.append(argv[-1])
         return _Result()
 

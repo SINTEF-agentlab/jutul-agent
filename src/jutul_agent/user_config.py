@@ -42,7 +42,9 @@ def write_user_config(config: UserConfig) -> Path:
 
     lines: list[str] = []
     if config.model:
-        lines.append(f'model = "{config.model}"')
+        from jutul_agent.workspace import toml_basic_string
+
+        lines.append(f"model = {toml_basic_string(config.model)}")
 
     body = "\n".join(lines)
     path.write_text(body + "\n" if body else "", encoding="utf-8")

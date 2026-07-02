@@ -216,7 +216,7 @@ async def _run_jutul_session(
     # answer is known and silent failures matter most — can be reviewed afterwards
     # with `jutul-agent review`. Only the trace persists; the workspace and
     # artifacts stay in scratch.
-    from jutul_agent.review.discovery import eval_sessions_state_root
+    from jutul_agent.paths import eval_sessions_state_root
     from jutul_agent.session_host import SessionHost
 
     # The shared bootstrap, parameterized for a hermetic run: the env was

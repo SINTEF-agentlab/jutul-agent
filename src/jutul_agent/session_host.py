@@ -397,7 +397,7 @@ class SessionHost:
 
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-        from jutul_agent.agent.builder import build_agent, resolve_model
+        from jutul_agent.agent.builder import build_agent
         from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
         from jutul_agent.credentials import missing_credential
         from jutul_agent.julia.requirements import require_julia
@@ -408,6 +408,7 @@ class SessionHost:
             resolve_hypre_threads,
         )
         from jutul_agent.juliakernel import JuliaKernel, KernelConfig
+        from jutul_agent.models import resolve_model
         from jutul_agent.paths import workspace_root
         from jutul_agent.session import Session, default_session_id, session_dir
         from jutul_agent.simulators.env_setup import prepare_workspace_env

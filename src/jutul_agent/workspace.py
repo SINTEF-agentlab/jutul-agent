@@ -259,6 +259,16 @@ def workspace_julia_env(workspace: Path | None = None) -> Path:
     return workspace_dir(workspace) / WORKSPACE_JULIA_ENV_DIRNAME
 
 
+def user_owns_root_project(workspace: Path) -> bool:
+    """Whether the workspace carries its own root ``Project.toml``.
+
+    The one hands-off rule of the env model: a user-owned root env is used
+    as-is; jutul-agent never rewrites, re-resolves, or precompiles it. Every
+    site that honors the rule asks this predicate.
+    """
+    return (workspace / "Project.toml").exists()
+
+
 def resolve_julia_project(workspace: Path | None = None) -> Path:
     """Which Julia project should this workspace use?
 
@@ -266,7 +276,7 @@ def resolve_julia_project(workspace: Path | None = None) -> Path:
     otherwise the workspace-local ``.jutul-agent/julia-env/``.
     """
     ws = workspace or workspace_root()
-    if (ws / "Project.toml").exists():
+    if user_owns_root_project(ws):
         return ws
     return workspace_julia_env(ws)
 
@@ -329,7 +339,7 @@ def load_workspace_config(workspace: Path | None = None) -> WorkspaceConfig:
     )
 
 
-def _toml_basic_string(value: str) -> str:
+def toml_basic_string(value: str) -> str:
     """Quote ``value`` as a TOML basic string with escapes applied.
 
     Required so Windows paths like ``C:\\Users\\...`` round-trip through
@@ -354,7 +364,7 @@ def write_workspace_config(
     lines: list[str] = []
     # A top-level key must precede any table.
     if config.model:
-        lines.append(f"model = {_toml_basic_string(config.model)}")
+        lines.append(f"model = {toml_basic_string(config.model)}")
     workspace_lines: list[str] = []
     if config.simulator:
         workspace_lines.append(f'simulator = "{config.simulator}"')
@@ -372,7 +382,7 @@ def write_workspace_config(
         if lines:
             lines.append("")
         lines.append(f"[simulator.{name}]")
-        lines.append(f"source_path = {_toml_basic_string(str(sim.source_path))}")
+        lines.append(f"source_path = {toml_basic_string(str(sim.source_path))}")
 
     body = "\n".join(lines)
     path.write_text(body + "\n" if body else "", encoding="utf-8")
@@ -455,7 +465,7 @@ def sync_julia_env_with_template(
     """
 
     ws = (workspace or workspace_root()).resolve()
-    if (ws / "Project.toml").exists():
+    if user_owns_root_project(ws):
         return []
 
     env_dir = workspace_julia_env(ws)
@@ -760,7 +770,7 @@ def bootstrap_julia_env(
     """
 
     ws = (workspace or workspace_root()).resolve()
-    if (ws / "Project.toml").exists():
+    if user_owns_root_project(ws):
         return ws
 
     target = workspace_julia_env(ws)

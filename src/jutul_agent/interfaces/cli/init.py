@@ -175,9 +175,8 @@ def _maybe_prompt_for_provider_key(config: WorkspaceConfig) -> None:
     import getpass
     import sys
 
-    from jutul_agent.agent.builder import resolve_model
     from jutul_agent.credentials import missing_credential, store_credential
-    from jutul_agent.models import provider_info
+    from jutul_agent.models import provider_info, resolve_model
     from jutul_agent.user_config import load_user_config
 
     model_id = resolve_model(

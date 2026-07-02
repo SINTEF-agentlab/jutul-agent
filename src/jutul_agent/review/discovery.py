@@ -39,18 +39,6 @@ def workspaces_root() -> Path:
     return state_home() / "workspaces"
 
 
-def eval_sessions_state_root(simulator: str) -> Path:
-    """A stable, discoverable home for an eval run's sessions.
-
-    The eval harness otherwise drops each session in a temp dir that is cleaned up,
-    so eval runs — where a golden answer is known and silent failures are most worth
-    catching — can't be reviewed. Pointing the eval session's ``state_root`` here puts
-    its trace under ``workspaces/eval-<sim>/sessions/``, which ``discover_sessions``
-    finds like any other session; the workspace name marks it as an eval run.
-    """
-    return workspaces_root() / f"eval-{simulator}"
-
-
 def _first_event_payload(trace_path: Path, kind: str) -> dict | None:
     """The payload of the earliest event of ``kind`` in a trace, read without touching it."""
     import sqlite3

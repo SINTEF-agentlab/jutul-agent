@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from jutul_agent.agent.builder import DEFAULT_MODEL
 from jutul_agent.models import (
+    DEFAULT_MODEL,
     OLLAMA_CLOUD,
     PROVIDERS,
     RECOMMENDED_OLLAMA_LOCAL,

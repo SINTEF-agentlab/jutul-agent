@@ -229,8 +229,8 @@ def test_golden_env_realigns_a_cached_env_once_per_run(tmp_path: Path, monkeypat
 
 
 def test_eval_cli_model_defaults_to_the_agent_default() -> None:
-    from jutul_agent.agent.builder import DEFAULT_MODEL
     from jutul_agent.interfaces.cli.eval import _default_inspect_model
+    from jutul_agent.models import DEFAULT_MODEL
 
     default = _default_inspect_model()
     assert default.split("/", 1)[1] == DEFAULT_MODEL.partition(":")[2]

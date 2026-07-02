@@ -4,13 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from jutul_agent.agent.builder import (
-    DEFAULT_MODEL,
-    MODEL_ENV_VAR,
-    _set_profile_window,
-    register_provider_profiles,
-    resolve_model,
-)
+from jutul_agent.agent.builder import _set_profile_window, register_provider_profiles
+from jutul_agent.models import DEFAULT_MODEL, MODEL_ENV_VAR, resolve_model
 
 
 def test_set_profile_window_feeds_loaded_window(monkeypatch: pytest.MonkeyPatch) -> None:
