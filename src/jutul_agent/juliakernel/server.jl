@@ -28,6 +28,10 @@
 
 using Sockets
 
+# Known edge: the marker is matched literally, so an eval that *prints* these
+# exact bytes (two RS control characters around the tag, twice) releases the
+# drain one step early. Accepted: a per-eval nonce would complicate the
+# signal-atomic hold-back in the pumps for a collision no real output hits.
 const MARKER = codeunits("\x1e\x1eJK-EVAL-DONE\x1e\x1e")
 
 # Keep the process's original stdio objects alive. After the redirect nothing

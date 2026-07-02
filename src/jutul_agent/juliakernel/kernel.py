@@ -142,9 +142,16 @@ class JuliaKernel:
         proc = self._proc
         if proc is None or proc.returncode is not None:
             return False
-        sig = signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT
         with contextlib.suppress(ProcessLookupError, OSError, NotImplementedError, ValueError):
-            proc.send_signal(sig)
+            if os.name == "nt":
+                proc.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                # The whole process group, not just the master: Distributed
+                # workers an ensemble spawned must see the interrupt too, or a
+                # compute-bound worker outlives the drain window and forces a
+                # full restart. ``start_new_session`` made the kernel its own
+                # group leader, so pgid == pid.
+                os.killpg(proc.pid, signal.SIGINT)
             return True
         return False
 
@@ -253,6 +260,14 @@ class JuliaKernel:
             parts.append(out.rstrip("\n"))
         if err.strip():
             parts.append("[stderr]\n" + err.rstrip("\n"))
+        if pending.omitted:
+            dropped = " and ".join(
+                f"{count:,} bytes of {stream}" for stream, count in sorted(pending.omitted.items())
+            )
+            parts.append(
+                f"[note: the output exceeded the capture buffer; {dropped} were "
+                "omitted from the middle (the start and the end are kept)]"
+            )
         if status == "int":
             return EvalResult(
                 output="\n".join(parts),
@@ -368,7 +383,20 @@ class JuliaKernel:
 
     async def _await_ready(self) -> None:
         assert self._conn is not None
-        token = await self._conn.ready_token()
+        try:
+            # The accept above is timed, but a client that connects and then
+            # stays silent would otherwise hold startup forever (the listener
+            # accepts exactly one connection, first come first served).
+            async with asyncio.timeout(self._config.startup_timeout):
+                token = await self._conn.ready_token()
+        except TimeoutError:
+            raise JuliaStartupError(
+                "timed out waiting for the control handshake",
+                julia_executable=self._config.julia_executable,
+                julia_project=self._config.julia_project,
+                stderr_tail=self._conn.stderr_tail.decode("utf-8", "replace"),
+                log_file=self._config.stderr_file,
+            ) from None
         if token != self._token:
             raise JuliaStartupError(
                 "the control handshake failed (token mismatch)",

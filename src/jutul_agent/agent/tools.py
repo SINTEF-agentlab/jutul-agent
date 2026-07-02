@@ -78,7 +78,6 @@ _MODULE_DESYNC_HINT = (
     "state, so use it deliberately."
 )
 
-
 def make_run_julia_tool(session: Session):
     @tool
     async def run_julia(code: str) -> str:
@@ -115,6 +114,10 @@ def make_run_julia_tool(session: Session):
                 text = f"{result.output}\n{text}"
         else:
             text = result.output
+        # No model-facing truncation here: an oversized result is offloaded
+        # recoverably by the context-editing middleware (the agent can re-read
+        # it selectively), which beats destroying the middle of the output.
+        # The kernel's own buffers bound what can arrive (see juliakernel).
         if _STALE_LOAD_RE.search(text):
             text += _STALE_LOAD_HINT
         if _PRECOMPILE_FAIL_RE.search(text):
