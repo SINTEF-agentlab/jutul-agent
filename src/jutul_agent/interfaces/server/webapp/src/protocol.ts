@@ -9,6 +9,9 @@ export interface InterruptAction {
   label?: string;
   args?: Record<string, unknown>;
   description?: string | null;
+  /** Markdown detail for the action: the command, a content preview, or the
+   *  on-disk diff. The same card body the TUI shows. */
+  body?: string | null;
 }
 
 /** Messages the server streams to the client over the WebSocket. */
@@ -17,7 +20,7 @@ export type ServerMessage =
   | { type: "reasoning"; text: string }
   | {
       type: "tool";
-      event: "requested" | "delta" | "finished" | "error";
+      event: "requested" | "started" | "delta" | "finished" | "error";
       name: string | null;
       label?: string;
       tool_call_id: string | null;

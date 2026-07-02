@@ -9,13 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from jutul_agent.agent.tool_output import is_interrupt_payload, strip_read_file_gutter
-from jutul_agent.interfaces.tui._rendering import (
+from jutul_agent.paths import workspace_root
+from jutul_agent.preview import (
     fenced_block,
     shorten,
     shorten_single_line,
     truncate_preview,
 )
-from jutul_agent.paths import workspace_root
 
 _COMPACT_TOOLS = frozenset(
     {

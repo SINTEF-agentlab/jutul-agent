@@ -5,6 +5,7 @@
 import { useEffect, useRef } from "react";
 
 import { useController, useSel } from "../context";
+import { Markdown } from "../markdown";
 import { argPreview } from "../toolPolicy";
 
 export function Approval() {
@@ -29,6 +30,12 @@ export function Approval() {
     <div className="approval" ref={ref}>
       <div className="title">Approve {names}?</div>
       {pending.actions.map((a, i) => {
+        // The server carries the full card body (command, content preview, or
+        // on-disk diff) as markdown; the one-line arg preview is the fallback
+        // for older servers. Approving must never show less than the TUI does.
+        if (a.body) {
+          return <Markdown key={i} text={a.body} className="approval-detail markdown" />;
+        }
         const detail = argPreview(a.args) || a.description;
         return detail ? <pre key={i} className="approval-detail">{detail}</pre> : null;
       })}

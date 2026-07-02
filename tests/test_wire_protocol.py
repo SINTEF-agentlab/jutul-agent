@@ -82,6 +82,8 @@ def test_interrupt_wire() -> None:
         ],
     }
     wire = protocol.interrupt_to_wire(TurnInterrupt(interrupt_id="i1", value=value))
+    body = wire["actions"][0].pop("body")
+    assert "```" in body and "ls" in body  # the TUI card body rides along per action
     assert wire == {
         "type": "interrupt",
         "interrupt_id": "i1",
@@ -250,3 +252,23 @@ def test_build_resume_payload_copies_are_independent() -> None:
     decisions = build_resume_payload([interrupt], {"type": "reject"})["i9"]["decisions"]
     decisions[0]["message"] = "x"
     assert "message" not in decisions[1]
+
+
+def test_interrupt_wire_carries_the_edit_diff(tmp_path, monkeypatch) -> None:
+    """A file edit's approval body shows the on-disk diff, browser and terminal alike."""
+    from jutul_agent import paths
+
+    monkeypatch.setattr(paths, "workspace_root", lambda: tmp_path)
+    (tmp_path / "a.jl").write_text("x = 1\n", encoding="utf-8")
+    value = {
+        "action_requests": [
+            {
+                "name": "edit_file",
+                "args": {"file_path": "a.jl", "old_string": "x = 1", "new_string": "x = 2"},
+            }
+        ],
+        "review_configs": [{"action_name": "edit_file", "allowed_decisions": ["approve"]}],
+    }
+    wire = protocol.interrupt_to_wire(TurnInterrupt(interrupt_id="i3", value=value))
+    body = wire["actions"][0]["body"]
+    assert "-x = 1" in body and "+x = 2" in body  # a real unified diff, not an arg dump

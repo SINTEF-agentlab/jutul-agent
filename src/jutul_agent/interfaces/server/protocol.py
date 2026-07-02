@@ -35,16 +35,25 @@ from jutul_agent.agent.turns import (
 from jutul_agent.tool_labels import tool_label
 
 __all__ = [
+    "PROTOCOL_VERSION",
     "artifact_to_wire",
     "credential_required_to_wire",
+    "error_to_wire",
     "interrupt_to_wire",
     "notice_to_wire",
+    "replay_message",
+    "replay_tool_event",
     "to_wire",
+    "turn_cancelled_to_wire",
     "turn_end_to_wire",
     "ui_command",
     "usage_to_wire",
     "viz_to_wire",
 ]
+
+# Bumped when a message kind or field changes shape incompatibly. Front ends
+# read it from ``GET /models`` and can refuse or adapt instead of mis-parsing.
+PROTOCOL_VERSION = 1
 
 
 def credential_required_to_wire(*, provider: str, label: str, env_var: str) -> dict[str, Any]:
@@ -117,6 +126,20 @@ def interrupt_to_wire(interrupt: SupportsInterrupt) -> dict[str, Any]:
                     "description": action.get("description"),
                 }
             )
+    # Each action also carries the same markdown body the TUI's approval card
+    # shows (the command, a content preview, the on-disk diff). Approval is the
+    # trust surface: the browser must not show less than the terminal.
+    try:
+        from jutul_agent.approval_preview import render_interrupt_cards
+        from jutul_agent.paths import workspace_root
+
+        cards = render_interrupt_cards(
+            interrupt.interrupt_id, value, workspace_root=workspace_root()
+        )
+        for action, card in zip(actions, cards, strict=False):
+            action["body"] = card.body
+    except Exception:  # a malformed payload still gets the bare action list
+        pass
     return {
         "type": "interrupt",
         "interrupt_id": interrupt.interrupt_id,
@@ -188,6 +211,52 @@ def viz_to_wire(
     """
 
     return {"type": "viz", "url": url, "title": title, "kind": kind, "poster": poster, "slot": slot}
+
+
+def error_to_wire(message: str) -> dict[str, Any]:
+    """A surfaced failure that keeps the session alive (bad command, failed turn)."""
+
+    return {"type": "error", "message": message}
+
+
+def turn_cancelled_to_wire() -> dict[str, Any]:
+    """The turn ended because the user cancelled it; no final text."""
+
+    return {"type": "turn_end", "text": "", "cancelled": True}
+
+
+def replay_message(kind: str, text: str) -> dict[str, Any]:
+    """One replayed conversation item (``user``/``assistant``/``reasoning``).
+
+    Replay (``GET /sessions/{id}/messages``) is a superset of the live stream:
+    it carries whole user/assistant texts where the live path streams deltas.
+    """
+
+    return {"type": kind, "text": text}
+
+
+def replay_tool_event(
+    *,
+    event: str,
+    name: str | None,
+    tool_call_id: Any,
+    args: Any = None,
+    content: Any = None,
+) -> dict[str, Any]:
+    """One replayed tool lifecycle item, shaped exactly like the live ``tool`` kind."""
+
+    wire: dict[str, Any] = {
+        "type": "tool",
+        "event": event,
+        "name": name,
+        "label": tool_label(name) if name else name,
+        "tool_call_id": tool_call_id,
+    }
+    if args is not None:
+        wire["args"] = args
+    if content is not None:
+        wire["content"] = content
+    return wire
 
 
 def notice_to_wire(text: str) -> dict[str, Any]:

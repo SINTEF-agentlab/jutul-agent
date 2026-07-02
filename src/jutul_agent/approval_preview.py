@@ -1,4 +1,10 @@
-"""Helpers for rendering human-in-the-loop approval requests in the TUI."""
+"""Render human-in-the-loop approval requests as markdown cards.
+
+Shared by every surface that shows an approval: the TUI mounts the cards as
+widgets, the web server carries each card body over the wire so the browser
+shows the same diff/command/preview the terminal does. Approval is the trust
+surface; no front end should show less than another.
+"""
 
 from __future__ import annotations
 
@@ -12,12 +18,11 @@ from jutul_agent.agent.approval import (
     allowed_decisions_for_interrupt,
     review_config_map,
 )
-from jutul_agent.interfaces.tui._rendering import fenced_block, truncate_preview
 from jutul_agent.paths import resolve_in_workspace
+from jutul_agent.preview import fenced_block, truncate_preview
 from jutul_agent.tool_labels import tool_label
 
-# The decision helpers now live in agent.approval (shared with the server
-# interface); re-exported here so the TUI's existing import sites keep working.
+# The decision helpers live in agent.approval; re-exported for card call sites.
 __all__ = [
     "SUPPORTED_APPROVAL_DECISIONS",
     "ApprovalCard",

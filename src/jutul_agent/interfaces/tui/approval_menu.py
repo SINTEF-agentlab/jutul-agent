@@ -12,9 +12,9 @@ from textual.widgets import Static
 from jutul_agent.agent.approval import (
     ALLOWLIST_FILE_EDITS,
     ALLOWLIST_SHELL,
+    SUPPORTED_APPROVAL_DECISIONS,
     categories_for_interrupt,
 )
-from jutul_agent.interfaces.tui.approval import SUPPORTED_APPROVAL_DECISIONS
 
 
 @dataclass(frozen=True)
