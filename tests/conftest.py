@@ -49,6 +49,21 @@ def _reset_workspace_overrides(tmp_path: Path, monkeypatch):
     paths.set_state_home(None)
 
 
+@pytest.fixture(autouse=True)
+def _offline_titling(monkeypatch):
+    """Session titling fires after first turns; unit tests must stay off the network.
+
+    The real function already degrades to ``None`` on failure, but attempting a
+    provider call with a placeholder key is slow and unhermetic. Tests of the
+    titling flow monkeypatch their own replacement over this one.
+    """
+
+    async def _no_title(model_id, conversation):
+        return None
+
+    monkeypatch.setattr("jutul_agent.agent.titling.generate_session_title", _no_title)
+
+
 @pytest.fixture
 def fake_julia() -> FakeJulia:
     return FakeJulia()

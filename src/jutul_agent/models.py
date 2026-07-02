@@ -238,3 +238,33 @@ def _load_profiles(dist_name: str) -> dict[str, Any]:
     except Exception:
         return {}
     return getattr(module, "_PROFILES", {}) or {}
+
+
+async def local_model_error(model_id: str) -> str | None:
+    """Why a local (Ollama) model cannot serve this agent right now, or ``None``.
+
+    Checks reachability, installed-ness, and tool support, in that order; a
+    non-local model always passes. A front end with a pull UI (the TUI) handles
+    the not-installed case interactively; this is the shared preflight for
+    surfaces that can only report the problem.
+    """
+    from jutul_agent import ollama_client
+
+    if not is_local(model_id):
+        return None
+    if not await ollama_client.is_reachable():
+        return (
+            f"Ollama isn't reachable at {ollama_client.host()}. Start it with "
+            "`ollama serve` (or install it from https://ollama.com), then try again."
+        )
+    if is_ollama_cloud(model_id):
+        return None
+    name = ollama_client.model_name(model_id)
+    if not await ollama_client.is_installed(name):
+        return f"`{name}` isn't pulled on this machine. Run `ollama pull {name}`, then retry."
+    if not await ollama_client.supports_tools(name):
+        return (
+            f"`{model_id}` doesn't support tool calling, which this agent requires. "
+            "Pick a tool-capable model."
+        )
+    return None

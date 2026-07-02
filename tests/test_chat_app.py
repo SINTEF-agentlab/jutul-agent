@@ -1265,7 +1265,7 @@ async def test_compact_command_handles_stub_agent(session: Session) -> None:
         await pilot.pause()
 
         notes = [b.content_text for b in app.query(MessageBlock) if b.border_title == "System"]
-        assert any("nothing to compact" in text for text in notes)
+        assert any("nothing to compact" in text.lower() for text in notes)
 
 
 async def test_memory_command_shows_overview_and_notes(session: Session) -> None:
@@ -1458,3 +1458,24 @@ async def test_resolvable_approval_adds_no_redundant_note(session: Session) -> N
         ]
         assert system_notes == []
         assert app._pending_approval_note is None
+
+
+async def test_resumed_session_resurfaces_pending_approval(session: Session) -> None:
+    """A session resumed while paused on an approval shows the approval again
+    instead of orphaning the paused turn."""
+    from fakes import interrupt_agent
+
+    agent = interrupt_agent()
+    # Leave a pending approval in the (mock) persisted graph state, the way a
+    # closed TUI would have.
+    from jutul_agent.agent.turns import TurnRunner
+
+    await TurnRunner(agent, thread_id=session.session_id).run_prompt("run it")
+    session.resumed = True
+
+    app = TUIApp(agent=agent, session=session)
+    async with app.run_test() as pilot:
+        await wait_until_ready(app)
+        await pilot.pause()
+        assert [i.interrupt_id for i in app._pending_interrupts] == ["interrupt-1"]
+        assert app.query(ApprovalBlock)
