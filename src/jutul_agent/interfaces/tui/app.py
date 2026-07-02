@@ -57,6 +57,12 @@ from jutul_agent.agent.turns import (
     TurnToolEvent,
     usage_from_messages,
 )
+from jutul_agent.context_panel import (
+    context_component_estimates,
+    render_context_panel,
+    status_label,
+    usage_alert,
+)
 from jutul_agent.interfaces.tui.approval import render_interrupt_cards
 from jutul_agent.interfaces.tui.approval_menu import ApprovalMenu, build_approval_options
 from jutul_agent.interfaces.tui.commands import (
@@ -65,11 +71,6 @@ from jutul_agent.interfaces.tui.commands import (
     SlashCommandSpec,
     find_command,
     matching_specs,
-)
-from jutul_agent.interfaces.tui.context_panel import (
-    render_context_panel,
-    status_label,
-    usage_alert,
 )
 from jutul_agent.interfaces.tui.model_menu import (
     ApiKeyModal,
@@ -537,7 +538,9 @@ class TUIApp(App[None]):
         from jutul_agent.agent.memory import list_memory_notes
         from jutul_agent.agent.summarization import auto_compact_trigger_tokens
 
-        system_tokens, memory_tokens = self._context_component_estimates()
+        system_tokens, memory_tokens = context_component_estimates(
+            self._session, self._memory_dir()
+        )
         body = render_context_panel(
             model_label=self._model_label,
             usage=self._last_usage,
@@ -552,29 +555,6 @@ class TUIApp(App[None]):
         )
         await self._log.mount(MessageBlock("Context", "system", body, markdown=True))
         self._jump_to_latest()
-
-    def _context_component_estimates(self) -> tuple[int | None, int | None]:
-        """Approximate token counts for the parts of the fixed cost we own."""
-        from langchain_core.messages.utils import count_tokens_approximately
-
-        from jutul_agent.agent.memory import MEMORY_INDEX_FILENAME
-        from jutul_agent.agent.prompts import assemble_session_prompt
-
-        try:
-            prompt = assemble_session_prompt(
-                self._session.simulator,
-                open_windows=self._session.open_windows,
-                resumed=self._session.resumed,
-            )
-            system_tokens = int(count_tokens_approximately([prompt]))
-        except Exception:
-            system_tokens = None
-        try:
-            index = (self._memory_dir() / MEMORY_INDEX_FILENAME).read_text(encoding="utf-8")
-            memory_tokens = int(count_tokens_approximately([index]))
-        except OSError:
-            memory_tokens = None
-        return system_tokens, memory_tokens
 
     async def _replay_history(self) -> None:
         """Mount the resumed conversation's prior exchanges from the trace.
