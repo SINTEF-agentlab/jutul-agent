@@ -207,3 +207,33 @@ def _category_lines(
     elif trigger:
         lines.append(f"- auto-compact triggers at {format_tokens(trigger)} tokens")
     return lines
+
+
+def context_component_estimates(session, memory_dir) -> tuple[int | None, int | None]:
+    """Approximate token counts for the fixed context cost the harness owns.
+
+    Covers the base session prompt and the memory index (``None`` for a part
+    that cannot be assembled). An approximation by design: capability prompt
+    fragments and tool schemas ride on top, and the measured ``usage_metadata``
+    figures remain the ground truth.
+    """
+    from langchain_core.messages.utils import count_tokens_approximately
+
+    from jutul_agent.agent.memory import MEMORY_INDEX_FILENAME
+    from jutul_agent.agent.prompts import assemble_session_prompt
+
+    try:
+        prompt = assemble_session_prompt(
+            session.simulator,
+            open_windows=session.open_windows,
+            resumed=session.resumed,
+        )
+        system_tokens = int(count_tokens_approximately([prompt]))
+    except Exception:
+        system_tokens = None
+    try:
+        index = (memory_dir / MEMORY_INDEX_FILENAME).read_text(encoding="utf-8")
+        memory_tokens = int(count_tokens_approximately([index]))
+    except OSError:
+        memory_tokens = None
+    return system_tokens, memory_tokens

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from jutul_agent.interfaces.tui.context_panel import (
+from jutul_agent.context_panel import (
     format_tokens,
     render_context_panel,
     status_label,

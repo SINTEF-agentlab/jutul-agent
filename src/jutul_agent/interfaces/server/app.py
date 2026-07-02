@@ -642,13 +642,10 @@ def create_app(
         host = manager.get(session_id)
         if host is None:
             raise HTTPException(status_code=404, detail="no such session")
-        from langchain_core.messages.utils import count_tokens_approximately
-
         from jutul_agent.agent.context_editing import clear_tool_uses_trigger_tokens
-        from jutul_agent.agent.memory import MEMORY_INDEX_FILENAME, list_memory_notes
-        from jutul_agent.agent.prompts import assemble_session_prompt
+        from jutul_agent.agent.memory import list_memory_notes
         from jutul_agent.agent.summarization import auto_compact_trigger_tokens
-        from jutul_agent.interfaces.tui.context_panel import render_context_panel
+        from jutul_agent.context_panel import context_component_estimates, render_context_panel
         from jutul_agent.models import DEFAULT_MODEL, context_window
         from jutul_agent.trace import TraceLog
 
@@ -660,21 +657,8 @@ def create_app(
         model = host.model or DEFAULT_MODEL
         window = context_window(model)
 
-        try:
-            prompt = assemble_session_prompt(
-                host.session.simulator,
-                open_windows=host.session.open_windows,
-                resumed=host.session.resumed,
-            )
-            system_tokens = int(count_tokens_approximately([prompt]))
-        except Exception:
-            system_tokens = None
         memory_dir = host.memory_dir
-        try:
-            index = (memory_dir / MEMORY_INDEX_FILENAME).read_text(encoding="utf-8")
-            memory_tokens = int(count_tokens_approximately([index]))
-        except OSError:
-            memory_tokens = None
+        system_tokens, memory_tokens = context_component_estimates(host.session, memory_dir)
 
         body = render_context_panel(
             model_label=model,
