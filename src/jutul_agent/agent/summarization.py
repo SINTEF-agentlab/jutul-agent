@@ -33,6 +33,26 @@ _FALLBACK_TRIGGER_TOKENS = 170_000
 MANUAL_KEEP_MESSAGES = 8
 _MANUAL_KEEP: tuple[str, int] = ("messages", MANUAL_KEEP_MESSAGES)
 
+# Manual /compact composes deepagents' summarization engine from the same
+# private methods upstream's own tool middleware builds on. Private means a
+# deepagents bump may move them; the sweep below turns that into a clear
+# "manual compaction is unavailable" instead of an AttributeError mid-command.
+# Auto-compaction is untouched either way (it is the stock middleware).
+_ENGINE_METHODS: tuple[str, ...] = (
+    "_apply_event_to_messages",
+    "_determine_cutoff_index",
+    "_partition_messages",
+    "_acreate_summary",
+    "_aoffload_to_backend",
+    "_build_new_messages_with_path",
+    "_compute_state_cutoff",
+)
+
+
+def manual_compaction_available() -> bool:
+    """Whether the installed deepagents still exposes the engine /compact drives."""
+    return all(hasattr(SummarizationMiddleware, name) for name in _ENGINE_METHODS)
+
 
 def auto_compact_trigger_tokens(window: int | None) -> int:
     """The context size at which auto-compaction triggers for ``window`` (display only)."""
@@ -67,6 +87,11 @@ async def compact_thread(
     the offloaded turns stay recoverable from ``/conversation_history``. Returns
     ``None`` when there is nothing to compact (too few messages, or no state).
     """
+    if not manual_compaction_available():
+        raise RuntimeError(
+            "manual compaction is unavailable with this deepagents version "
+            "(auto-compaction still runs); see agent/summarization.py"
+        )
     aget_state = getattr(agent, "aget_state", None)
     aupdate_state = getattr(agent, "aupdate_state", None)
     if aget_state is None or aupdate_state is None:
