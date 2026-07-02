@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from fakes import FakeJulia
 from jutul_agent.julia.session import EvalResult
+from jutul_agent.lab.fakes import FakeJulia
 from jutul_agent.simulators.warmup import GL_CONTEXT_WARMUP, start_warmup
 
 

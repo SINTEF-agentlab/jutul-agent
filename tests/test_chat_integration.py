@@ -8,16 +8,16 @@ import pytest
 from textual.widgets import Markdown
 
 from _tui import submit_prompt
-from fakes import (
+from jutul_agent.agent.builder import build_agent
+from jutul_agent.interfaces.tui import TUIApp
+from jutul_agent.interfaces.tui.widgets import MessageBlock, ToolBlock
+from jutul_agent.lab.fakes import (
     FakeJulia,
     make_fake_adapter,
     make_scripted_model,
     scripted_final,
     scripted_tool_call,
 )
-from jutul_agent.agent.builder import build_agent
-from jutul_agent.interfaces.tui import TUIApp
-from jutul_agent.interfaces.tui.widgets import MessageBlock, ToolBlock
 from jutul_agent.session import Session
 from jutul_agent.trace import TraceLog
 

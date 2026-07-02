@@ -8,15 +8,6 @@ from langchain_core.messages import AIMessage, HumanMessage
 from textual.widgets import Footer
 
 from _tui import submit_prompt, wait_until_ready
-from fakes import (
-    ScriptedV3Agent,
-    interrupt_agent,
-    streaming_agent,
-    tool_call_events,
-    v3_message_event,
-    v3_tool_event,
-    v3_values_event,
-)
 from jutul_agent.agent.turns import TurnTextDelta, TurnToolEvent
 from jutul_agent.interfaces.tui import TUIApp
 from jutul_agent.interfaces.tui.approval_menu import ApprovalMenu
@@ -27,6 +18,15 @@ from jutul_agent.interfaces.tui.widgets import (
     PromptGuide,
     ToolBlock,
     WelcomeBlock,
+)
+from jutul_agent.lab.fakes import (
+    ScriptedV3Agent,
+    interrupt_agent,
+    streaming_agent,
+    tool_call_events,
+    v3_message_event,
+    v3_tool_event,
+    v3_values_event,
 )
 from jutul_agent.session import Session
 
@@ -535,7 +535,7 @@ async def test_clear_command_restores_welcome_card(session: Session) -> None:
 
 
 async def test_tui_recalls_history_with_ctrl_up_and_down(session: Session) -> None:
-    from fakes import echo_agent
+    from jutul_agent.lab.fakes import echo_agent
 
     app = TUIApp(agent=echo_agent(), session=session)
 
@@ -566,7 +566,7 @@ async def test_tui_recalls_history_with_ctrl_up_and_down(session: Session) -> No
 
 
 async def test_tui_completes_slash_commands_with_tab(session: Session) -> None:
-    from fakes import echo_agent
+    from jutul_agent.lab.fakes import echo_agent
 
     app = TUIApp(agent=echo_agent(), session=session)
 
@@ -587,7 +587,7 @@ async def test_tui_completes_slash_commands_with_tab(session: Session) -> None:
 
 
 async def test_tui_renders_reasoning_from_v3_event_stream(session: Session) -> None:
-    from fakes import reasoning_agent
+    from jutul_agent.lab.fakes import reasoning_agent
 
     app = TUIApp(agent=reasoning_agent(), session=session)
 
@@ -626,7 +626,7 @@ async def test_tui_prompt_stays_compact_with_long_multiline_draft(session: Sessi
 
 
 async def test_tui_multiline_submit_shows_user_message_immediately(session: Session) -> None:
-    from fakes import echo_agent
+    from jutul_agent.lab.fakes import echo_agent
 
     app = TUIApp(agent=echo_agent(), session=session)
 
@@ -1157,8 +1157,8 @@ async def test_long_assistant_message_is_not_inner_clipped(session: Session) -> 
 
 
 async def test_reasoning_collapses_when_answer_starts(session: Session) -> None:
-    from fakes import reasoning_agent
     from jutul_agent.interfaces.tui.widgets import ReasoningBlock
+    from jutul_agent.lab.fakes import reasoning_agent
 
     app = TUIApp(agent=reasoning_agent(), session=session)
     async with app.run_test() as pilot:
@@ -1363,7 +1363,7 @@ async def test_approval_state_clears_once_decided(session: Session) -> None:
 
 
 async def test_typed_reply_marks_tool_block_rejected(session: Session) -> None:
-    from fakes import Interrupt
+    from jutul_agent.lab.fakes import Interrupt
 
     interrupt = Interrupt(
         id="interrupt-1",
@@ -1463,7 +1463,7 @@ async def test_resolvable_approval_adds_no_redundant_note(session: Session) -> N
 async def test_resumed_session_resurfaces_pending_approval(session: Session) -> None:
     """A session resumed while paused on an approval shows the approval again
     instead of orphaning the paused turn."""
-    from fakes import interrupt_agent
+    from jutul_agent.lab.fakes import interrupt_agent
 
     agent = interrupt_agent()
     # Leave a pending approval in the (mock) persisted graph state, the way a

@@ -6,10 +6,10 @@ from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from fakes import FakeJulia, make_fake_adapter, make_scripted_model, scripted_final
 from jutul_agent.agent.builder import build_agent
 from jutul_agent.agent.recovery import _recover
 from jutul_agent.agent.turns import TurnRunner
+from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter, make_scripted_model, scripted_final
 from jutul_agent.session import Session
 
 _INVALID = {

@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from fakes import make_event
+from jutul_agent.lab.fakes import make_event
 from jutul_agent.transcript.report import render_report
 
 

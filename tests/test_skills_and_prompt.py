@@ -6,9 +6,9 @@ from pathlib import Path
 
 from deepagents.backends import CompositeBackend, LocalShellBackend
 
-from fakes import make_fake_adapter
 from jutul_agent.agent.builder import build_backend, skill_sources
 from jutul_agent.agent.prompts import assemble_session_prompt
+from jutul_agent.lab.fakes import make_fake_adapter
 from jutul_agent.paths import SHARED_SKILLS_DIR
 from jutul_agent.simulators import registry
 from jutul_agent.simulators.base import SimulatorAdapter

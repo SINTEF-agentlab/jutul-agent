@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fakes import FakeJulia, make_fake_adapter, make_scripted_model, scripted_final
 from jutul_agent.agent.builder import build_agent
 from jutul_agent.agent.summarization import auto_compact_trigger_tokens, compact_thread
 from jutul_agent.agent.turns import TurnRunner
+from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter, make_scripted_model, scripted_final
 from jutul_agent.session import Session
 
 

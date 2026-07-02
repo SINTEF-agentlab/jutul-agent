@@ -6,7 +6,7 @@ import asyncio
 import importlib.util
 from pathlib import Path
 
-from fakes import FakeJulia, make_fake_adapter
+from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
 from jutul_agent.session import Session
 
 _DEMO_PATH = Path(__file__).resolve().parents[1] / "examples" / "demo-app" / "demo.py"

@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 
-from fakes import FakeJulia, make_fake_adapter
+from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
 from jutul_agent.paths import set_state_home, set_workspace_root
 from jutul_agent.session import Session
 from jutul_agent.simulators.base import SimulatorAdapter

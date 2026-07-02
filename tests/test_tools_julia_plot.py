@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fakes import FakeJulia, make_fake_adapter
 from jutul_agent.agent.plot_julia import make_plot_julia_tool, make_recapture_tool
 from jutul_agent.julia.session import EvalResult
+from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
 from jutul_agent.session import Session
 from jutul_agent.trace import TraceLog
 

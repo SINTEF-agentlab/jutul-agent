@@ -4,7 +4,7 @@ module JutulAgentJutulDarcy
 # @recompile_invalidations (which caches the solver code GLMakie would otherwise
 # invalidate), and bakes the simulate_reservoir + plot_cell_data paths. This makes
 # the first solve ~0.5s instead of ~30s. See
-# docs/investigations/glmakie-invalidates-jutul-solver.md.
+# docs/adding-a-simulator.md (the warm package bakes the GLMakie-aware solve).
 
 using JutulDarcy, Jutul
 using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workload

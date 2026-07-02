@@ -185,9 +185,14 @@ def test_agent_tool_surface_is_pinned(tmp_path) -> None:
     installing the todo list by default. Pinning the set turns either into a
     failure here instead of a surprise in a live session.
     """
-    from fakes import FakeJulia, make_fake_adapter, make_scripted_model, scripted_final
     from jutul_agent.agent.approval import ApprovalMode, interrupt_on_for_mode
     from jutul_agent.agent.builder import build_agent
+    from jutul_agent.lab.fakes import (
+        FakeJulia,
+        make_fake_adapter,
+        make_scripted_model,
+        scripted_final,
+    )
     from jutul_agent.session import Session
 
     session = Session.create(

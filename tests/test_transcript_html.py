@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fakes import make_event
+from jutul_agent.lab.fakes import make_event
 from jutul_agent.transcript import render_html
 
 
@@ -369,3 +369,28 @@ def test_lifecycle_kinds_render_as_markers_not_raw_dumps() -> None:
     assert "_Session resumed:" in markdown
     assert "Context compacted (manual): 21 messages summarized, 9 kept" in markdown
     assert "### Event `session_resume`" not in markdown
+
+
+def test_report_does_not_inline_files_outside_the_artifact_dirs(tmp_path) -> None:
+    """The report's narrative and plot embedding honor the same containment the
+    transcript enforces: an absolute or traversal path never pulls bytes in."""
+    import base64
+
+    from jutul_agent.transcript.report import render_report
+
+    run = tmp_path / "run"
+    (run / "artifacts").mkdir(parents=True)
+    secret = tmp_path / "secret.txt"
+    secret.write_bytes(b"TOP SECRET")
+    out = run / "report.html"
+    render_report(
+        [],
+        out,
+        narrative_markdown=f"![leak]({secret})\n\n![leak2](artifacts/../../secret.txt)",
+        title="t",
+        session_id="s",
+        simulator="sim",
+        artifact_dirs=[run / "artifacts", run],
+    )
+    html = out.read_text(encoding="utf-8")
+    assert base64.standard_b64encode(b"TOP SECRET").decode() not in html

@@ -40,6 +40,7 @@ from jutul_agent.agent.approval import (
 from jutul_agent.agent.capabilities import HttpToolSpec, http_tool_capability
 from jutul_agent.interfaces.server import protocol
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
+from jutul_agent.preview import TOOL_STREAM_RENDER_INTERVAL, TOOL_STREAM_TAIL_CAP
 from jutul_agent.session_host import SessionHost
 from jutul_agent.trace import schema
 from jutul_agent.trace.schema import UI_EVENT, UPLOAD
@@ -71,15 +72,6 @@ def _register_web_mime_types() -> None:
     mimetypes.add_type("text/css", ".css")
     mimetypes.add_type("application/json", ".json")
     mimetypes.add_type("image/svg+xml", ".svg")
-
-
-# Streamed tool output is rendered the way the TUI renders it: the raw stream is
-# accumulated (bounded to a tail) and replayed through the terminal emulator so a
-# progress bar's carriage returns / cursor moves collapse to a single updating
-# block instead of stacking into a gap. Re-rendering is throttled so a chatty tool
-# can't burn the event loop redrawing on every tiny delta.
-_STREAM_RENDER_CAP = 256 * 1024
-_STREAM_RENDER_INTERVAL = 0.1
 
 
 class CreateSessionRequest(BaseModel):
@@ -1062,9 +1054,7 @@ class _StreamState:
                 await _safe_send(self._ws, protocol.error_to_wire(f"unknown command {command!r}"))
                 return
         except Exception as exc:  # surface a bad model/mode, keep the session alive
-            await _safe_send(
-                self._ws, protocol.error_to_wire(f"could not apply {command}: {exc}")
-            )
+            await _safe_send(self._ws, protocol.error_to_wire(f"could not apply {command}: {exc}"))
 
     async def _start_prompt(self, text: str) -> None:
         if self._busy():
@@ -1250,17 +1240,18 @@ class _StreamState:
         """
         import time
 
-        buf = (self._tool_streams.get(cid, "") + (wire.get("content") or ""))[-_STREAM_RENDER_CAP:]
+        raw = self._tool_streams.get(cid, "") + (wire.get("content") or "")
+        buf = raw[-TOOL_STREAM_TAIL_CAP:]
         self._tool_streams[cid] = buf
         self._tool_delta_wire[cid] = wire  # send template (name/label) for the flush
-        if time.monotonic() - self._tool_render_at.get(cid, 0.0) >= _STREAM_RENDER_INTERVAL:
+        if time.monotonic() - self._tool_render_at.get(cid, 0.0) >= TOOL_STREAM_RENDER_INTERVAL:
             await self._flush_tool_stream(cid)
         elif cid not in self._tool_flush:
             self._tool_flush[cid] = asyncio.create_task(self._delayed_flush(cid))
 
     async def _delayed_flush(self, cid: str) -> None:
         try:
-            await asyncio.sleep(_STREAM_RENDER_INTERVAL)
+            await asyncio.sleep(TOOL_STREAM_RENDER_INTERVAL)
             await self._flush_tool_stream(cid)
         except asyncio.CancelledError:
             pass

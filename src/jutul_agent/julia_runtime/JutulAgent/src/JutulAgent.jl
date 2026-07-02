@@ -3,7 +3,7 @@ module JutulAgent
 # jutul-agent's simulator-agnostic Julia runtime: figure capture (plots.jl),
 # ensemble helpers (ensemble.jl), and a generic-Makie warm-up. The per-simulator
 # solve/plot warm-up lives in the JutulAgent<Sim> packages. See
-# docs/design/warmup-and-jutulagent-package.md.
+# docs/architecture.md ("Simulators are data").
 
 using PrecompileTools: @compile_workload, @setup_workload
 

@@ -1,6 +1,6 @@
 """End-to-end tests for the server: REST lifecycle and the turn WebSocket.
 
-The agent and Julia kernel are fakes (see ``fakes``), so a turn runs through the
+The agent and Julia kernel are fakes (see ``jutul_agent.lab.fakes``), so a turn runs through the
 real ``TurnRunner`` and wire protocol without a provider API or a Julia process.
 A test ``SessionManager`` is injected with a host factory that wraps those fakes.
 """
@@ -17,16 +17,16 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from fakes import (
+from jutul_agent.agent.capabilities import Capability
+from jutul_agent.interfaces.server.app import artifact_wire_events, create_app
+from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
+from jutul_agent.lab.fakes import (
     FakeJulia,
     echo_agent,
     interrupt_agent,
     make_fake_adapter,
     streaming_agent,
 )
-from jutul_agent.agent.capabilities import Capability
-from jutul_agent.interfaces.server.app import artifact_wire_events, create_app
-from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
 from jutul_agent.session import Session, default_session_id
 from jutul_agent.session_host import SessionHost
 
@@ -1210,9 +1210,7 @@ def test_set_model_refused_while_approval_pending(tmp_path: Path) -> None:
         with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
             ws.send_json({"type": "prompt", "text": "run it"})
             assert _drain_turn(ws)[-1]["type"] == "interrupt"
-            ws.send_json(
-                {"type": "command", "command": "set_model", "arg": "openai:gpt-5.4-mini"}
-            )
+            ws.send_json({"type": "command", "command": "set_model", "arg": "openai:gpt-5.4-mini"})
             err = ws.receive_json()
     assert err["type"] == "error"
     assert "pending approval" in err["message"]

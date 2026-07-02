@@ -78,6 +78,7 @@ _MODULE_DESYNC_HINT = (
     "state, so use it deliberately."
 )
 
+
 def make_run_julia_tool(session: Session):
     @tool
     async def run_julia(code: str) -> str:

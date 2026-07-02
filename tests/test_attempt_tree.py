@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fakes import make_event
+from jutul_agent.lab.fakes import make_event
 from jutul_agent.transcript.attempts import Attempt, build_attempt_tree
 
 

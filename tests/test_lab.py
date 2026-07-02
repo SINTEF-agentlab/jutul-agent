@@ -10,7 +10,9 @@ import pytest
 from jutul_agent.lab.scenarios import all_scenarios, get
 from jutul_agent.lab.tui import capture, normalize_screen, svg_to_text
 
-_SNAPSHOTS = Path(__file__).parent / "snapshots" / "tui"
+# Plain-text TUI captures (regenerated via the lab); distinct from the
+# syrupy .ambr snapshots under __snapshots__, which `--snapshot-update` owns.
+_SNAPSHOTS = Path(__file__).parent / "tui_captures" / "tui"
 
 
 def test_scenarios_are_registered():
