@@ -32,7 +32,12 @@ def test_unknown_simulator_raises() -> None:
 def _adapter(tmp_path, name: str) -> SimulatorAdapter:
     from fakes import make_fake_adapter
 
-    return make_fake_adapter(tmp_path, name=name, display_name=name.title())
+    adapter = make_fake_adapter(tmp_path, name=name, display_name=name.title())
+    # Discovery validates adapters now; give the fake a real env template.
+    env = adapter.julia_env_template_path
+    env.mkdir(parents=True, exist_ok=True)
+    (env / "Project.toml").write_text("[deps]\n", encoding="utf-8")
+    return adapter
 
 
 def test_installed_adapter_is_discovered(tmp_path, monkeypatch) -> None:
@@ -40,6 +45,8 @@ def test_installed_adapter_is_discovered(tmp_path, monkeypatch) -> None:
     adapter = _adapter(tmp_path, "mysim")
 
     class _EP:
+        name = "mysim"
+
         def load(self):
             return adapter
 
@@ -58,6 +65,8 @@ def test_installed_adapter_overrides_bundled(tmp_path, monkeypatch) -> None:
     custom = _adapter(tmp_path, "jutuldarcy")
 
     class _EP:
+        name = "jutuldarcy"
+
         def load(self):
             return custom
 
@@ -72,6 +81,8 @@ def test_installed_adapter_overrides_bundled(tmp_path, monkeypatch) -> None:
 
 def test_broken_installed_entry_point_is_skipped(tmp_path, monkeypatch) -> None:
     class _Broken:
+        name = "brokensim"
+
         def load(self):
             raise RuntimeError("boom")
 

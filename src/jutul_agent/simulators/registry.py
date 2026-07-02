@@ -36,7 +36,12 @@ def _adapter_in(module: object) -> SimulatorAdapter | None:
 
 
 def _bundled_adapters() -> dict[str, SimulatorAdapter]:
-    """Adapters from the in-tree simulator subpackages."""
+    """Adapters from the in-tree simulator subpackages.
+
+    A broken subpackage is warned about and skipped, never fatal: the registry
+    feeds the CLI's argument parser, so one bad adapter folder must not take
+    down every command including ``doctor``.
+    """
     import jutul_agent.simulators as simulators_pkg
 
     found: dict[str, SimulatorAdapter] = {}
@@ -44,18 +49,47 @@ def _bundled_adapters() -> dict[str, SimulatorAdapter]:
         if not info.ispkg or info.name.startswith("_") or info.name in _NOT_SIMULATORS:
             continue
         qualified = f"{simulators_pkg.__name__}.{info.name}"
-        module = importlib.import_module(qualified)
-        # Prefer the adapter the subpackage exports; fall back to its adapter.py
-        # so a folder with only an adapter.py is enough.
-        adapter = _adapter_in(module)
-        if adapter is None:
-            try:
-                adapter = _adapter_in(importlib.import_module(f"{qualified}.adapter"))
-            except ModuleNotFoundError:
-                adapter = None
+        try:
+            module = importlib.import_module(qualified)
+            # Prefer the adapter the subpackage exports; fall back to its adapter.py
+            # so a folder with only an adapter.py is enough.
+            adapter = _adapter_in(module)
+            if adapter is None:
+                try:
+                    adapter = _adapter_in(importlib.import_module(f"{qualified}.adapter"))
+                except ModuleNotFoundError:
+                    adapter = None
+        except Exception as exc:
+            _warn_skipped(qualified, exc)
+            continue
         if adapter is not None:
+            problem = _adapter_problem(adapter)
+            if problem is not None:
+                _warn_skipped(qualified, problem)
+                continue
             found[adapter.name] = adapter
     return found
+
+
+def _adapter_problem(adapter: SimulatorAdapter) -> str | None:
+    """Why an adapter cannot serve sessions, or ``None`` when it is usable.
+
+    Catches the mistakes a third-party adapter fails *late* on otherwise: a
+    blank name (undiscoverable) or a missing Julia env template (bootstrap
+    error on first session).
+    """
+    if not str(adapter.name or "").strip():
+        return "its name is empty"
+    template = adapter.julia_env_template_path
+    if template is not None and not (template / "Project.toml").exists():
+        return f"its Julia env template has no Project.toml ({template})"
+    return None
+
+
+def _warn_skipped(source: str, reason: object) -> None:
+    import sys
+
+    print(f"warning: skipping simulator adapter from {source}: {reason}", file=sys.stderr)
 
 
 def _installed_adapters() -> dict[str, SimulatorAdapter]:
@@ -78,10 +112,17 @@ def _installed_adapters() -> dict[str, SimulatorAdapter]:
                 if callable(loaded) and not isinstance(loaded, SimulatorAdapter)
                 else loaded
             )
-            if isinstance(adapter, SimulatorAdapter):
-                found[adapter.name] = adapter
-        except Exception:
+        except Exception as exc:
+            _warn_skipped(entry_point.name, exc)
             continue
+        if not isinstance(adapter, SimulatorAdapter):
+            _warn_skipped(entry_point.name, f"resolved to {type(adapter).__name__}")
+            continue
+        problem = _adapter_problem(adapter)
+        if problem is not None:
+            _warn_skipped(entry_point.name, problem)
+            continue
+        found[adapter.name] = adapter
     return found
 
 

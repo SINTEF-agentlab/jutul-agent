@@ -27,6 +27,12 @@ from .result import OnChunk, OutputChunk
 
 _STDERR_TAIL_CAP = 16 * 1024
 _LOG_READ_SIZE = 64 * 1024
+# One eval's captured output is bounded: the head shows how it started, the
+# tail carries the result. A runaway print loop must not grow harness memory
+# without limit while the user decides to cancel. Live chunks still stream in
+# full; only the buffered copy that becomes the EvalResult is capped.
+EVAL_BUFFER_HEAD = 256 * 1024
+EVAL_BUFFER_TAIL = 256 * 1024
 
 
 class KernelDied(RuntimeError):
@@ -46,6 +52,8 @@ class PendingEval:
     on_chunk: OnChunk | None = None
     out: bytearray = field(default_factory=bytearray)
     err: bytearray = field(default_factory=bytearray)
+    # Bytes dropped from the middle of each stream once its buffer overflowed.
+    omitted: dict[str, int] = field(default_factory=dict)
     _decoders: dict[str, codecs.IncrementalDecoder] = field(default_factory=dict, repr=False)
 
     def decode_chunk(self, stream: str, body: bytes) -> str:
@@ -193,6 +201,12 @@ class KernelConnection:
             return
         buf = pending.out if stream == "stdout" else pending.err
         buf += body
+        overflow = len(buf) - (EVAL_BUFFER_HEAD + EVAL_BUFFER_TAIL)
+        if overflow > 0:
+            # Drop from the middle so both the start and the (still-growing)
+            # end survive; the result build notes how much was omitted.
+            del buf[EVAL_BUFFER_HEAD : EVAL_BUFFER_HEAD + overflow]
+            pending.omitted[stream] = pending.omitted.get(stream, 0) + overflow
         if pending.on_chunk is not None and body:
             text = pending.decode_chunk(stream, body)
             if text:
