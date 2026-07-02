@@ -1,10 +1,11 @@
 """One running session, with everything it needs to take a turn.
 
 A ``SessionHost`` owns a ``Session`` (its Julia kernel, trace, and directories),
-the agent built for it, and the ``TurnRunner`` that drives a turn. ``start``
-builds all of that the way the CLI does; ``aclose`` tears it down. Holding the
-kernel and the checkpointer open for the session's lifetime is what lets a
-server keep many sessions alive at once and resume them later.
+the agent built for it, and the ``TurnRunner`` that drives a turn. ``start`` is
+the single session bootstrap every front end uses — the TUI, the headless CLI,
+the web server, and the bench solver all stand up sessions here, so the kernel
+environment, capability discovery, and the checkpointer cannot drift between
+them. ``aclose`` tears everything down.
 
 The constructor takes a ready-made session and agent so tests can wrap fakes;
 ``start`` is the production path that stands up a real kernel.
@@ -46,11 +47,15 @@ class SessionHost:
         extensions: Sequence[Capability] = (),
         workspace: Path | None = None,
         package_sources: Sequence[Any] = (),
+        add_dirs: Sequence[Path] = (),
     ) -> None:
         self.session = session
         self.agent = agent
         self.backend = backend
         self.workspace = workspace
+        # Launch-time extra folders; the rebuild fallback when there is no live
+        # backend to read them from (e.g. the first build after a key arrives).
+        self._add_dirs = list(add_dirs)
         self._exit_stack = exit_stack
         self._runner: TurnRunner | None = None
         # Kept so the agent can be rebuilt in place (e.g. /model, /approval-mode)
@@ -114,8 +119,13 @@ class SessionHost:
         new_approval = approval_mode if approval_mode is not None else self._approval_mode
         # Rebuilding makes a fresh backend, so carry the added folders (launch
         # --add-dir and any runtime /add-dir) over or the switch would silently
-        # drop the agent's access to them.
-        carried = [entry.path for entry in added_dirs(self.backend)] if self.backend else []
+        # drop the agent's access to them. Without a live backend (a session
+        # started without a model), the launch-time folders are the source.
+        carried = (
+            [entry.path for entry in added_dirs(self.backend)]
+            if self.backend
+            else list(self._add_dirs)
+        )
         # Build first, then commit the new values — only once it succeeds. A value
         # build_agent rejects (e.g. an unknown approval mode) must leave the host
         # consistent with the agent still running, not reporting a model/approval it
@@ -188,6 +198,11 @@ class SessionHost:
         return self.session.session_id
 
     @property
+    def warmup_task(self) -> Any | None:
+        """The background Julia warm-up, for a front end that shows warm status."""
+        return self._warmup_task
+
+    @property
     def runner(self) -> TurnRunner:
         """The turn runner for this session, built once and reused."""
         if self._runner is None:
@@ -218,6 +233,7 @@ class SessionHost:
         cls,
         *,
         simulator: SimulatorAdapter,
+        surface: str,
         model: str | None = None,
         session_id: str | None = None,
         resume: bool = False,
@@ -228,25 +244,37 @@ class SessionHost:
         threads: str | None = None,
         add_dirs: Sequence[Path] = (),
         ephemeral_memory: bool = False,
+        open_windows: bool = False,
         prepare_env: bool = True,
-        surface: str = "web",
+        discover: bool = True,
+        warmup: bool = True,
+        virtual_display: bool = True,
+        allow_missing_credential: bool = False,
         extensions: Sequence[Capability] = (),
     ) -> SessionHost:
         """Stand up a real session: prepare the env, start the kernel, build the agent.
 
-        Mirrors the CLI's session bootstrap. The Julia kernel and the SQLite
-        checkpointer are entered on an ``AsyncExitStack`` held by the host, so
-        they stay open until ``aclose``. The agent is composed for the ``web``
-        surface from the capabilities installed packages publish plus any passed
-        in (e.g. a host application's declared tools).
+        The one bootstrap for every front end. ``surface`` names the front end
+        driving the session (``tui``/``cli``/``web``) and selects which
+        capabilities and surface-tuned tools apply. The Julia kernel and the
+        SQLite checkpointer are entered on an ``AsyncExitStack`` held by the
+        host, so they stay open until ``aclose``.
+
+        ``discover=False`` keeps a run hermetic (the bench must not compose
+        ambient entry-point capabilities). ``warmup=False`` skips the background
+        Julia warm-up. ``virtual_display=False`` skips the per-session Xvfb.
+        ``allow_missing_credential=True`` lets an interactive front end come up
+        with no agent when the model's provider key is missing, so the user can
+        supply it in-app and rebuild via ``reconfigure``.
         """
 
         from contextlib import AsyncExitStack
 
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-        from jutul_agent.agent.builder import build_agent
+        from jutul_agent.agent.builder import build_agent, resolve_model
         from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
+        from jutul_agent.credentials import missing_credential
         from jutul_agent.julia.requirements import require_julia
         from jutul_agent.julia.threads import (
             HYPRE_THREADS_ENV_VAR,
@@ -258,13 +286,27 @@ class SessionHost:
         from jutul_agent.paths import workspace_root
         from jutul_agent.session import Session, default_session_id, session_dir
         from jutul_agent.simulators.env_setup import prepare_workspace_env
-        from jutul_agent.workspace import resolve_julia_project
+        from jutul_agent.user_config import load_user_config
+        from jutul_agent.workspace import load_workspace_config, resolve_julia_project
 
         require_julia()
         ws = workspace or workspace_root()
         project = julia_project or resolve_julia_project(ws)
-        all_extensions = [*discover_extensions(), *extensions]
+        # Capabilities are composed before the env is prepared, because their Julia
+        # dependencies have to be in the project the kernel starts against. Every
+        # capability contributes them, not just the ones this surface ends up
+        # offering tools from: the env is per workspace, not per surface, and it
+        # would otherwise be re-resolved each time the workspace is opened
+        # differently.
+        all_extensions = [*discover_extensions(), *extensions] if discover else list(extensions)
         dependency_paths = collect_dependency_paths(all_extensions)
+        # Model precedence is resolved here, once, for every front end:
+        # explicit request > workspace config > user config > env > default.
+        resolved_model = resolve_model(
+            model,
+            workspace_model=load_workspace_config(ws).model,
+            user_model=load_user_config().model,
+        )
         # A caller can supply a pre-provisioned env (and skip preparation); the
         # default path prepares the workspace env from the simulator template.
         # Run it off the event loop: the first session for a simulator can spend
@@ -296,12 +338,13 @@ class SessionHost:
 
         stack = AsyncExitStack()
         try:
-            # The web surface gives the kernel a GL context so the native plotters
-            # (whose methods live in the GLMakie extension) load. Best-effort:
-            # without it the session still runs with the agent's inline plots and
-            # static PNGs. WGLMakie and Bonito need nothing here; they are ordinary
-            # deps of the workspace env, resolved with the simulator's own.
-            if surface == "web":
+            # On a headless box GLMakie needs a virtual display just to load, on
+            # every surface (the TUI renders PNGs, the web serves WGLMakie, and
+            # both go through the native plotters). Best-effort: without it the
+            # session still runs and plotting errors at first use. WGLMakie and
+            # Bonito need nothing further here; they are ordinary deps of the
+            # workspace env, resolved together with the simulator's own.
+            if virtual_display:
                 _add_headless_display(stack, env)
 
             kernel_config = KernelConfig(
@@ -319,6 +362,7 @@ class SessionHost:
                     session_id=sid,
                     state_root=state_root,
                     ephemeral_memory=ephemeral_memory,
+                    open_windows=open_windows,
                     surface=surface,
                 )
             else:
@@ -328,6 +372,7 @@ class SessionHost:
                     session_id=sid,
                     state_root=state_root,
                     ephemeral_memory=ephemeral_memory,
+                    open_windows=open_windows,
                     surface=surface,
                 )
             ckpt_path = session.state_dir / "checkpoints.sqlite"
@@ -340,16 +385,22 @@ class SessionHost:
             from jutul_agent.agent.builder import resolve_package_sources
 
             package_sources = await asyncio.to_thread(resolve_package_sources, project)
-            agent, backend = build_agent(
-                session,
-                model=model,
-                checkpointer=checkpointer,
-                approval_mode=approval_mode,
-                surface=surface,
-                extensions=all_extensions,
-                added_dirs=add_dirs or None,
-                package_sources=package_sources,
-            )
+            if allow_missing_credential and missing_credential(resolved_model) is not None:
+                # The provider key isn't set, so building the model would crash.
+                # Come up without an agent; the front end collects the key and
+                # rebuilds through ``reconfigure``.
+                agent, backend = None, None
+            else:
+                agent, backend = build_agent(
+                    session,
+                    model=resolved_model,
+                    checkpointer=checkpointer,
+                    approval_mode=approval_mode,
+                    surface=surface,
+                    extensions=all_extensions,
+                    added_dirs=add_dirs or None,
+                    package_sources=package_sources,
+                )
         except BaseException:
             await stack.aclose()
             raise
@@ -360,19 +411,21 @@ class SessionHost:
             backend=backend,
             exit_stack=stack,
             checkpointer=checkpointer,
-            model=model,
+            model=resolved_model,
             approval_mode=approval_mode,
             surface=surface,
             extensions=all_extensions,
             workspace=ws,
             package_sources=package_sources,
+            add_dirs=add_dirs,
         )
-        # Warm the kernel in the background like the CLI does: load the warm package
-        # and set GLMakie offscreen so a native plotter can't pop an OS window on a
-        # machine with a display. Best-effort and cancelled on teardown.
-        from jutul_agent.simulators.warmup import start_warmup
+        if warmup:
+            # Warm the kernel in the background: load the warm package and set
+            # GLMakie offscreen so a native plotter can't pop an OS window on a
+            # machine with a display. Best-effort and cancelled on teardown.
+            from jutul_agent.simulators.warmup import start_warmup
 
-        host._warmup_task = start_warmup(julia, simulator.warm_package)
+            host._warmup_task = start_warmup(julia, simulator.warm_package)
         return host
 
 

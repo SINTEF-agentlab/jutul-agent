@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from jutul_agent.interfaces.server.session_host import SessionHost
+from jutul_agent.session_host import SessionHost
 
 if TYPE_CHECKING:
     from jutul_agent.agent.capabilities import Capability
@@ -79,6 +79,7 @@ def make_host_factory(defaults: SessionLaunchDefaults | None = None) -> HostFact
         adapter = registry.get(sim)
         return await SessionHost.start(
             simulator=adapter,
+            surface="web",
             model=model,
             approval_mode=approval_mode,
             workspace=workspace,

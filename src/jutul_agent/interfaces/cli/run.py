@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import sys
-from collections.abc import Sequence
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from jutul_agent import __version__
 from jutul_agent.interfaces.cli._helpers import (
@@ -19,7 +16,6 @@ from jutul_agent.interfaces.cli._helpers import (
 )
 from jutul_agent.paths import workspace_root
 from jutul_agent.session import (
-    default_session_id,
     list_sessions,
     read_last_session,
     resolve_session_id,
@@ -32,11 +28,6 @@ from jutul_agent.workspace import (
     load_workspace_config,
     resolve_julia_project,
 )
-
-if TYPE_CHECKING:
-    # Imported for typing only; the runtime import stays inside _run_session so the
-    # capability entry points are not scanned on an unrelated subcommand.
-    from jutul_agent.agent.capabilities import Capability
 
 
 def build_parser(prog: str = "jutul-agent tui") -> argparse.ArgumentParser:
@@ -97,7 +88,6 @@ def build_parser(prog: str = "jutul-agent tui") -> argparse.ArgumentParser:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    import asyncio
 
     from jutul_agent.update_check import notify_at_launch
 
@@ -208,10 +198,16 @@ async def _run_session(
     *,
     resume_id: str | None = None,
 ) -> int:
-    from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
+    from jutul_agent.agent.approval import parse_approval_mode
+    from jutul_agent.agent.builder import resolve_model
+    from jutul_agent.credentials import missing_credential
+    from jutul_agent.display import can_open_windows
     from jutul_agent.julia.requirements import JuliaRequirementError, require_julia
-    from jutul_agent.juliakernel import JuliaStartupError, KernelConfig
-    from jutul_agent.simulators.env_setup import EnvSetupError, prepare_workspace_env
+    from jutul_agent.julia.threads import resolve_compute_threads
+    from jutul_agent.juliakernel import JuliaStartupError
+    from jutul_agent.session_host import SessionHost
+    from jutul_agent.simulators.env_setup import EnvSetupError
+    from jutul_agent.user_config import load_user_config
 
     try:
         require_julia()
@@ -221,107 +217,110 @@ async def _run_session(
 
     ws = workspace_root()
     julia_project = args.julia_project or resolve_julia_project(ws)
-    extensions = discover_extensions()
-
-    if args.julia_project is not None:
+    if args.julia_project is not None and not (julia_project / "Project.toml").exists():
         # An explicit project override is used as-is; the user owns it.
-        if not (julia_project / "Project.toml").exists():
-            print(
-                f"error: --julia-project {julia_project} has no Project.toml.",
-                file=sys.stderr,
-            )
-            return 2
-    else:
-        try:
-            prepare_workspace_env(
-                adapter,
-                workspace=ws,
-                julia_project=julia_project,
-                sim_name=args.sim or config.simulator,
-                dependencies=collect_dependency_paths(extensions),
-            )
-        except EnvSetupError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-
-    session_id = resume_id or default_session_id()
-    state_dir = session_dir(session_id)
-    state_dir.mkdir(parents=True, exist_ok=True)
-
-    from jutul_agent.julia.threads import (
-        HYPRE_THREADS_ENV_VAR,
-        blas_thread_env,
-        resolve_compute_threads,
-        resolve_hypre_threads,
-    )
-
-    compute_threads = resolve_compute_threads(args.threads)
+        print(f"error: --julia-project {julia_project} has no Project.toml.", file=sys.stderr)
+        return 2
 
     print(f"Workspace:     {ws}", file=sys.stderr)
     if resume_id:
-        print(f"Resuming:      {session_id}", file=sys.stderr)
+        print(f"Resuming:      {resume_id}", file=sys.stderr)
     print(f"Julia project: {julia_project}", file=sys.stderr)
-    print(f"Julia threads: {compute_threads} compute + 1 interactive", file=sys.stderr)
+    print(
+        f"Julia threads: {resolve_compute_threads(args.threads)} compute + 1 interactive",
+        file=sys.stderr,
+    )
     _warn_if_plotting_unavailable()
 
-    # On headless Linux, plotting needs a virtual display. We manage Xvfb directly
-    # rather than via `xvfb-run`, whose `2>&1` would merge the stdout/stderr the
-    # kernel keeps on separate pipes. The Julia process inherits it through DISPLAY.
-    from contextlib import ExitStack
-
-    with ExitStack() as display_stack:
-        kernel_env = _open_headless_display(display_stack) or {}
-        # Reserve BLAS so N compute threads don't oversubscribe (sparse solves don't
-        # need threaded BLAS); merged over any DISPLAY the headless path set.
-        kernel_env = {**kernel_env, **blas_thread_env(compute_threads)}
-        # HYPRE's own (OpenMP) thread count; read by the warm-up snippet.
-        kernel_env[HYPRE_THREADS_ENV_VAR] = str(resolve_hypre_threads())
-        kernel_config = KernelConfig(
-            julia_project=julia_project,
-            stderr_file=state_dir / "julia-startup.log",
-            cwd=ws,
-            env=kernel_env or None,
-            threads=str(compute_threads),
-        )
-        try:
-            return await _run_with_backend(
-                kernel_config,
-                args,
-                adapter,
-                config,
-                session_id,
-                state_dir,
-                extensions=extensions,
-                resuming=bool(resume_id),
-            )
-        except JuliaStartupError as exc:
-            print(f"\nerror: {exc}", file=sys.stderr)
-            print("Run `jutul-agent doctor` to check your setup.", file=sys.stderr)
-            return 1
-
-
-def _open_headless_display(stack: Any) -> dict[str, str] | None:
-    """Start a virtual display for headless plotting, returning ``{DISPLAY: ...}``.
-
-    Returns ``None`` when no virtual display is needed (a real display is present,
-    non-Linux, or the user opted out) or when Xvfb can't start; the Julia process
-    then simply inherits the ambient environment.
-    """
-
-    from jutul_agent.display import managed_display, should_wrap_xvfb
-
-    if not should_wrap_xvfb():
-        return None
-    try:
-        display = stack.enter_context(managed_display())
-    except Exception as exc:  # Xvfb missing or slow to start; don't block the session.
+    headless = bool(args.prompt)
+    model_label = resolve_model(
+        args.model, workspace_model=config.model, user_model=load_user_config().model
+    )
+    env_var = missing_credential(model_label)
+    if headless and env_var is not None:
         print(
-            f"warning: could not start a virtual display for plotting ({exc}); "
-            "GLMakie plotting will be unavailable. Run `jutul-agent doctor` for help.",
+            f"error: {model_label} needs {env_var}, which isn't set. "
+            "Set it (shell env, .env, or `jutul-agent init`) before a "
+            "headless `--prompt` run.",
             file=sys.stderr,
         )
-        return None
-    return {"DISPLAY": display}
+        return 1
+
+    approval_mode = parse_approval_mode(args.approval_mode or config.approval_mode)
+    try:
+        host = await SessionHost.start(
+            simulator=adapter,
+            surface="cli" if headless else "tui",
+            model=args.model,
+            session_id=resume_id,
+            resume=bool(resume_id),
+            approval_mode=approval_mode,
+            julia_project=args.julia_project,
+            threads=args.threads,
+            add_dirs=resolve_add_dirs(args.add_dir, ws),
+            ephemeral_memory=args.ephemeral_memory,
+            open_windows=can_open_windows(interactive_session=not headless),
+            prepare_env=args.julia_project is None,
+            allow_missing_credential=not headless,
+        )
+    except EnvSetupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except JuliaStartupError as exc:
+        print(f"\nerror: {exc}", file=sys.stderr)
+        print("Run `jutul-agent doctor` to check your setup.", file=sys.stderr)
+        return 1
+
+    try:
+        write_last_session(host.session.session_id)
+        if host.agent is None:
+            # The provider key isn't set, so the host came up without a model.
+            # The model selector collects the key (or a local model) and rebuilds.
+            print(
+                f"note: {host.model} needs {env_var}, which isn't set. "
+                "Starting without a model. Open the selector with `/model` "
+                "to enter the key or pick a local Ollama model.",
+                file=sys.stderr,
+            )
+        if host.backend is not None:
+            from jutul_agent.agent.added_dirs import added_dirs
+
+            sources = host.package_sources
+            if sources:
+                writable = [src.name for src in sources if src.writable]
+                summary = f"Packages: {len(sources)} installed (read-only source)"
+                if writable:
+                    summary += f"; writable dev checkout(s): {', '.join(writable)}"
+                print(summary, file=sys.stderr)
+            for entry in added_dirs(host.backend):
+                print(f"Added folder:  {entry.path}", file=sys.stderr)
+
+        if headless:
+            return await _headless_turn(host.agent, host.session, args.prompt)
+
+        from jutul_agent.interfaces.tui import TUIApp
+
+        def build(model_id: str, dirs: Any) -> Any:
+            # One rebuild path for every surface: the host carries the
+            # checkpointer, session, added folders, and package sources.
+            host.reconfigure(model=model_id)
+            return host.agent, host.backend
+
+        await TUIApp(
+            agent=host.agent,
+            session=host.session,
+            backend=host.backend,
+            model_label=host.model,
+            approval_mode=approval_mode,
+            warmup_task=host.warmup_task,
+            agent_factory=build,
+        ).run_async()
+        # Review the whole session once, after the TUI exits (cheaper than
+        # per-turn, and the natural "we finished" point).
+        await _maybe_review(host.session)
+        return 0
+    finally:
+        await host.aclose()
 
 
 def _warn_if_plotting_unavailable() -> None:
@@ -352,145 +351,6 @@ def _warn_if_plotting_unavailable() -> None:
         "Run `jutul-agent doctor` for details.",
         file=sys.stderr,
     )
-
-
-async def _run_with_backend(
-    kernel_config: Any,
-    args: argparse.Namespace,
-    adapter: Any,
-    config: Any,
-    session_id: str,
-    state_dir: Path,
-    *,
-    extensions: Sequence[Capability] = (),
-    resuming: bool = False,
-) -> int:
-    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
-    from jutul_agent.agent.added_dirs import added_dirs
-    from jutul_agent.agent.approval import parse_approval_mode
-    from jutul_agent.agent.builder import build_agent, resolve_model, resolve_package_sources
-    from jutul_agent.display import can_open_windows
-    from jutul_agent.juliakernel import JuliaKernel
-    from jutul_agent.session import Session
-    from jutul_agent.user_config import load_user_config
-
-    # A live window is shown only for an interactive session with a display; a
-    # one-shot `--prompt` run and any headless box render offscreen to a PNG.
-    open_windows = can_open_windows(interactive_session=not args.prompt)
-
-    async with JuliaKernel(kernel_config) as julia:
-        if resuming:
-            session = Session.resume(
-                julia=julia,
-                simulator=adapter,
-                session_id=session_id,
-                ephemeral_memory=args.ephemeral_memory,
-                open_windows=open_windows,
-            )
-        else:
-            session = Session.create(
-                julia=julia,
-                simulator=adapter,
-                session_id=session_id,
-                ephemeral_memory=args.ephemeral_memory,
-                open_windows=open_windows,
-            )
-        write_last_session(session.session_id)
-        warmup_task = _start_warmup(julia, adapter.warm_package)
-        try:
-            ckpt_path = session.state_dir / "checkpoints.sqlite"
-            async with AsyncSqliteSaver.from_conn_string(str(ckpt_path)) as checkpointer:
-                user_config = load_user_config()
-                model_label = resolve_model(
-                    args.model,
-                    workspace_model=config.model,
-                    user_model=user_config.model,
-                )
-                approval_mode = parse_approval_mode(args.approval_mode or config.approval_mode)
-                package_sources = await asyncio.to_thread(
-                    resolve_package_sources, kernel_config.julia_project
-                )
-                extra_dirs = resolve_add_dirs(args.add_dir, kernel_config.cwd)
-
-                def build(model_id: str, dirs: Any) -> Any:
-                    # Rebuilds with the same checkpointer/session so the TUI can
-                    # switch models without losing the conversation; ``dirs`` keeps
-                    # any /add-dir folders across the rebuild.
-                    return build_agent(
-                        session,
-                        model=model_id,
-                        checkpointer=checkpointer,
-                        approval_mode=approval_mode,
-                        package_sources=package_sources,
-                        added_dirs=dirs,
-                        extensions=extensions,
-                    )
-
-                from jutul_agent.credentials import missing_credential
-
-                env_var = missing_credential(model_label)
-                if env_var is not None:
-                    # The provider key isn't set, so building the model would
-                    # crash. Launch without an agent instead: the user reaches
-                    # the model selector to paste the key (or pick a local Ollama
-                    # model that needs none), and selecting one rebuilds the agent.
-                    agent, backend = None, None
-                    print(
-                        f"note: {model_label} needs {env_var}, which isn't set. "
-                        "Starting without a model. Open the selector with `/model` "
-                        "to enter the key or pick a local Ollama model.",
-                        file=sys.stderr,
-                    )
-                else:
-                    agent, backend = build(model_label, extra_dirs)
-                if backend is not None:
-                    if package_sources:
-                        writable = [src.name for src in package_sources if src.writable]
-                        summary = f"Packages: {len(package_sources)} installed (read-only source)"
-                        if writable:
-                            summary += f"; writable dev checkout(s): {', '.join(writable)}"
-                        print(summary, file=sys.stderr)
-                    for entry in added_dirs(backend):
-                        print(f"Added folder:  {entry.path}", file=sys.stderr)
-                if args.prompt:
-                    if agent is None:
-                        print(
-                            f"error: {model_label} needs {env_var}, which isn't set. "
-                            "Set it (shell env, .env, or `jutul-agent init`) before a "
-                            "headless `--prompt` run.",
-                            file=sys.stderr,
-                        )
-                        return 1
-                    return await _headless_turn(agent, session, args.prompt)
-                from jutul_agent.interfaces.tui import TUIApp
-
-                await TUIApp(
-                    agent=agent,
-                    session=session,
-                    backend=backend,
-                    model_label=model_label,
-                    approval_mode=approval_mode,
-                    warmup_task=warmup_task,
-                    agent_factory=build,
-                ).run_async()
-                # Review the whole session once, after the TUI exits (cheaper than
-                # per-turn, and the natural "we finished" point).
-                await _maybe_review(session)
-        finally:
-            if warmup_task is not None and not warmup_task.done():
-                warmup_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await warmup_task
-            session.finalize()
-    return 0
-
-
-def _start_warmup(julia: Any, warm_package: str) -> asyncio.Task[Any] | None:
-    """Background warm-up; the logic is shared with the server in ``simulators.warmup``."""
-    from jutul_agent.simulators.warmup import start_warmup
-
-    return start_warmup(julia, warm_package)
 
 
 async def _headless_turn(agent: Any, session: Any, prompt: str) -> int:
