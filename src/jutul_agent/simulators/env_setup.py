@@ -34,6 +34,7 @@ from jutul_agent.workspace import (
     resolve_julia_project,
     sync_julia_env_with_template,
     sync_julia_project_with_dependencies,
+    user_owns_root_project,
     warm_source_is_current,
     workspace_is_simulator_source,
     write_env_template_stamp,
@@ -253,16 +254,30 @@ def precompile_env(project: Path) -> None:
     _run_pkg(project, ["using Pkg", _INSTANTIATE, _PRECOMPILE], echo=False)
 
 
-def verify_julia_runs(project: Path) -> None:
-    """Confirm Julia boots cleanly in ``project`` (a trivial eval, no packages).
+def julia_probe(project: Path, *, timeout: float = 600.0) -> tuple[bool, str]:
+    """Run a trivial eval in ``project``; ``(ok, output tail)`` for diagnosis.
 
-    The kernel's server is stdlib-only, so the failure mode is a broken or
-    half-resolved manifest. Surfacing it here beats a baffling crash at launch.
-    Raises ``EnvSetupError`` on failure.
+    The kernel's server is stdlib-only, so the real failure mode is a broken or
+    half-resolved manifest. One probe shared by env verification and doctor.
     """
+    argv = ["julia", f"--project={project}", "--startup-file=no", "-e", "print(1 + 1)"]
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    if result.returncode == 0:
+        return True, ""
+    return False, "\n".join((result.stderr or result.stdout or "").strip().splitlines()[-12:])
+
+
+def verify_julia_runs(project: Path) -> None:
+    """Confirm Julia boots cleanly in ``project``; raises ``EnvSetupError`` if not."""
 
     _info("Verifying Julia runs in the env...")
-    _run_pkg(project, ["print(1 + 1)"])
+    ok, tail = julia_probe(project)
+    if not ok:
+        detail = f" Julia said:\n{tail}" if tail else ""
+        raise EnvSetupError(f"Julia failed to run in {project}.{detail}")
 
 
 def resolve_and_instantiate(
@@ -383,7 +398,7 @@ def prepare_workspace_env(
     if not is_workspace_env_ready(workspace):
         # Implicit auto-bootstrap (without dev or precompile; those are init's job).
         bootstrap_workspace(adapter, workspace=workspace)
-    elif not (workspace / "Project.toml").exists():
+    elif not user_owns_root_project(workspace):
         foreign = _foreign_simulator(julia_project, adapter)
         if foreign is not None:
             _rebuild_managed_env(adapter, workspace, sim_name, reason=f"was built for {foreign}")
@@ -592,7 +607,7 @@ def _ensure_simulator_installed(
         resolve_and_instantiate(julia_project, precompile=False)
     except EnvSetupError as exc:
         # A user-owned root env is theirs to fix; only rebuild the managed env.
-        if not (ws / "Project.toml").exists():
+        if not user_owns_root_project(ws):
             _rebuild_managed_env(adapter, ws, sim_name, reason="could not be resolved")
             return
         _warn_rebuild(pkg, sim_name, exc)
@@ -610,7 +625,7 @@ def _reconcile_env_template(
     already matches — baselining a stamp-less (pre-feature) env instead of nagging.
     """
 
-    if (ws / "Project.toml").exists() or not env_declares_warm_packages(julia_project):
+    if user_owns_root_project(ws) or not env_declares_warm_packages(julia_project):
         return
 
     template = adapter.julia_env_template_path
@@ -643,7 +658,7 @@ def _ensure_env_warmed(ws: Path, julia_project: Path, sim_name: str | None) -> N
     """
 
     # Only the managed env carries the warm-up packages; a user-owned env is theirs.
-    if (ws / "Project.toml").exists() or not env_declares_warm_packages(julia_project):
+    if user_owns_root_project(ws) or not env_declares_warm_packages(julia_project):
         return
     if env_precompile_is_current(julia_project):
         return  # nothing changed since the last bake; skip without spawning Julia

@@ -26,6 +26,7 @@ from inspect_ai.solver import TaskState
 
 from jutul_agent.eval.solver import STORE_OUTPUT_DIR, STORE_TRACE_DB, STORE_WORKSPACE
 from jutul_agent.paths import is_host_path
+from jutul_agent.trace import Event, schema
 
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?")
 # "338,350" must parse as one number, not two: strip commas used as
@@ -44,22 +45,28 @@ def _answer_numbers(text: str) -> list[float]:
     return [float(m) for m in _NUMBER.findall(_GROUPED_COMMA.sub("", text))]
 
 
-def _trace_tool_calls(state: TaskState) -> list[str]:
-    """Names of every tool call recorded in this sample's session trace."""
+def _trace_events(state: TaskState) -> list[Event]:
+    """Every event in this sample's session trace, or ``[]`` when there is none.
+
+    One read-only open per scorer call: scorers grade the same events the
+    transcript renders, and never mutate the session they are grading.
+    """
     from jutul_agent.trace import TraceLog
 
     path = state.store.get(STORE_TRACE_DB)
     if not path or not Path(path).exists():
         return []
-    log = TraceLog(Path(path))
-    try:
-        return [
-            event.payload.get("name", "")
-            for event in log.iter_events()
-            if event.kind == "tool_call"
-        ]
-    finally:
-        log.close()
+    with TraceLog.open_readonly(Path(path)) as log:
+        return log.iter_events()
+
+
+def _trace_tool_calls(state: TaskState) -> list[str]:
+    """Names of every tool call recorded in this sample's session trace."""
+    return [
+        event.payload.get("name", "")
+        for event in _trace_events(state)
+        if event.kind == schema.TOOL_CALL
+    ]
 
 
 @scorer(metrics=[accuracy()])
@@ -111,25 +118,16 @@ def no_interpreters_via_execute(
     it.
     """
     from jutul_agent.agent.backend import interpreter_invocation
-    from jutul_agent.trace import TraceLog
 
     async def score(state: TaskState, target: Target) -> Score:
-        path = state.store.get(STORE_TRACE_DB)
         offenders: list[str] = []
-        if path and Path(path).exists():
-            log = TraceLog(Path(path))
-            try:
-                for event in log.iter_events():
-                    if event.kind != "tool_call":
-                        continue
-                    if event.payload.get("name") != "execute":
-                        continue
-                    command = str((event.payload.get("args") or {}).get("command", ""))
-                    name = interpreter_invocation(command, interpreters)
-                    if name is not None:
-                        offenders.append(command[:_EXPLAIN_COMMAND])
-            finally:
-                log.close()
+        for event in _trace_events(state):
+            if event.kind != schema.TOOL_CALL or event.payload.get("name") != "execute":
+                continue
+            command = str((event.payload.get("args") or {}).get("command", ""))
+            name = interpreter_invocation(command, interpreters)
+            if name is not None:
+                offenders.append(command[:_EXPLAIN_COMMAND])
         return Score(
             value=CORRECT if not offenders else INCORRECT,
             explanation=(
@@ -151,27 +149,19 @@ def julia_code_matches(pattern: str) -> Scorer:
     must appear in the code of a ``run_julia``/``plot_julia`` call, so a
     textual claim of having used it cannot pass.
     """
-    from jutul_agent.trace import TraceLog
-
     compiled = re.compile(pattern)
 
     async def score(state: TaskState, target: Target) -> Score:
-        path = state.store.get(STORE_TRACE_DB)
         hits: list[str] = []
-        if path and Path(path).exists():
-            log = TraceLog(Path(path))
-            try:
-                for event in log.iter_events():
-                    if event.kind != "tool_call":
-                        continue
-                    if event.payload.get("name") not in ("run_julia", "plot_julia"):
-                        continue
-                    code = str((event.payload.get("args") or {}).get("code", ""))
-                    match = compiled.search(code)
-                    if match is not None:
-                        hits.append(match.group(0)[:_EXPLAIN_MATCH])
-            finally:
-                log.close()
+        for event in _trace_events(state):
+            if event.kind != schema.TOOL_CALL:
+                continue
+            if event.payload.get("name") not in ("run_julia", "plot_julia"):
+                continue
+            code = str((event.payload.get("args") or {}).get("code", ""))
+            match = compiled.search(code)
+            if match is not None:
+                hits.append(match.group(0)[:_EXPLAIN_MATCH])
         return Score(
             value=CORRECT if hits else INCORRECT,
             explanation=(
@@ -194,25 +184,17 @@ def tool_call_matches(tool: str, args_pattern: str) -> Scorer:
     """
     import json as _json
 
-    from jutul_agent.trace import TraceLog
-
     compiled = re.compile(args_pattern)
 
     async def score(state: TaskState, target: Target) -> Score:
-        path = state.store.get(STORE_TRACE_DB)
         hits: list[str] = []
-        if path and Path(path).exists():
-            log = TraceLog(Path(path))
-            try:
-                for event in log.iter_events():
-                    if event.kind != "tool_call" or event.payload.get("name") != tool:
-                        continue
-                    serialized = _json.dumps(event.payload.get("args") or {})
-                    match = compiled.search(serialized)
-                    if match is not None:
-                        hits.append(match.group(0)[:_EXPLAIN_MATCH])
-            finally:
-                log.close()
+        for event in _trace_events(state):
+            if event.kind != schema.TOOL_CALL or event.payload.get("name") != tool:
+                continue
+            serialized = _json.dumps(event.payload.get("args") or {})
+            match = compiled.search(serialized)
+            if match is not None:
+                hits.append(match.group(0)[:_EXPLAIN_MATCH])
         return Score(
             value=CORRECT if hits else INCORRECT,
             explanation=(
@@ -233,10 +215,7 @@ def artifact_produced(suffix: str = ".png") -> Scorer:
     "a plot exists" is checked against the trace plus the file on disk; a
     textual claim of having plotted cannot pass.
     """
-    from jutul_agent.trace import TraceLog
-
     async def score(state: TaskState, target: Target) -> Score:
-        path = state.store.get(STORE_TRACE_DB)
         # Artifact paths are recorded relative to the session output dir
         # (plot_julia writes "artifacts/<name>.png"); the workspace is kept
         # as a fallback root for artifacts recorded by other tools.
@@ -249,22 +228,17 @@ def artifact_produced(suffix: str = ".png") -> Scorer:
             if root
         ]
         found: list[str] = []
-        if path and Path(path).exists():
-            log = TraceLog(Path(path))
-            try:
-                for event in log.iter_events():
-                    if event.kind != "artifact":
-                        continue
-                    artifact = str(event.payload.get("path", ""))
-                    if not artifact.endswith(suffix):
-                        continue
-                    for root in roots:
-                        file = root / artifact.lstrip("/")
-                        if file.exists() and file.stat().st_size > 0:
-                            found.append(artifact)
-                            break
-            finally:
-                log.close()
+        for event in _trace_events(state):
+            if event.kind != schema.ARTIFACT:
+                continue
+            artifact = str(event.payload.get("path", ""))
+            if not artifact.endswith(suffix):
+                continue
+            for root in roots:
+                file = root / artifact.lstrip("/")
+                if file.exists() and file.stat().st_size > 0:
+                    found.append(artifact)
+                    break
         return Score(
             value=CORRECT if found else INCORRECT,
             explanation=(
@@ -386,17 +360,10 @@ def investigation_recorded(min_attempts: int = 3, metric: str | None = None) -> 
     attempt. This grades the recorded process: a model that explored
     without recording fails even if its final answer is right.
     """
-    from jutul_agent.trace import TraceLog
-
     async def score(state: TaskState, target: Target) -> Score:
-        path = state.store.get(STORE_TRACE_DB)
-        attempts: list[dict] = []
-        if path and Path(path).exists():
-            log = TraceLog(Path(path))
-            try:
-                attempts = [event.payload for event in log.iter_events() if event.kind == "attempt"]
-            finally:
-                log.close()
+        attempts = [
+            event.payload for event in _trace_events(state) if event.kind == schema.ATTEMPT
+        ]
         problems: list[str] = []
         if len(attempts) < min_attempts:
             problems.append(f"{len(attempts)} attempts recorded, need {min_attempts}")
@@ -468,41 +435,33 @@ def no_repeated_identical_calls() -> Scorer:
     clears the repeat; passive reads (read_file, ls, grep, write_todos) do
     not.
     """
-    from jutul_agent.trace import TraceLog
-
     async def score(state: TaskState, target: Target) -> Score:
-        path = state.store.get(STORE_TRACE_DB)
         repeats: list[str] = []
-        if path and Path(path).exists():
-            log = TraceLog(Path(path))
-            try:
-                failed: set[str] = set()
-                events = log.iter_events()
-                results = {
-                    e.payload.get("tool_call_id"): e.payload
-                    for e in events
-                    if e.kind == "tool_result"
-                }
-                for event in events:
-                    if event.kind != "tool_call":
-                        continue
-                    name = event.payload.get("name")
-                    signature = f"{name}:{event.payload.get('args')}"
-                    if signature in failed:
-                        repeats.append(signature[:_EXPLAIN_COMMAND])
-                        continue
-                    if name in _STATE_CHANGING_TOOLS:
-                        # The world may have changed; prior failures are no
-                        # longer evidence of a stuck loop.
-                        failed.clear()
-                    result = results.get(event.payload.get("id"))
-                    if result is not None and (
-                        result.get("status") == "error"
-                        or str(result.get("content", "")).startswith("ERROR")
-                    ):
-                        failed.add(signature)
-            finally:
-                log.close()
+        events = _trace_events(state)  # a list, so the two passes below are safe
+        failed: set[str] = set()
+        results = {
+            e.payload.get("tool_call_id"): e.payload
+            for e in events
+            if e.kind == schema.TOOL_RESULT
+        }
+        for event in events:
+            if event.kind != schema.TOOL_CALL:
+                continue
+            name = event.payload.get("name")
+            signature = f"{name}:{event.payload.get('args')}"
+            if signature in failed:
+                repeats.append(signature[:_EXPLAIN_COMMAND])
+                continue
+            if name in _STATE_CHANGING_TOOLS:
+                # The world may have changed; prior failures are no
+                # longer evidence of a stuck loop.
+                failed.clear()
+            result = results.get(event.payload.get("id"))
+            if result is not None and (
+                result.get("status") == "error"
+                or str(result.get("content", "")).startswith("ERROR")
+            ):
+                failed.add(signature)
         return Score(
             value=CORRECT if not repeats else INCORRECT,
             explanation=(
@@ -633,8 +592,6 @@ def no_unresolvable_path_in_julia(
     :func:`jutul_agent.paths.is_host_path` with the workspace backend so grader
     and tool agree on which paths resolve.
     """
-    from jutul_agent.trace import TraceLog
-
     def _unresolvable_paths(text: str, *, shell: bool) -> list[str]:
         text = _LINE_COMMENT.sub("", text)
         found = [match.group(2) for match in _QUOTED_PATH.finditer(text)]
@@ -643,22 +600,16 @@ def no_unresolvable_path_in_julia(
         return [candidate for candidate in found if not is_host_path(candidate)]
 
     async def score(state: TaskState, target: Target) -> Score:
-        path = state.store.get(STORE_TRACE_DB)
         offenders: list[str] = []
-        if path and Path(path).exists():
-            log = TraceLog(Path(path))
-            try:
-                for event in log.iter_events():
-                    if event.kind != "tool_call":
-                        continue
-                    name = event.payload.get("name")
-                    if name not in tools:
-                        continue
-                    args = event.payload.get("args") or {}
-                    text = str(args.get("code") or args.get("command") or "")
-                    offenders += _unresolvable_paths(text, shell=name == "execute")
-            finally:
-                log.close()
+        for event in _trace_events(state):
+            if event.kind != schema.TOOL_CALL:
+                continue
+            name = event.payload.get("name")
+            if name not in tools:
+                continue
+            args = event.payload.get("args") or {}
+            text = str(args.get("code") or args.get("command") or "")
+            offenders += _unresolvable_paths(text, shell=name == "execute")
         offenders = sorted({path[:_EXPLAIN_MATCH] for path in offenders})
         return Score(
             value=CORRECT if not offenders else INCORRECT,

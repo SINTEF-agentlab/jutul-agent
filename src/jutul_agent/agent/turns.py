@@ -141,17 +141,7 @@ class TurnRunner:
             for task in getattr(snapshot, "tasks", ()) or ()
             for interrupt in getattr(task, "interrupts", ()) or ()
         ]
-        interrupts: list[TurnInterrupt] = []
-        seen: set[str] = set()
-        for itp in raw:
-            interrupt_id = str(getattr(itp, "id", "") or "")
-            if not interrupt_id or interrupt_id in seen:
-                continue
-            seen.add(interrupt_id)
-            interrupts.append(
-                TurnInterrupt(interrupt_id=interrupt_id, value=getattr(itp, "value", None))
-            )
-        return interrupts
+        return _dedup_interrupts(raw)
 
     async def _run(
         self,
@@ -328,20 +318,29 @@ async def _collect_interrupts(run: Any, trace: TraceLog | None) -> list[TurnInte
     """Read ``run.interrupts`` after the stream drains."""
 
     raw = await _maybe_await(getattr(run, "interrupts", []))
+    interrupts = _dedup_interrupts(raw or ())
+    if trace is not None:
+        for interrupt in interrupts:
+            trace.append(
+                HITL_REQUEST,
+                {"interrupt_id": interrupt.interrupt_id, "value": interrupt.value},
+            )
+    return interrupts
+
+
+def _dedup_interrupts(raw: Any) -> list[TurnInterrupt]:
+    """Unique ``TurnInterrupt``s (by id) from raw langgraph interrupt objects."""
+
     interrupts: list[TurnInterrupt] = []
     seen: set[str] = set()
-    for itp in raw or ():
+    for itp in raw:
         interrupt_id = str(getattr(itp, "id", "") or "")
         if not interrupt_id or interrupt_id in seen:
             continue
         seen.add(interrupt_id)
-        value = getattr(itp, "value", None)
-        interrupts.append(TurnInterrupt(interrupt_id=interrupt_id, value=value))
-        if trace is not None:
-            trace.append(
-                HITL_REQUEST,
-                {"interrupt_id": interrupt_id, "value": value},
-            )
+        interrupts.append(
+            TurnInterrupt(interrupt_id=interrupt_id, value=getattr(itp, "value", None))
+        )
     return interrupts
 
 

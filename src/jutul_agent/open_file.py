@@ -30,7 +30,9 @@ def open_path(path: Path) -> None:
             # On a headless Linux box there's no display server; xdg-open often
             # falls through to a viewer that prints "unable to open X server"
             # to our stderr. Skip rather than spew.
-            if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            from jutul_agent.display import has_display
+
+            if not has_display():
                 return
             _spawn(["xdg-open", str(path)])
     except Exception:

@@ -181,3 +181,16 @@ def workspace_memory_dir(workspace: Path | None = None) -> Path:
     ``write_file`` tools mounted at ``/memory/`` in the agent backend.
     """
     return workspace_state_dir(workspace) / "memory"
+
+
+def eval_sessions_state_root(simulator: str) -> Path:
+    """A stable, discoverable home for an eval run's sessions.
+
+    The eval harness otherwise drops each session in a temp dir that is cleaned
+    up, so eval runs (where a golden answer is known and silent failures matter
+    most) could never be reviewed. Pointing an eval session's ``state_root``
+    here puts its trace under ``workspaces/eval-<sim>/sessions/``, which the
+    review tooling discovers like any other session. A state-home layout fact,
+    so it lives here rather than coupling the eval extra to the review package.
+    """
+    return state_home() / "workspaces" / f"eval-{simulator}"

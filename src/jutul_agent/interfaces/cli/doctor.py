@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -133,7 +132,7 @@ def _check_julia(report: _Report):
 def _resolve_model_id(config) -> str:
     """The model this workspace will use (same precedence as the agent)."""
     # Lazy: builder pulls in deepagents, too heavy to import on every CLI call.
-    from jutul_agent.agent.builder import resolve_model
+    from jutul_agent.models import resolve_model
     from jutul_agent.user_config import load_user_config
 
     return resolve_model(None, workspace_model=config.model, user_model=load_user_config().model)
@@ -355,16 +354,12 @@ def _check_julia_runs(report: _Report, project: Path) -> None:
     with the same actionable rebuild hint.
     """
 
-    argv = ["julia", f"--project={project}", "--startup-file=no", "-e", "print(1 + 1)"]
-    try:
-        result = subprocess.run(argv, capture_output=True, text=True, timeout=600, check=False)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        report.line(FAIL, "Julia runs in env", str(exc))
-        return
-    if result.returncode == 0:
+    from jutul_agent.simulators.env_setup import julia_probe
+
+    ok, tail = julia_probe(project)
+    if ok:
         report.line(PASS, "Julia runs in env")
         return
-    tail = "\n".join((result.stderr or result.stdout or "").strip().splitlines()[-12:])
     report.line(
         FAIL,
         "Julia runs in env",

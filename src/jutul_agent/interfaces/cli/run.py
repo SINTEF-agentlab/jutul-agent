@@ -199,12 +199,12 @@ async def _run_session(
     resume_id: str | None = None,
 ) -> int:
     from jutul_agent.agent.approval import parse_approval_mode
-    from jutul_agent.agent.builder import resolve_model
     from jutul_agent.credentials import missing_credential
     from jutul_agent.display import can_open_windows
     from jutul_agent.julia.requirements import JuliaRequirementError, require_julia
     from jutul_agent.julia.threads import resolve_compute_threads
     from jutul_agent.juliakernel import JuliaStartupError
+    from jutul_agent.models import resolve_model
     from jutul_agent.session_host import SessionHost
     from jutul_agent.simulators.env_setup import EnvSetupError
     from jutul_agent.user_config import load_user_config

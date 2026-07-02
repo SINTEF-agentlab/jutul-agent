@@ -27,7 +27,7 @@ _INSPECT_PROVIDERS = {"google_genai": "google"}
 
 def _default_inspect_model() -> str:
     """The agent's default model, in Inspect's ``provider/model`` form."""
-    from jutul_agent.agent.builder import DEFAULT_MODEL
+    from jutul_agent.models import DEFAULT_MODEL
 
     provider, _, model = DEFAULT_MODEL.partition(":")
     return f"{_INSPECT_PROVIDERS.get(provider, provider)}/{model}"
