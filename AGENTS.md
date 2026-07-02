@@ -37,7 +37,7 @@ ecosystem, built on Deep Agents.
 
 ## Continuous integration
 
-Two GitHub Actions workflows:
+GitHub Actions workflows:
 
 - `ci.yml`: every push/PR. `lint` (ruff); `test` across Linux/Windows/macOS
   (`pytest -m "not integration"`, no Julia); `julia-integration` (Linux only:
@@ -46,6 +46,13 @@ Two GitHub Actions workflows:
   `fimbul`, `mocca`; Linux). On PR + push to `main`, a weekly Monday run
   (catches upstream breakage), and manual dispatch. Each job instantiates the
   env from `Project.toml` and runs `test_simulators_smoke.py`.
+- `deps-canary.yml`: weekly and manual only. Resolves the newest stack,
+  ignoring the pin, and reports to the run summary without ever marking a
+  commit red. It is the early warning for when the pin can move.
+- `docs.yml`: builds the MkDocs site on changes under `docs/`, publishing on
+  `main`.
+- `release.yml`: on a published GitHub release tagged `vX.Y.Z`, builds and
+  uploads to PyPI. The tag is the only source of the version.
 
 ## Local git hooks
 
@@ -85,8 +92,10 @@ and check on staged `.py` files. To verify the whole tree like CI:
 - `src/jutul_agent/trace/`: SQLite event log and `TraceRecorder` middleware.
 - `src/jutul_agent/transcript/`: renderers that consume a trace
   (HTML transcript, markdown transcript, investigation report).
-- `src/jutul_agent/interfaces/tui/approval.py`: HITL decision policy and the
-  approval card markdown.
+- `src/jutul_agent/approval_preview.py`: the approval card body every surface
+  renders for a pending tool call.
+- `src/jutul_agent/session_host.py`: the one session bootstrap and turn-policy
+  loop behind every front end.
 - `src/jutul_agent/interfaces/`: `cli`, the Textual `tui`, and the `server`
   (FastAPI REST + per-session WebSocket). The browser UI is a React + TypeScript
   app in `server/webapp/` (see its README), built into `server/web_dist/`
@@ -122,21 +131,29 @@ the adapter's `subagent_factories` tuple.
 ## deepagents / langgraph private-surface contacts
 
 We pin deepagents (see `[tool.uv] exclude-newer` in `pyproject.toml`) and
-touch a few non-public surfaces. When bumping the pin, re-verify each:
+touch a few non-public surfaces. `tests/test_deepagents_canaries.py` asserts
+each one still exists, so a bump fails at test time rather than degrading
+silently at runtime. The contacts:
 
 - `agent/tools.py`: reads `langgraph.pregel._tools._tool_call_writer`
   (ContextVar) to stream live Julia output as tool-output deltas.
   Import-guarded: if it moves, streaming silently disables.
-- `agent/turns.py` + `tests/fakes.py`: consume the v3 `astream_events`
-  typed projections (`run.messages` / `run.tool_calls` / `run.interrupts` /
-  `run.output`); the fakes mirror that shape, so a projection change shows up
-  as test failures.
+- `agent/turns.py` + `jutul_agent/lab/fakes.py`: consume the v3
+  `astream_events` typed projections (`run.messages` / `run.tool_calls` /
+  `run.interrupts` / `run.output`); the fakes mirror that shape, so a
+  projection change shows up as test failures.
+- `agent/summarization.py`: manual `/compact` composes the summarization
+  middleware's private engine methods. Guarded by a `hasattr` sweep that
+  degrades to a clear "unavailable" message.
 - `agent/backend.py`: subclasses `CompositeBackend` (overriding `grep`/`glob`
   so patterns recurse) and `LocalShellBackend` (overriding `write`/`edit`/
-  `execute` to refuse depot writes, reading `cwd` to resolve relative paths).
-  A subclass breaks loudly if a base method's signature moves. After the
-  real-paths refactor nothing routes through a mount, so `added_dirs.py` only
-  records the added folders; every tool already reaches them by absolute path.
+  `delete`/`execute` to refuse depot writes, reading `cwd` to resolve relative
+  paths). A subclass breaks loudly if a base method's signature moves, but a
+  narrowed override degrades quietly, which is why the search overrides
+  forward `**kwargs`. After the real-paths refactor nothing routes through a
+  mount, so `added_dirs.py` only records the added folders; every tool already
+  reaches them by absolute path.
 - `tests/test_builder.py`: imports
   `deepagents.profiles.harness.harness_profiles._harness_profile_for_model`
-  to assert our profile resolves for built model instances.
+  to assert our profile resolves for built model instances. It also pins the
+  exact tool set the framework installs, since a bump can add or drop one.

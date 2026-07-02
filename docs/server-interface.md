@@ -104,7 +104,11 @@ turn.
 | `GET` | `/sessions/{id}/transcript` | The transcript (`?format=html` or `md`) |
 | `GET` | `/sessions/{id}/memory` | The session's workspace memory, as a page |
 | `POST` | `/sessions/{id}/upload` | Add a file to the session workspace (`uploads/<name>`) |
-| `GET` | `/models` | List the models that can be selected |
+| `GET` | `/sessions/{id}/context` | The context-usage panel as markdown (same figures as the TUI's `/context`) |
+| `GET` | `/models` | List the models that can be selected; also carries `protocol`, the wire-contract version |
+| `GET` | `/models/window` | The context window for a model, for a usage indicator |
+| `GET` | `/credentials` | Which providers have keys, and whether a shell variable shadows a saved one |
+| `POST` | `/credentials` | Save a provider API key (used by the missing-key prompt) |
 | `GET` | `/simulators` | List installed simulators (the server is bound to one, returned as `default`), each with its display name and starter prompts |
 
 ## The wire protocol
@@ -120,13 +124,14 @@ Messages from the server to the front end:
 | `text` | A piece of the assistant's reply |
 | `reasoning` | A piece of the assistant's reasoning |
 | `tool` | A step in a tool call: requested, started, finished, or failed |
-| `interrupt` | A request for approval, with the actions and the decisions allowed |
+| `interrupt` | A request for approval: the actions, the decisions allowed, and per action a markdown `body` with the same detail the terminal shows (the command, a content preview, or the on-disk diff) |
 | `artifact` | A file the session produced, given as a URL |
 | `viz` | An interactive view to pin in the side panel: a plot or a report, given as a URL |
 | `usage` | The token usage for the turn |
 | `turn_end` | The turn has finished |
 | `ui` | A command for the front end to apply to its interface |
 | `notice` | A system note from a command's result (e.g. `/compact`, `/add-dir`) |
+| `credential_required` | A model switch needs a provider key; the front end collects it, POSTs `/credentials`, and retries |
 | `error` | Something went wrong (a bad command, a failed turn, an unknown session) |
 
 Messages from the front end to the server are a prompt to start a turn, a
@@ -154,9 +159,11 @@ be able to take that into account.
 This two-way link is the `ui` message and the user-interface event. A tool can
 emit a `ui` message, which names an action and carries a payload, and the front
 end applies it. When the user changes something in the interface, the front end
-sends an event back, which the agent sees on its next turn. The server fixes only
-the shape of these messages. Which actions exist, and what they mean, belong to
-the application, because they describe that application's own interface.
+sends a `ui_event` back, which the server records on the session's trace; feeding
+it into the agent's next turn is the seam the first canvas extension wires up.
+The server fixes only the shape of these messages. Which actions exist, and what
+they mean, belong to the application, because they describe that application's
+own interface.
 
 ## Capabilities
 
