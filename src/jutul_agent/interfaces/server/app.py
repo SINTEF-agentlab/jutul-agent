@@ -36,7 +36,6 @@ from jutul_agent.agent.approval import (
     ToolAllowlist,
     build_resume_payload,
     categories_for_interrupt,
-    interrupt_matches_allowlist,
 )
 from jutul_agent.agent.capabilities import HttpToolSpec, http_tool_capability
 from jutul_agent.interfaces.server import protocol
@@ -1021,10 +1020,21 @@ class _StreamState:
         arg = str(message.get("arg") or "")
         try:
             if command == "set_model":
+                # A model switch under a paused approval would rebuild the agent
+                # out from under the pending interrupt (the TUI refuses this too).
+                if self._pending or await self._host.pending_interrupts():
+                    await _safe_send(
+                        self._ws,
+                        {
+                            "type": "error",
+                            "message": "answer the pending approval before switching models",
+                        },
+                    )
+                    return
                 # Mirror the TUI: a model whose key is missing prompts for it
                 # instead of failing the switch. The UI saves the key, then retries.
                 from jutul_agent.credentials import missing_credential
-                from jutul_agent.models import provider_info
+                from jutul_agent.models import local_model_error, provider_info
 
                 env_var = missing_credential(arg)
                 if env_var is not None:
@@ -1038,13 +1048,23 @@ class _StreamState:
                         ),
                     )
                     return
+                # A local model that isn't reachable/pulled/tool-capable fails
+                # here with a reason, not opaquely on the next turn.
+                problem = await local_model_error(arg)
+                if problem is not None:
+                    await _safe_send(self._ws, {"type": "error", "message": problem})
+                    return
                 self._host.reconfigure(model=arg)
             elif command == "set_approval":
                 self._host.reconfigure(approval_mode=arg)
+                # A pending approval the new policy already allows resumes now
+                # instead of waiting for a decision that is a foregone conclusion.
+                await self._auto_resolve_pending()
             elif command == "add_dir":
                 await _safe_send(self._ws, protocol.notice_to_wire(self._host.add_dir(arg)))
             elif command == "compact":
-                await _safe_send(self._ws, protocol.notice_to_wire(await self._host.compact()))
+                note, _result = await self._host.compact()
+                await _safe_send(self._ws, protocol.notice_to_wire(note))
             else:
                 await _safe_send(
                     self._ws, {"type": "error", "message": f"unknown command {command!r}"}
@@ -1119,21 +1139,42 @@ class _StreamState:
         for interrupt in pending:
             await _safe_send(self._ws, protocol.interrupt_to_wire(interrupt))
 
+    async def _auto_resolve_pending(self) -> None:
+        """Resume a paused approval the (changed) policy now auto-allows."""
+        from jutul_agent.agent.approval import (
+            build_resume_payload,
+            parse_approval_mode,
+            should_auto_approve_interrupt,
+        )
+
+        if self._busy() or not self._pending:
+            return
+        mode = parse_approval_mode(self._host.approval_mode)
+        if not all(
+            should_auto_approve_interrupt(i.value, mode, allowlist=self._allowlist)
+            for i in self._pending
+        ):
+            return
+        payload = build_resume_payload(self._pending, {"type": "approve"})
+        self._pending = []
+        runner = self._host.runner
+        self._spawn(lambda: runner.resume(payload, on_message=self._on_message))
+
     def _spawn(self, factory) -> None:
         self._turn = asyncio.create_task(self._run_turn(factory))
 
     async def _run_turn(self, factory) -> None:
         self._side_output_id = self._latest_event_id()
         try:
-            result = await factory()
-            # Resume past any interrupts the user pre-allowed this session ("always
-            # allow"), without bothering them again, until the turn completes or hits
-            # an interrupt that still needs a decision.
-            while result.interrupts and all(
-                interrupt_matches_allowlist(i.value, self._allowlist) for i in result.interrupts
-            ):
-                payload = build_resume_payload(result.interrupts, {"type": "approve"})
-                result = await self._host.runner.resume(payload, on_message=self._on_message)
+            # The host owns the policy loop (auto-resume past interrupts the
+            # mode or the session allowlist already allows) and the settle
+            # hooks, shared with the TUI.
+            result = await self._host.drive_turn(
+                factory,
+                approval_mode=self._host.approval_mode,
+                allowlist=self._allowlist,
+                on_message=self._on_message,
+            )
         except asyncio.CancelledError:
             await self._flush_side_outputs()
             await _safe_send(self._ws, {"type": "turn_end", "text": "", "cancelled": True})
@@ -1159,51 +1200,12 @@ class _StreamState:
         if usage is not None:
             await _safe_send(self._ws, usage)
         await _safe_send(self._ws, protocol.turn_end_to_wire(result.messages))
-        self._maybe_title_session()
+        task = self._host.maybe_title(self._on_titled)
+        if task is not None:
+            self._title_task = task
 
-    def _maybe_title_session(self) -> None:
-        """After the first turn, upgrade the first-prompt title to a content-aware one.
-
-        Fire-and-forget and once per session: the first-prompt title already shows
-        in the history list, so this only improves it from what the exchange was
-        actually about. Runs only on the very first turn (exactly one user message
-        recorded) and is wholly best-effort — a failure keeps the first-prompt title.
-        """
-        host = self._host
-        if host.titled:
-            return
-        events = host.session.trace.iter_events()
-        user_msgs = [e for e in events if e.kind == "message_user"]
-        if len(user_msgs) != 1:
-            return
-        host.titled = True
-        first_user = str(user_msgs[0].payload.get("content", "")).strip()
-        first_reply = next(
-            (
-                str(e.payload.get("content", "")).strip()
-                for e in events
-                if e.kind == "message_assistant"
-            ),
-            "",
-        )
-        if not first_user:
-            return
-        conversation = f"User: {first_user}\n\nAssistant: {first_reply}"
-        self._title_task = asyncio.create_task(self._retitle(conversation))
-
-    async def _retitle(self, conversation: str) -> None:
-        """Generate and apply an LLM title, then nudge the front end to refresh history."""
-        from jutul_agent.agent.titling import generate_session_title
-        from jutul_agent.models import DEFAULT_MODEL
-
-        # ``host.model`` is None when the session runs the default model, so fall
-        # back to it (matching the /compact path) instead of skipping titling for
-        # the common case.
-        title = await generate_session_title(self._host.model or DEFAULT_MODEL, conversation)
-        if not title:
-            return
-        with contextlib.suppress(Exception):  # session may be closing; never raise here
-            self._host.session.retitle(title)
+    async def _on_titled(self, title: str) -> None:
+        """Nudge the front end to refresh its history list with the new title."""
         await _safe_send(self._ws, protocol.ui_command("history_changed", {"title": title}))
 
     def _latest_event_id(self) -> int:

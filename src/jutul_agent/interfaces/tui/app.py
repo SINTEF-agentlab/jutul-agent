@@ -50,7 +50,6 @@ from jutul_agent.agent.approval import (
 from jutul_agent.agent.turns import (
     TurnInterrupt,
     TurnReasoningDelta,
-    TurnRunner,
     TurnRunResult,
     TurnTextDelta,
     TurnTextEnd,
@@ -93,6 +92,7 @@ from jutul_agent.open_file import open_path
 from jutul_agent.paths import workspace_root
 from jutul_agent.recent_models import record_recent_model
 from jutul_agent.session import Session
+from jutul_agent.session_host import SessionHost
 from jutul_agent.trace import TraceLog
 from jutul_agent.transcript import render_html, render_markdown
 
@@ -255,6 +255,7 @@ class TUIApp(App[None]):
         approval_mode: ApprovalMode | str | None = None,
         warmup_task: Any | None = None,
         agent_factory: Callable[[str, Any], tuple[Any, Any]] | None = None,
+        host: SessionHost | None = None,
     ) -> None:
         super().__init__()
         self._agent = agent
@@ -270,7 +271,19 @@ class TUIApp(App[None]):
             else parse_approval_mode(approval_mode)
         )
         self._tool_allowlist = ToolAllowlist()
-        self._turn_runner = TurnRunner(agent, thread_id=session.session_id, trace=session.trace)
+        # All turn driving goes through the host (the shared policy loop and
+        # settle hooks). A caller that only has the raw pieces (tests) gets a
+        # host wrapped around them.
+        self._host = host or SessionHost(
+            session=session,
+            agent=agent,
+            backend=backend,
+            model=model_label,
+            approval_mode=str(self._approval_mode),
+            surface="tui",
+        )
+        # Held so the fire-and-forget titling task isn't garbage-collected mid-run.
+        self._title_task: Any | None = None
         self._turn_worker: Any = None
         self._cancel_requested = False
         self._cancel_rendered = False
@@ -343,10 +356,29 @@ class TUIApp(App[None]):
         if self._session.resumed:
             self._load_usage_from_trace()
             self.run_worker(self._replay_history(), name="replay")
+            self.run_worker(self._resync_pending(), name="pending-resync")
         if self._warming:
             self.query_one("#status", StatusBar).set_warming(True)
             self.run_worker(self._watch_warmup(), name="warmup-watch")
         self.run_worker(self._fetch_context_window(), name="ctx-window")
+
+    async def _resync_pending(self) -> None:
+        """Re-surface an approval the session was paused on when it was left.
+
+        A turn that pauses on an approval persists the interrupt in the graph
+        state. Without this, resuming that session would orphan the paused
+        turn: nothing would show, and a new prompt would be refused.
+        """
+        try:
+            pending = await self._host.pending_interrupts()
+        except Exception:
+            return
+        if not pending or self._busy or self._pending_interrupts:
+            return
+        self._pending_interrupts = list(pending)
+        await self._render_interrupts(self._pending_interrupts)
+        self._set_status("approval required")
+        self._refresh_prompt_guide()
 
     async def _watch_warmup(self) -> None:
         """Clear the 'warming up' indicator once the background warm-up ends.
@@ -494,42 +526,19 @@ class TUIApp(App[None]):
         self._turn_worker = self.run_worker(self._run_compaction(), exclusive=True, name="turn")
 
     async def _run_compaction(self) -> None:
-        from jutul_agent.agent.summarization import MANUAL_KEEP_MESSAGES, compact_thread
-
         self._set_status("compacting…")
         try:
-            result = await compact_thread(
-                self._agent,
-                thread_id=self._session.session_id,
-                model=self._model_label,
-                backend=self._backend,
-                trace=self._session.trace,
-            )
+            note, result = await self._host.compact()
         except asyncio.CancelledError:
             await self._note("Compaction cancelled.")
             raise
         except Exception as exc:
             await self._note(f"compaction failed: {exc}")
         else:
-            if result is None:
-                await self._note(
-                    "nothing to compact yet. Compaction keeps the newest "
-                    f"{MANUAL_KEEP_MESSAGES} messages and the conversation isn't "
-                    "longer than that."
-                )
-            else:
+            if result is not None:
                 self._apply_compaction_estimate(result.freed_tokens)
-                recoverable = (
-                    " The summarized turns were saved and can be reopened if needed."
-                    if result.offloaded
-                    else ""
-                )
-                await self._note(
-                    f"Compacted the conversation: summarized {result.messages_summarized} "
-                    f"older messages into a summary, kept the {result.messages_kept} most "
-                    f"recent.{recoverable} The ctx figure now shows an estimate, refined "
-                    "on your next reply."
-                )
+                note += " The ctx figure now shows an estimate, refined on your next reply."
+            await self._note(note)
         finally:
             await self._finish_turn()
 
@@ -615,6 +624,23 @@ class TUIApp(App[None]):
         await self._note(f"Permission mode: {label}")
         self._refresh_prompt_guide()
         await self._auto_approve_pending_if_allowed()
+        self._rebuild_for_approval_mode()
+
+    def _rebuild_for_approval_mode(self) -> None:
+        """Bake the new mode into the agent graph when it is safe to rebuild.
+
+        Mid-turn or under a pending approval the client-side policy loop
+        already applies the new mode; the rebuild happens on the next safe
+        occasion a mode change lands while idle.
+        """
+        if self._busy or self._pending_interrupts or self._agent is None:
+            return
+        try:
+            self._host.reconfigure(approval_mode=str(self._approval_mode))
+        except Exception:
+            return  # the client-side loop still applies the mode
+        self._agent = self._host.agent
+        self._backend = self._host.backend
 
     async def action_interrupt(self) -> None:
         """Ctrl+C: interrupt → copy → double-press to exit.
@@ -1141,9 +1167,7 @@ class TUIApp(App[None]):
         self._agent = agent
         self._backend = backend
         self._model_label = model_id
-        self._turn_runner = TurnRunner(
-            agent, thread_id=self._session.session_id, trace=self._session.trace
-        )
+        self._host.adopt_agent(agent, backend, model=model_id)
         self.query_one("#status", StatusBar).set_model(model_id)
         self._context_window_tokens = None
         self._refresh_context_status()
@@ -1185,7 +1209,12 @@ class TUIApp(App[None]):
         self._set_status("thinking…")
         self._assistant_text_rendered = False
         try:
-            result = await self._turn_runner.run_prompt(prompt, on_message=self._render_message)
+            result = await self._host.drive_turn(
+                lambda: self._host.runner.run_prompt(prompt, on_message=self._render_message),
+                approval_mode=self._approval_mode,
+                allowlist=self._tool_allowlist,
+                on_message=self._render_message,
+            )
             await self._apply_turn_result(result)
         except asyncio.CancelledError:
             await self._render_turn_cancelled()
@@ -1201,7 +1230,12 @@ class TUIApp(App[None]):
     ) -> None:
         self._set_status("resuming…")
         try:
-            result = await self._turn_runner.resume(resume_payload, on_message=self._render_message)
+            result = await self._host.drive_turn(
+                lambda: self._host.runner.resume(resume_payload, on_message=self._render_message),
+                approval_mode=self._approval_mode,
+                allowlist=self._tool_allowlist,
+                on_message=self._render_message,
+            )
             await self._apply_turn_result(result)
         except asyncio.CancelledError:
             await self._render_turn_cancelled()
@@ -1273,11 +1307,6 @@ class TUIApp(App[None]):
         self._update_usage_from_messages(result.messages)
         self._pending_interrupts = result.interrupts
         if self._pending_interrupts:
-            if self._should_auto_approve_pending():
-                resume_payload = self._build_resume_payload({"type": "approve"})
-                self._pending_interrupts = []
-                await self._resume_turn(resume_payload)
-                return
             await self._render_interrupts(result.interrupts)
             return
         self._active_approval_blocks = []
@@ -1332,9 +1361,11 @@ class TUIApp(App[None]):
         self._busy = False
         self._set_status("approval required" if self._pending_interrupts else "ready")
         if not self._pending_interrupts:
-            # Turn settled: rewrite any report's sidecar transcript so it now
-            # includes the model's closing message (write_report ran mid-turn).
-            self._session.refresh_report_transcripts()
+            # Settle duties (report sidecar refresh) run in the host's turn
+            # loop; here only the UI reset and the one-time title upgrade.
+            task = self._host.maybe_title()
+            if task is not None:
+                self._title_task = task
             self._hide_approval_menu()
             self._prompt.focus()
         self._prompt.disabled = False

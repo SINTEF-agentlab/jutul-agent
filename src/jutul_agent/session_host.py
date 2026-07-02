@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import sys
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from jutul_agent.agent.turns import TurnRunner
@@ -106,6 +106,18 @@ class SessionHost:
         """The session's human-in-the-loop policy, or ``None`` for the default."""
         return self._approval_mode
 
+    def adopt_agent(self, agent: Any, backend: Any | None, *, model: str | None = None) -> None:
+        """Point the host at an externally rebuilt agent.
+
+        ``reconfigure`` is the normal rebuild path; this is the escape hatch
+        for a front end whose factory built the agent itself (test harnesses).
+        The runner is rebuilt lazily against the new agent.
+        """
+        self.agent, self.backend = agent, backend
+        if model is not None:
+            self._model = model
+        self._runner = None
+
     def reconfigure(self, *, model: str | None = None, approval_mode: str | None = None) -> None:
         """Rebuild the agent in place with a new model and/or approval policy.
 
@@ -152,13 +164,16 @@ class SessionHost:
 
         return ensure_memory_dir(self.session.memory_dir(workspace_memory=workspace_memory_dir()))
 
-    async def compact(self) -> str:
-        """Summarize older turns to free context; return a human-readable result."""
+    async def compact(self) -> tuple[str, Any | None]:
+        """Summarize older turns to free context now.
+
+        Returns a human-readable outcome plus the ``CompactResult`` (``None``
+        when there was nothing to compact) so a front end can also adjust its
+        live context estimate by the freed tokens.
+        """
         from jutul_agent.agent.summarization import MANUAL_KEEP_MESSAGES, compact_thread
         from jutul_agent.models import DEFAULT_MODEL
 
-        # The summarizer needs a concrete model spec; ``_model`` is None when the
-        # session uses the default, so fall back to it (else compact hits a None).
         result = await compact_thread(
             self.agent,
             thread_id=self.session.session_id,
@@ -168,14 +183,16 @@ class SessionHost:
         )
         if result is None:
             return (
-                f"Nothing to compact yet — the conversation is within the newest "
-                f"{MANUAL_KEEP_MESSAGES} messages."
+                f"Nothing to compact yet: compaction keeps the newest "
+                f"{MANUAL_KEEP_MESSAGES} messages and the conversation isn't longer than that.",
+                None,
             )
         extra = " The summarized turns were saved and can be reopened." if result.offloaded else ""
-        return (
+        message = (
             f"Compacted: summarized {result.messages_summarized} older messages and kept the "
             f"{result.messages_kept} most recent.{extra}"
         )
+        return message, result
 
     def add_dir(self, path: str) -> str:
         """Give the agent read/write access to another folder; return a result note."""
@@ -201,6 +218,114 @@ class SessionHost:
     def warmup_task(self) -> Any | None:
         """The background Julia warm-up, for a front end that shows warm status."""
         return self._warmup_task
+
+    @property
+    def package_sources(self) -> list[Any]:
+        """The env's resolved package sources (read-only depot guard inputs)."""
+        return list(self._package_sources)
+
+    async def pending_interrupts(self) -> list[Any]:
+        """Approvals persisted in the graph state, awaiting a decision.
+
+        A turn that pauses on an approval completes with the interrupt recorded
+        in the checkpointer. A front end (re)connecting to the session reads
+        these back and re-surfaces them, so the paused turn is never orphaned.
+        """
+        return await self.runner.pending_interrupts()
+
+    async def drive_turn(
+        self,
+        start_turn: Callable[[], Awaitable[Any]],
+        *,
+        approval_mode: Any = None,
+        allowlist: Any = None,
+        on_message: Any = None,
+    ) -> Any:
+        """Run one turn to its resting point, applying the approval policy.
+
+        Starts the turn, then keeps resuming past interrupts the policy already
+        allows (the mode, or a category the user marked "always allow" this
+        session) until the turn completes or an interrupt genuinely needs a
+        human. When the turn settles with nothing pending, the end-of-turn
+        duties run. Every front end drives turns through here so the policy
+        loop and the settle hooks cannot drift between them.
+        """
+        from jutul_agent.agent.approval import (
+            build_resume_payload,
+            parse_approval_mode,
+            should_auto_approve_interrupt,
+        )
+
+        mode = parse_approval_mode(str(approval_mode) if approval_mode is not None else None)
+        result = await start_turn()
+        while result.interrupts and all(
+            should_auto_approve_interrupt(
+                interrupt.value,
+                mode,
+                allowlist=allowlist,
+            )
+            for interrupt in result.interrupts
+        ):
+            payload = build_resume_payload(result.interrupts, {"type": "approve"})
+            result = await self.runner.resume(payload, on_message=on_message)
+        if not result.interrupts:
+            self.turn_settled()
+        return result
+
+    def turn_settled(self) -> None:
+        """End-of-turn duties once no approval is pending (best-effort).
+
+        Rewrites any report's sidecar transcript so it includes the model's
+        closing message (``write_report`` runs mid-turn).
+        """
+        with contextlib.suppress(Exception):
+            self.session.refresh_report_transcripts()
+
+    def maybe_title(self, on_titled: Any = None) -> asyncio.Task[None] | None:
+        """After the first turn, upgrade the first-prompt title to an LLM one.
+
+        Fire-and-forget and once per session: the first-prompt title already
+        shows in listings, so this only improves it from what the exchange was
+        actually about. Runs only when exactly one user message is recorded and
+        is wholly best-effort. ``on_titled`` (sync or async) is called with the
+        new title so a front end can refresh its display. Returns the task so
+        the caller can hold a reference.
+        """
+        if self.titled:
+            return None
+        events = self.session.trace.iter_events()
+        user_msgs = [e for e in events if e.kind == "message_user"]
+        if len(user_msgs) != 1:
+            return None
+        self.titled = True
+        first_user = str(user_msgs[0].payload.get("content", "")).strip()
+        if not first_user:
+            return None
+        first_reply = next(
+            (
+                str(e.payload.get("content", "")).strip()
+                for e in events
+                if e.kind == "message_assistant"
+            ),
+            "",
+        )
+        conversation = f"User: {first_user}\n\nAssistant: {first_reply}"
+        return asyncio.create_task(self._retitle(conversation, on_titled))
+
+    async def _retitle(self, conversation: str, on_titled: Any) -> None:
+        import inspect
+
+        from jutul_agent.agent.titling import generate_session_title
+
+        title = await generate_session_title(self._model, conversation)
+        if not title:
+            return
+        with contextlib.suppress(Exception):  # session may be closing; never raise here
+            self.session.retitle(title)
+        if on_titled is not None:
+            outcome = on_titled(title)
+            if inspect.isawaitable(outcome):
+                await outcome
 
     @property
     def runner(self) -> TurnRunner:

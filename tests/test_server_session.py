@@ -752,8 +752,8 @@ def test_command_compact_and_add_dir(tmp_path: Path) -> None:
         host = manager.get(sid)
         host.add_dir = lambda arg: f"added:{arg}"  # type: ignore[method-assign]
 
-        async def fake_compact() -> str:
-            return "compacted:ok"
+        async def fake_compact() -> tuple[str, None]:
+            return "compacted:ok", None
 
         host.compact = fake_compact  # type: ignore[method-assign]
         with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
@@ -1201,3 +1201,38 @@ def test_readiness_probe_reports_an_unreachable_plot_server(tmp_path: Path) -> N
     manager.get(sid).session.web_plot_port = dead_port
 
     assert client.head(f"/live/{sid}/viz/plot").status_code == 502
+
+
+def test_set_model_refused_while_approval_pending(tmp_path: Path) -> None:
+    """Switching models would rebuild the agent out from under a paused approval."""
+    with _client(interrupt_agent, tmp_path) as client:
+        sid = client.post("/sessions", json={"sim": "jutuldarcy"}).json()["session_id"]
+        with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
+            ws.send_json({"type": "prompt", "text": "run it"})
+            assert _drain_turn(ws)[-1]["type"] == "interrupt"
+            ws.send_json(
+                {"type": "command", "command": "set_model", "arg": "openai:gpt-5.4-mini"}
+            )
+            err = ws.receive_json()
+    assert err["type"] == "error"
+    assert "pending approval" in err["message"]
+
+
+def test_set_approval_auto_resolves_a_pending_interrupt(tmp_path: Path) -> None:
+    """Switching to auto mode resumes an approval that is now a foregone conclusion."""
+    manager = _manager(interrupt_agent, tmp_path)
+    with TestClient(create_app(manager)) as client:
+        sid = client.post("/sessions", json={"sim": "jutuldarcy"}).json()["session_id"]
+        host = manager.get(sid)
+
+        def fake_reconfigure(**kwargs) -> None:  # the real one rebuilds via build_agent
+            host._approval_mode = kwargs.get("approval_mode")
+
+        host.reconfigure = fake_reconfigure  # type: ignore[method-assign]
+        with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
+            ws.send_json({"type": "prompt", "text": "run it"})
+            assert _drain_turn(ws)[-1]["type"] == "interrupt"
+            ws.send_json({"type": "command", "command": "set_approval", "arg": "auto"})
+            events = _drain_turn(ws)
+    assert events[-1]["type"] == "turn_end"
+    assert events[-1]["text"] == "approval handled"
