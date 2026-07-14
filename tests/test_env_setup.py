@@ -302,3 +302,58 @@ def test_prepare_workspace_env_leaves_user_root_project_alone(
 
     assert root.read_text(encoding="utf-8") == '[deps]\nFoo = "uuid"\n'
     assert not workspace_julia_env(workspace).exists()
+
+
+def test_prepare_workspace_env_passes_capability_dependencies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_dir = _make_template(tmp_path)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "Project.toml").write_text('[deps]\nFoo = "uuid"\n', encoding="utf-8")
+
+    captured: dict[str, dict[str, str] | None] = {}
+
+    def _capture_sync(julia_project, dependencies=None):
+        captured["dependencies"] = dependencies
+
+    monkeypatch.setattr(env_setup, "_sync_workspace_env", lambda *a, **k: None)
+    monkeypatch.setattr(env_setup, "_sync_project_dependencies", _capture_sync)
+    monkeypatch.setattr(env_setup, "_ensure_simulator_installed", lambda *a, **k: None)
+    monkeypatch.setattr(env_setup, "_ensure_env_warmed", lambda *a, **k: None)
+    monkeypatch.setattr(env_setup, "_reconcile_env_template", lambda *a, **k: None)
+
+    env_setup.prepare_workspace_env(
+        _adapter(module_dir),
+        workspace=workspace,
+        julia_project=workspace,
+        dependencies={"GLMakie": "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"},
+    )
+
+    assert captured["dependencies"] == {"GLMakie": "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"}
+
+
+def test_prepare_workspace_env_adds_capability_dependencies_to_root_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_dir = _make_template(tmp_path)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    root = workspace / "Project.toml"
+    root.write_text('[deps]\nFoo = "uuid"\n', encoding="utf-8")
+
+    monkeypatch.setattr(env_setup, "_sync_workspace_env", lambda *a, **k: None)
+    monkeypatch.setattr(env_setup, "_refresh_warm_sources", lambda *a, **k: None)
+    monkeypatch.setattr(env_setup, "_ensure_simulator_installed", lambda *a, **k: None)
+    monkeypatch.setattr(env_setup, "_ensure_env_warmed", lambda *a, **k: None)
+    monkeypatch.setattr(env_setup, "_reconcile_env_template", lambda *a, **k: None)
+
+    env_setup.prepare_workspace_env(
+        _adapter(module_dir),
+        workspace=workspace,
+        julia_project=workspace,
+        dependencies={"GLMakie": "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"},
+    )
+
+    text = root.read_text(encoding="utf-8")
+    assert 'GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"' in text

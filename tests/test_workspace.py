@@ -18,6 +18,7 @@ from jutul_agent.workspace import (
     merge_simulator_config,
     resolve_julia_project,
     sync_julia_env_with_template,
+    sync_julia_project_with_dependencies,
     workspace_is_simulator_source,
     workspace_julia_env,
     write_workspace_config,
@@ -112,6 +113,25 @@ def test_bootstrap_julia_env_copies_template(tmp_path: Path) -> None:
     assert (project / "JutulAgent" / "Project.toml").exists()
 
 
+def test_bootstrap_julia_env_copies_template_sources(tmp_path: Path) -> None:
+    template = tmp_path / "template"
+    (template / "DemoSim" / "src").mkdir(parents=True)
+    (template / "DemoSim" / "Project.toml").write_text('name = "DemoSim"\n', encoding="utf-8")
+    (template / "Project.toml").write_text(
+        "[deps]\n"
+        'DemoSim = "399ba059-2ef4-46df-b0ff-fda998e6d1cf"\n'
+        "\n[sources]\n"
+        'DemoSim = {path = "../DemoSim"}\n',
+        encoding="utf-8",
+    )
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    project = bootstrap_julia_env(template, workspace=ws)
+
+    assert (project / "DemoSim" / "Project.toml").exists()
+
+
 def test_merge_simulator_config_updates_one_entry() -> None:
     base = WorkspaceConfig(simulators={"jutuldarcy": SimulatorConfig()})
     updated = merge_simulator_config(base, "jutuldarcy", source_path=Path("/tmp/src"))
@@ -152,6 +172,45 @@ def test_sync_adds_missing_deps_from_template(
     text = (env / "Project.toml").read_text(encoding="utf-8")
     assert 'CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"' in text
     assert 'Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"' in text
+
+
+def test_sync_adds_extra_deps_from_capabilities(
+    tmp_path: Path, _template_with_extra_deps: Path
+) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text(
+        '[deps]\nJutul = "c6b0b931-bd15-49f6-a31f-cf7d80eb5e81"\n',
+        encoding="utf-8",
+    )
+
+    added = sync_julia_env_with_template(
+        _template_with_extra_deps,
+        workspace=ws,
+        extra_deps={"GLMakie": "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"},
+    )
+    assert sorted(added) == ["CSV", "GLMakie", "Interpolations"]
+
+    text = (env / "Project.toml").read_text(encoding="utf-8")
+    assert 'GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"' in text
+
+
+def test_sync_adds_dependencies_to_root_project(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    proj = ws / "Project.toml"
+    proj.write_text('[deps]\nJutul = "uuid"\n', encoding="utf-8")
+
+    added = sync_julia_project_with_dependencies(
+        ws,
+        {"GLMakie": "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"},
+    )
+
+    assert added == ["GLMakie"]
+    text = proj.read_text(encoding="utf-8")
+    assert 'GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"' in text
 
 
 def test_sync_is_noop_when_already_in_sync(tmp_path: Path, _template_with_extra_deps: Path) -> None:

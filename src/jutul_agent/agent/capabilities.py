@@ -37,11 +37,14 @@ class Capability:
     ``surfaces`` restricts the capability to certain front ends (``"tui"``,
     ``"web"``, ``"cli"``); empty means it applies to every surface. ``skill_dirs``
     are ``(path, label)`` pairs in the form the skills middleware expects.
+    ``dependencies`` are Julia package ``(name, uuid)`` pairs to add to the
+    active simulator env before launch.
     """
 
     name: str
     tools: tuple[ToolFactory, ...] = ()
     skill_dirs: tuple[tuple[str, str], ...] = ()
+    dependencies: tuple[tuple[str, str], ...] = ()
     subagents: tuple[SubagentFactory, ...] = ()
     prompt_fragment: str = ""
     ui_actions: tuple[str, ...] = ()
@@ -59,6 +62,14 @@ def collect_tools(capabilities: Sequence[Capability], session: Session) -> list[
 
 def collect_skill_dirs(capabilities: Sequence[Capability]) -> list[tuple[str, str]]:
     return [pair for cap in capabilities for pair in cap.skill_dirs]
+
+
+def collect_dependencies(capabilities: Sequence[Capability]) -> dict[str, str]:
+    dependencies: dict[str, str] = {}
+    for cap in capabilities:
+        for name, uuid in cap.dependencies:
+            dependencies[name] = uuid
+    return dependencies
 
 
 def collect_subagents(capabilities: Sequence[Capability], session: Session) -> list[dict[str, Any]]:

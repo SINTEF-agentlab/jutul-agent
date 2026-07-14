@@ -441,12 +441,14 @@ def sync_julia_env_with_template(
     template_path: Path,
     *,
     workspace: Path | None = None,
+    extra_deps: dict[str, str] | None = None,
 ) -> list[str]:
     """Add any deps the template declares that the workspace env is missing.
 
     Returns the list of newly added dep names (empty if nothing changed).
     The workspace's ``Manifest.toml`` is left alone; the caller should
     follow up with ``Pkg.instantiate()`` so the new deps actually install.
+    Any ``extra_deps`` are merged into the same env as template deps.
     Skipped silently if the workspace owns its own root ``Project.toml``.
     """
 
@@ -470,7 +472,9 @@ def sync_julia_env_with_template(
 
     target_deps = target.get("deps", {})
     template_deps = template.get("deps", {})
-    missing = {k: v for k, v in template_deps.items() if k not in target_deps}
+    merged_deps = dict(extra_deps or {})
+    merged_deps.update(template_deps)
+    missing = {k: v for k, v in merged_deps.items() if k not in target_deps}
     if not missing:
         return []
 
@@ -490,6 +494,38 @@ def sync_julia_env_with_template(
         new_text = _append_sources(new_text, missing_sources)
     target_proj.write_text(new_text, encoding="utf-8")
     _copy_source_packages(template_path, env_dir, missing_sources)
+    return sorted(missing)
+
+
+def sync_julia_project_with_dependencies(
+    julia_project: Path,
+    dependencies: dict[str, str] | None,
+) -> list[str]:
+    """Add ``dependencies`` to an existing Julia project if they are missing.
+
+    This is the capability-dependency path: it applies to whichever Julia
+    project is active, including a user-owned root ``Project.toml``.
+    """
+
+    if not dependencies:
+        return []
+
+    proj = julia_project / "Project.toml"
+    if not proj.exists():
+        return []
+
+    try:
+        data = tomllib.loads(proj.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+
+    target_deps = data.get("deps", {})
+    missing = {name: uuid for name, uuid in dependencies.items() if name not in target_deps}
+    if not missing:
+        return []
+
+    new_text = _append_deps(proj.read_text(encoding="utf-8"), missing)
+    proj.write_text(new_text, encoding="utf-8")
     return sorted(missing)
 
 
@@ -614,6 +650,12 @@ def bootstrap_julia_env(
     # and version-specific, so the workspace resolves its own at instantiate time.
     shutil.copytree(template_path, target, ignore=shutil.ignore_patterns("Manifest.toml"))
     sync_shared_julia_package(target)
+    template_proj = template_path / "Project.toml"
+    try:
+        template = tomllib.loads(template_proj.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        template = {}
+    _copy_source_packages(template_path, target, template.get("sources", {}))
     # Stamp the template Project.toml (drives the rebuild-staleness warning) and
     # fingerprint the warm-package source (drives the auto re-copy when the bundled
     # JutulAgent runtime itself changes); see env_template_drifted / warm_source_is_current.

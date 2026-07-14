@@ -32,6 +32,7 @@ from jutul_agent.workspace import (
     recopy_warm_sources,
     resolve_julia_project,
     sync_julia_env_with_template,
+    sync_julia_project_with_dependencies,
     warm_source_is_current,
     workspace_is_simulator_source,
     write_env_template_stamp,
@@ -348,6 +349,7 @@ def prepare_workspace_env(
     workspace: Path,
     julia_project: Path,
     sim_name: str | None = None,
+    dependencies: dict[str, str] | None = None,
 ) -> None:
     """Make the workspace's Julia env ready for ``adapter`` before launch.
 
@@ -374,8 +376,10 @@ def prepare_workspace_env(
         if foreign is not None:
             _rebuild_managed_env(adapter, workspace, sim_name, reason=f"was built for {foreign}")
             return
-        _sync_workspace_env(adapter, workspace, julia_project, sim_name)
-        _refresh_warm_sources(adapter, workspace, julia_project, sim_name)
+
+    _sync_workspace_env(adapter, workspace, julia_project, sim_name)
+    _sync_project_dependencies(julia_project, dependencies)
+    _refresh_warm_sources(adapter, workspace, julia_project, sim_name)
 
     _ensure_simulator_installed(adapter, workspace, julia_project, sim_name)
     _ensure_env_warmed(workspace, julia_project, sim_name)
@@ -453,7 +457,10 @@ def _sync_workspace_env(
     before = project_toml.read_text(encoding="utf-8") if project_toml.exists() else None
 
     try:
-        added = sync_julia_env_with_template(adapter.julia_env_template_path, workspace=ws)
+        added = sync_julia_env_with_template(
+            adapter.julia_env_template_path,
+            workspace=ws,
+        )
     except Exception as exc:
         print(f"warning: env sync failed: {exc}", file=sys.stderr)
         return
@@ -479,6 +486,21 @@ def _sync_workspace_env(
             f"         To rebuild it cleanly, run: {rebuild}\n"
             f"         (cause: {exc})",
             file=sys.stderr,
+        )
+
+
+def _sync_project_dependencies(julia_project: Path, dependencies: dict[str, str] | None) -> None:
+    """Add capability-provided deps to the active Julia project."""
+
+    try:
+        added = sync_julia_project_with_dependencies(julia_project, dependencies)
+    except Exception as exc:
+        print(f"warning: capability dependency sync failed: {exc}", file=sys.stderr)
+        return
+
+    if added:
+        print(
+            f"Updating Julia project with {', '.join(added)} (added by capability)...", flush=True
         )
 
 

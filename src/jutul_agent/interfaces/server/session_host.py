@@ -246,7 +246,7 @@ class SessionHost:
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
         from jutul_agent.agent.builder import build_agent
-        from jutul_agent.agent.capabilities import discover_extensions
+        from jutul_agent.agent.capabilities import collect_dependencies, discover_extensions
         from jutul_agent.julia.requirements import require_julia
         from jutul_agent.julia.threads import (
             HYPRE_THREADS_ENV_VAR,
@@ -263,6 +263,8 @@ class SessionHost:
         require_julia()
         ws = workspace or workspace_root()
         project = julia_project or resolve_julia_project(ws)
+        all_extensions = [*discover_extensions(), *extensions]
+        dependency_map = collect_dependencies(all_extensions)
         # A caller can supply a pre-provisioned env (and skip preparation); the
         # default path prepares the workspace env from the simulator template.
         # Run it off the event loop: the first session for a simulator can spend
@@ -279,6 +281,7 @@ class SessionHost:
                 workspace=ws,
                 julia_project=project,
                 sim_name=simulator.name,
+                dependencies=dependency_map,
             )
 
         sid = session_id or default_session_id()
@@ -343,7 +346,6 @@ class SessionHost:
             checkpointer = await stack.enter_async_context(
                 AsyncSqliteSaver.from_conn_string(str(ckpt_path))
             )
-            all_extensions = [*discover_extensions(), *extensions]
             # Resolve the env's package source dirs (one fast, no-compile call): it
             # gives the agent the simulator's source path up front — so it needn't
             # `using <Sim>; pkgdir(<Sim>)` to find it — and guards the read-only depot.
