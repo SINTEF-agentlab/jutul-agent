@@ -490,7 +490,7 @@ def _sync_workspace_env(
         )
 
 
-def _sync_project_dependencies(julia_project: Path, dependencies: dict[str, str] | None) -> None:
+def _sync_project_dependencies(julia_project: Path, dependencies: Sequence[Path] | None) -> None:
     """Add capability-provided deps to the active Julia project."""
 
     try:
