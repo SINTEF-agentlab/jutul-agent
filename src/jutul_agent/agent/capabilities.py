@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -37,14 +38,15 @@ class Capability:
     ``surfaces`` restricts the capability to certain front ends (``"tui"``,
     ``"web"``, ``"cli"``); empty means it applies to every surface. ``skill_dirs``
     are ``(path, label)`` pairs in the form the skills middleware expects.
-    ``dependencies`` are Julia package ``(name, uuid)`` pairs to add to the
-    active simulator env before launch.
+    ``dependencies`` are paths to local Julia package roots or their
+    ``Project.toml`` files; the launcher reads the package metadata from that
+    path and adds it to the active Julia env before launch.
     """
 
     name: str
     tools: tuple[ToolFactory, ...] = ()
     skill_dirs: tuple[tuple[str, str], ...] = ()
-    dependencies: tuple[tuple[str, str], ...] = ()
+    dependencies: tuple[Path, ...] = ()
     subagents: tuple[SubagentFactory, ...] = ()
     prompt_fragment: str = ""
     ui_actions: tuple[str, ...] = ()
@@ -64,12 +66,8 @@ def collect_skill_dirs(capabilities: Sequence[Capability]) -> list[tuple[str, st
     return [pair for cap in capabilities for pair in cap.skill_dirs]
 
 
-def collect_dependencies(capabilities: Sequence[Capability]) -> dict[str, str]:
-    dependencies: dict[str, str] = {}
-    for cap in capabilities:
-        for name, uuid in cap.dependencies:
-            dependencies[name] = uuid
-    return dependencies
+def collect_dependency_paths(capabilities: Sequence[Capability]) -> list[Path]:
+    return [Path(path) for cap in capabilities for path in cap.dependencies]
 
 
 def collect_subagents(capabilities: Sequence[Capability], session: Session) -> list[dict[str, Any]]:

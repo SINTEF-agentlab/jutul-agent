@@ -12,7 +12,7 @@ from jutul_agent.agent import builder
 from jutul_agent.agent.capabilities import (
     Capability,
     HttpToolSpec,
-    collect_dependencies,
+    collect_dependency_paths,
     collect_prompt_fragments,
     collect_skill_dirs,
     collect_subagents,
@@ -50,13 +50,13 @@ def test_collect_helpers(session: Session) -> None:
     cap = _cap(
         tools=(lambda _s: _demo_tool,),
         skill_dirs=(("/skills/demo", "Demo"),),
-        dependencies=(("Foo", "11111111-1111-1111-1111-111111111111"),),
+        dependencies=(Path("/local/Foo/Project.toml"),),
         subagents=(lambda _s: {"name": "sub"},),
         prompt_fragment="  FRAGMENT  ",
     )
     assert [t.name for t in collect_tools([cap], session)] == ["_demo_tool"]
     assert collect_skill_dirs([cap]) == [("/skills/demo", "Demo")]
-    assert collect_dependencies([cap]) == {"Foo": "11111111-1111-1111-1111-111111111111"}
+    assert collect_dependency_paths([cap]) == [Path("/local/Foo/Project.toml")]
     assert collect_subagents([cap], session) == [{"name": "sub"}]
     assert collect_prompt_fragments([cap]) == ["  FRAGMENT  "]
     assert collect_prompt_fragments([_cap(prompt_fragment="   ")]) == []

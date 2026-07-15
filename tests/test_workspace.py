@@ -174,9 +174,7 @@ def test_sync_adds_missing_deps_from_template(
     assert 'Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"' in text
 
 
-def test_sync_adds_extra_deps_from_capabilities(
-    tmp_path: Path, _template_with_extra_deps: Path
-) -> None:
+def test_sync_adds_extra_deps_from_capabilities(tmp_path: Path) -> None:
     ws = tmp_path / "ws"
     ws.mkdir()
     env = workspace_julia_env(ws)
@@ -186,15 +184,19 @@ def test_sync_adds_extra_deps_from_capabilities(
         encoding="utf-8",
     )
 
-    added = sync_julia_env_with_template(
-        _template_with_extra_deps,
-        workspace=ws,
-        extra_deps={"GLMakie": "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"},
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
     )
-    assert sorted(added) == ["CSV", "GLMakie", "Interpolations"]
+
+    added = sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"])
+    assert added == ["FooCap"]
 
     text = (env / "Project.toml").read_text(encoding="utf-8")
-    assert 'GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"' in text
+    assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
+    assert f'FooCap = {{path = "{local_pkg.resolve()}"}}' in text
 
 
 def test_sync_adds_dependencies_to_root_project(tmp_path: Path) -> None:
@@ -203,14 +205,22 @@ def test_sync_adds_dependencies_to_root_project(tmp_path: Path) -> None:
     proj = ws / "Project.toml"
     proj.write_text('[deps]\nJutul = "uuid"\n', encoding="utf-8")
 
-    added = sync_julia_project_with_dependencies(
-        ws,
-        {"GLMakie": "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"},
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
     )
 
-    assert added == ["GLMakie"]
+    added = sync_julia_project_with_dependencies(
+        ws,
+        [local_pkg / "Project.toml"],
+    )
+
+    assert added == ["FooCap"]
     text = proj.read_text(encoding="utf-8")
-    assert 'GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"' in text
+    assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
+    assert f'FooCap = {{path = "{local_pkg.resolve()}"}}' in text
 
 
 def test_sync_is_noop_when_already_in_sync(tmp_path: Path, _template_with_extra_deps: Path) -> None:

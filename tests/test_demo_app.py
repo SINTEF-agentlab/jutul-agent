@@ -62,11 +62,10 @@ def test_ensure_env_refreshes_capability_dependencies(tmp_path: Path, monkeypatc
 
     captured: dict[str, object] = {}
 
-    def _fake_prepare(adapter, *, workspace, julia_project, sim_name, dependencies):
+    def _fake_prepare(adapter, *, workspace, julia_project, sim_name):
         captured["workspace"] = workspace
         captured["julia_project"] = julia_project
         captured["sim_name"] = sim_name
-        captured["dependencies"] = dependencies
 
     monkeypatch.setattr(demo, "WORKSPACE", workspace)
     monkeypatch.setattr(demo, "prepare_workspace_env", _fake_prepare)
@@ -75,4 +74,3 @@ def test_ensure_env_refreshes_capability_dependencies(tmp_path: Path, monkeypatc
 
     assert captured["workspace"] == workspace
     assert captured["sim_name"] == "demo"
-    assert captured["dependencies"] == dict(demo.demo_capability().dependencies)

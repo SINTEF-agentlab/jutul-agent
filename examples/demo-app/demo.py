@@ -100,7 +100,6 @@ def demo_capability() -> Capability:
         name="demosim-web",
         tools=(_make_set_param_tool, _make_plot_tool),
         prompt_fragment=_PROMPT_FRAGMENT,
-        dependencies=(("Parameters", "d96e819e-fc66-5662-9728-84c9c7592b0a"),),
         surfaces=("web",),
     )
 
@@ -139,14 +138,12 @@ def create_demo_app():
 def ensure_env() -> None:
     """Prepare the demo's workspace Julia env without touching the template."""
 
-    capability = demo_capability()
     print("Preparing the demo Julia env (this can take a while)...")
     prepare_workspace_env(
         DEMO_ADAPTER,
         workspace=WORKSPACE,
         julia_project=resolve_julia_project(WORKSPACE),
         sim_name=DEMO_ADAPTER.name,
-        dependencies=dict(capability.dependencies),
     )
 
 

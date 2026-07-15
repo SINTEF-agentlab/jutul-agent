@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
 
 from jutul_agent.simulators.base import SimulatorAdapter
@@ -349,7 +350,7 @@ def prepare_workspace_env(
     workspace: Path,
     julia_project: Path,
     sim_name: str | None = None,
-    dependencies: dict[str, str] | None = None,
+    dependencies: Sequence[Path] | None = None,
 ) -> None:
     """Make the workspace's Julia env ready for ``adapter`` before launch.
 

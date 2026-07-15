@@ -20,6 +20,7 @@ import hashlib
 import json
 import shutil
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -499,12 +500,15 @@ def sync_julia_env_with_template(
 
 def sync_julia_project_with_dependencies(
     julia_project: Path,
-    dependencies: dict[str, str] | None,
+    dependencies: Sequence[Path] | None,
 ) -> list[str]:
-    """Add ``dependencies`` to an existing Julia project if they are missing.
+    """Add local package dependencies to an existing Julia project if missing.
 
-    This is the capability-dependency path: it applies to whichever Julia
-    project is active, including a user-owned root ``Project.toml``.
+    Each dependency path may point to a package root or its ``Project.toml``.
+    The helper reads the package's own ``Project.toml`` to recover the package
+    name and UUID, then adds both a ``[deps]`` entry and a ``[sources]`` entry
+    pointing at that local path. This applies to whichever Julia project is
+    active, including a user-owned root ``Project.toml``.
     """
 
     if not dependencies:
@@ -520,13 +524,58 @@ def sync_julia_project_with_dependencies(
         return []
 
     target_deps = data.get("deps", {})
-    missing = {name: uuid for name, uuid in dependencies.items() if name not in target_deps}
-    if not missing:
+    target_sources = data.get("sources", {})
+    additions: dict[str, tuple[str, str]] = {}
+    sources: dict[str, dict[str, str]] = {}
+
+    for raw_dependency in dependencies:
+        dependency_root, package_name, package_uuid = _dependency_metadata(raw_dependency)
+        if package_name is None or package_uuid is None:
+            continue
+        if package_name not in target_deps:
+            additions[package_name] = (package_uuid, str(dependency_root))
+        if package_name not in target_sources:
+            sources[package_name] = {"path": str(dependency_root)}
+
+    if not additions and not sources:
         return []
 
-    new_text = _append_deps(proj.read_text(encoding="utf-8"), missing)
+    new_text = proj.read_text(encoding="utf-8")
+    if additions:
+        new_text = _append_deps(new_text, {name: uuid for name, (uuid, _path) in additions.items()})
+    if sources:
+        new_text = _append_sources(new_text, sources)
     proj.write_text(new_text, encoding="utf-8")
-    return sorted(missing)
+    return sorted({*additions, *sources})
+
+
+def _dependency_metadata(dependency: Path) -> tuple[Path, str | None, str | None]:
+    """Resolve a capability dependency path to ``(root, name, uuid)``.
+
+    The path may be a package directory or the package's ``Project.toml``.
+    """
+
+    path = dependency.expanduser().resolve()
+    if path.is_dir():
+        root = path
+        proj = root / "Project.toml"
+    elif path.name == "Project.toml":
+        root = path.parent
+        proj = path
+    else:
+        root = path.parent
+        proj = root / "Project.toml"
+
+    try:
+        data = tomllib.loads(proj.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return root, None, None
+
+    name = data.get("name")
+    uuid = data.get("uuid")
+    if not isinstance(name, str) or not isinstance(uuid, str):
+        return root, None, None
+    return root, name, uuid
 
 
 def _append_deps(project_toml_text: str, deps: dict[str, str]) -> str:
