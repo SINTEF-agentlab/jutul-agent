@@ -527,9 +527,11 @@ def sync_julia_project_with_dependencies(
     target_sources = data.get("sources", {})
     additions: dict[str, tuple[str, str]] = {}
     sources: dict[str, dict[str, str]] = {}
+    new_deps: dict[str, str] = {}
 
     for raw_dependency in dependencies:
-        dependency_root, package_name, package_uuid = _dependency_metadata(raw_dependency)
+        dependency_root, package_name, package_uuid, deps = _dependency_metadata(raw_dependency)
+        new_deps.update(deps)
         if package_name is None or package_uuid is None:
             continue
         if package_name not in target_deps:
@@ -537,20 +539,24 @@ def sync_julia_project_with_dependencies(
         if package_name not in target_sources:
             sources[package_name] = {"path": str(dependency_root)}
 
+    new_deps = {k: v for k, v in new_deps.items() if k not in target_deps}
+
     if not additions and not sources:
         return []
 
     new_text = proj.read_text(encoding="utf-8")
     if additions:
         new_text = _append_deps(new_text, {name: uuid for name, (uuid, _path) in additions.items()})
+    if new_deps:
+        new_text = _append_deps(new_text, new_deps)
     if sources:
         new_text = _append_sources(new_text, sources)
     proj.write_text(new_text, encoding="utf-8")
     return sorted({*additions, *sources})
 
 
-def _dependency_metadata(dependency: Path) -> tuple[Path, str | None, str | None]:
-    """Resolve a capability dependency path to ``(root, name, uuid)``.
+def _dependency_metadata(dependency: Path) -> tuple[Path, str | None, str | None, dict[str, str]]:
+    """Resolve a capability dependency path to ``(root, name, uuid, deps)``.
 
     The path may be a package directory or the package's ``Project.toml``.
     """
@@ -569,13 +575,15 @@ def _dependency_metadata(dependency: Path) -> tuple[Path, str | None, str | None
     try:
         data = tomllib.loads(proj.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
-        return root, None, None
+        return root, None, None, {}
 
+    deps = data.get("deps", {})
     name = data.get("name")
     uuid = data.get("uuid")
     if not isinstance(name, str) or not isinstance(uuid, str):
-        return root, None, None
-    return root, name, uuid
+        return root, None, None, {}
+
+    return root, name, uuid, deps
 
 
 def _append_deps(project_toml_text: str, deps: dict[str, str]) -> str:
