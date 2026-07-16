@@ -501,8 +501,19 @@ def _sync_project_dependencies(julia_project: Path, dependencies: Sequence[Path]
 
     if added:
         print(
-            f"Updating Julia project with {', '.join(added)} (added by capability)...", flush=True
+            f"Updating Julia project with {', '.join(added)} (added by capability)...",
+            flush=True,
+            file=sys.stderr,
         )
+        try:
+            resolve_and_instantiate(julia_project, precompile=False, capture=True)
+        except EnvSetupError as exc:
+            print(
+                "Warning: could not resolve and instantiate the "
+                + f"capability dependencies: ({exc}). ",
+                file=sys.stderr,
+            )
+            return
 
 
 def _refresh_warm_sources(
