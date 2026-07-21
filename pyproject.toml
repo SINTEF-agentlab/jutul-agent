@@ -37,6 +37,7 @@ dependencies = [
     # Used directly by the declarative HTTP tools (agent/capabilities.py) to call a
     # host application's endpoints.
     "httpx>=0.27",
+    "tomli-w>=1.2.0",
 ]
 
 [project.urls]

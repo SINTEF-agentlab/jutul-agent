@@ -24,6 +24,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+import tomli_w
+
 from jutul_agent.paths import workspace_root
 
 WORKSPACE_DIRNAME = ".jutul-agent"
@@ -519,12 +521,18 @@ def sync_julia_project_with_dependencies(
         return []
 
     try:
-        data = tomllib.loads(proj.read_text(encoding="utf-8"))
+        proj_data = tomllib.loads(proj.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return []
 
-    target_deps = data.get("deps", {})
-    target_sources = data.get("sources", {})
+    pref = julia_project / "LocalPreferences.toml"
+    try:
+        pref_data = tomllib.loads(pref.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        pref_data = {}
+
+    target_deps = proj_data.get("deps", {})
+    target_sources = proj_data.get("sources", {})
     additions: dict[str, tuple[str, str]] = {}
     sources: dict[str, dict[str, str]] = {}
     new_deps: dict[str, str] = {}
@@ -539,6 +547,20 @@ def sync_julia_project_with_dependencies(
         if package_name not in target_sources:
             sources[package_name] = {"path": str(dependency_root)}
 
+        new_pref = dependency_root / "LocalPreferences.toml"
+        try:
+            new_pref_data = tomllib.loads(new_pref.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            new_pref_data = {}
+
+        for key, value in new_pref_data.items():
+            if key not in pref_data:
+                pref_data[key] = value
+            else:
+                for subkey, subvalue in value.items():
+                    if subkey not in pref_data[key]:
+                        pref_data[key][subkey] = subvalue
+
     new_deps = {k: v for k, v in new_deps.items() if k not in target_deps}
 
     if not additions and not sources:
@@ -552,6 +574,8 @@ def sync_julia_project_with_dependencies(
     if sources:
         new_text = _append_sources(new_text, sources)
     proj.write_text(new_text, encoding="utf-8")
+    pref.write_text(tomli_w.dumps(pref_data), encoding="utf-8")
+
     return sorted({*additions, *sources})
 
 
