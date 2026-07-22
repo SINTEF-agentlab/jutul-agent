@@ -403,7 +403,7 @@ def build_agent(
     approval_mode: ApprovalMode | str | None = None,
     package_sources: Sequence[PackageSource] | None = None,
     added_dirs: Sequence[str | Path] | None = None,
-    surface: str = "tui",
+    surface: str | None = None,
     extensions: Sequence[Capability] = (),
 ) -> tuple[Any, CompositeBackend]:
     """Build the session agent and return it with its live ``CompositeBackend``.
@@ -413,7 +413,12 @@ def build_agent(
     (the TUI ``/add-dir`` command), and a route added to it is visible to the
     agent's next tool call. Callers that don't need it just ignore the second
     element.
+
+    ``surface`` defaults to ``session.surface``; pass it explicitly only to
+    override what the session was created with.
     """
+    if surface is None:
+        surface = session.surface
 
     register_provider_profiles()
     # The file tools run on real paths; on Windows, let deepagents' path validation

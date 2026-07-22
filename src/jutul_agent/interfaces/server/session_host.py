@@ -333,6 +333,7 @@ class SessionHost:
                     session_id=sid,
                     state_root=state_root,
                     ephemeral_memory=ephemeral_memory,
+                    surface=surface,
                 )
             else:
                 session = Session.create(
@@ -341,6 +342,7 @@ class SessionHost:
                     session_id=sid,
                     state_root=state_root,
                     ephemeral_memory=ephemeral_memory,
+                    surface=surface,
                 )
             ckpt_path = session.state_dir / "checkpoints.sqlite"
             checkpointer = await stack.enter_async_context(
