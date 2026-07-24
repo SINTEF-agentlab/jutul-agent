@@ -196,7 +196,7 @@ def test_sync_adds_extra_deps_from_capabilities(tmp_path: Path) -> None:
 
     text = (env / "Project.toml").read_text(encoding="utf-8")
     assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
-    assert f'FooCap = {{path = "{local_pkg.resolve()}"}}' in text
+    assert f'FooCap = {{path = "{local_pkg.resolve().as_posix()}"}}' in text
 
 
 def test_sync_adds_dependencies_to_root_project(tmp_path: Path) -> None:
@@ -220,7 +220,7 @@ def test_sync_adds_dependencies_to_root_project(tmp_path: Path) -> None:
     assert added == ["FooCap"]
     text = proj.read_text(encoding="utf-8")
     assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
-    assert f'FooCap = {{path = "{local_pkg.resolve()}"}}' in text
+    assert f'FooCap = {{path = "{local_pkg.resolve().as_posix()}"}}' in text
 
 
 def test_sync_is_noop_when_already_in_sync(tmp_path: Path, _template_with_extra_deps: Path) -> None:

@@ -543,9 +543,9 @@ def sync_julia_project_with_dependencies(
         if package_name is None or package_uuid is None:
             continue
         if package_name not in target_deps:
-            additions[package_name] = (package_uuid, str(dependency_root))
+            additions[package_name] = (package_uuid, dependency_root.as_posix())
         if package_name not in target_sources:
-            sources[package_name] = {"path": str(dependency_root)}
+            sources[package_name] = {"path": dependency_root.as_posix()}
 
         new_pref = dependency_root / "LocalPreferences.toml"
         try:
