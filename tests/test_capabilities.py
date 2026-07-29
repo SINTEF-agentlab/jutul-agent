@@ -227,6 +227,19 @@ def test_build_agent_skips_other_surface(session: Session, monkeypatch) -> None:
     )
     builder.build_agent(session, surface="tui", extensions=[cap])
     assert "_demo_tool" not in [t.name for t in captured["tools"]]
+
+
+def test_build_agent_defaults_surface_to_the_session(session: Session, monkeypatch) -> None:
+    """No explicit ``surface=`` falls back to what the session was created for."""
+    captured = _capture_create_deep_agent(monkeypatch)
+    session.surface = "web"
+    cap = Capability(
+        name="ext",
+        tools=(lambda _s: _demo_tool,),
+        surfaces=("web",),
+    )
+    builder.build_agent(session, extensions=[cap])
+    assert "_demo_tool" in [t.name for t in captured["tools"]]
     assert "EXTENSION FRAGMENT" not in captured["system_prompt"]
 
 

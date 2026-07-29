@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -221,6 +222,130 @@ def test_sync_adds_dependencies_to_root_project(tmp_path: Path) -> None:
     text = proj.read_text(encoding="utf-8")
     assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
     assert f'FooCap = {{path = "{local_pkg.resolve().as_posix()}"}}' in text
+
+
+def test_sync_adds_transitive_deps_from_dependency_project(tmp_path: Path) -> None:
+    """A capability dependency's own [deps] land in the target's [deps] too.
+
+    Only the capability package itself gets a [sources] path entry; a plain
+    (registry) sub-dependency it declares becomes a proper dep of the target
+    project instead, resolved from the registry like any other.
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text(
+        '[deps]\nJutul = "c6b0b931-bd15-49f6-a31f-cf7d80eb5e81"\n',
+        encoding="utf-8",
+    )
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\n'
+        'uuid = "11111111-1111-1111-1111-111111111111"\n'
+        "[deps]\n"
+        'Bar = "22222222-2222-2222-2222-222222222222"\n',
+        encoding="utf-8",
+    )
+
+    added = sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"])
+    assert added == ["FooCap"]
+
+    text = (env / "Project.toml").read_text(encoding="utf-8")
+    assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
+    assert 'Bar = "22222222-2222-2222-2222-222222222222"' in text
+    # Bar rides in as a normal dep, not a local source path.
+    assert "Bar" not in (env / "Project.toml").read_text(encoding="utf-8").split("[sources]")[-1]
+
+
+def test_sync_skips_transitive_dep_already_present(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text(
+        '[deps]\nJutul = "c6b0b931-bd15-49f6-a31f-cf7d80eb5e81"\nBar = "already-there"\n',
+        encoding="utf-8",
+    )
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\n'
+        'uuid = "11111111-1111-1111-1111-111111111111"\n'
+        "[deps]\n"
+        'Bar = "22222222-2222-2222-2222-222222222222"\n',
+        encoding="utf-8",
+    )
+
+    sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"])
+
+    text = (env / "Project.toml").read_text(encoding="utf-8")
+    # The existing pin for Bar is left alone, not overwritten by the capability's copy.
+    assert 'Bar = "already-there"' in text
+    assert "22222222" not in text
+
+
+def test_sync_merges_local_preferences_from_dependency(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text(
+        '[deps]\nJutul = "c6b0b931-bd15-49f6-a31f-cf7d80eb5e81"\n',
+        encoding="utf-8",
+    )
+    (env / "LocalPreferences.toml").write_text(
+        '[Other]\na = 1\n\n[FooCap]\nexisting = "kept"\n',
+        encoding="utf-8",
+    )
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
+    )
+    (local_pkg / "LocalPreferences.toml").write_text(
+        '[FooCap]\nexisting = "clobbered"\nnew = "added"\n\n[Bar]\nb = 2\n',
+        encoding="utf-8",
+    )
+
+    added = sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"])
+    assert added == ["FooCap"]
+
+    pref = tomllib.loads((env / "LocalPreferences.toml").read_text(encoding="utf-8"))
+    assert pref["Other"] == {"a": 1}
+    # A key the target already had for FooCap is not clobbered by the dependency's copy...
+    assert pref["FooCap"]["existing"] == "kept"
+    # ...but a new key the dependency adds is merged in.
+    assert pref["FooCap"]["new"] == "added"
+    # A whole new table from the dependency's LocalPreferences.toml is merged in too.
+    assert pref["Bar"] == {"b": 2}
+
+
+def test_sync_creates_local_preferences_when_target_has_none(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    proj = ws / "Project.toml"
+    proj.write_text('[deps]\nJutul = "uuid"\n', encoding="utf-8")
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
+    )
+    (local_pkg / "LocalPreferences.toml").write_text(
+        "[FooCap]\nprecompile = true\n", encoding="utf-8"
+    )
+
+    sync_julia_project_with_dependencies(ws, [local_pkg / "Project.toml"])
+
+    pref = tomllib.loads((ws / "LocalPreferences.toml").read_text(encoding="utf-8"))
+    assert pref["FooCap"]["precompile"] is True
 
 
 def test_sync_is_noop_when_already_in_sync(tmp_path: Path, _template_with_extra_deps: Path) -> None:

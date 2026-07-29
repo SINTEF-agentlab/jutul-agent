@@ -21,6 +21,7 @@ from fakes import (
     make_fake_adapter,
     streaming_agent,
 )
+from jutul_agent.agent.capabilities import Capability
 from jutul_agent.interfaces.server.app import artifact_wire_events, create_app
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
 from jutul_agent.interfaces.server.session_host import SessionHost
@@ -262,6 +263,67 @@ async def test_launch_defaults_reach_session_host_start(monkeypatch, tmp_path: P
     assert captured["ephemeral_memory"] is True
     assert captured["add_dirs"] == (tmp_path / "extra",)
     assert captured["julia_project"] == tmp_path / "proj"
+
+
+async def test_start_wires_surface_and_capability_dependencies(monkeypatch, tmp_path: Path) -> None:
+    """``SessionHost.start`` threads ``surface`` into the ``Session`` it creates,
+    and merges discovered + passed-in capabilities' dependency paths into the
+    ``prepare_workspace_env`` call — both added in this branch alongside the
+    capability-dependencies feature.
+    """
+    import jutul_agent.juliakernel as juliakernel_mod
+    from jutul_agent.agent import builder as builder_mod
+    from jutul_agent.agent import capabilities as capabilities_mod
+    from jutul_agent.julia import requirements as requirements_mod
+    from jutul_agent.simulators import env_setup as env_setup_mod
+    from jutul_agent.simulators import warmup as warmup_mod
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    adapter = make_fake_adapter(tmp_path)
+
+    monkeypatch.setattr(requirements_mod, "require_julia", lambda *a, **kw: None)
+    monkeypatch.setattr(juliakernel_mod, "JuliaKernel", lambda config: FakeJulia())
+    monkeypatch.setattr(warmup_mod, "start_warmup", lambda *a, **kw: None)
+    monkeypatch.setattr(builder_mod, "resolve_package_sources", lambda project: [])
+
+    discovered_dep = tmp_path / "DiscoveredCap" / "Project.toml"
+    passed_dep = tmp_path / "PassedCap" / "Project.toml"
+    discovered_cap = Capability(name="discovered", dependencies=(discovered_dep,))
+    passed_cap = Capability(name="passed", dependencies=(passed_dep,))
+    monkeypatch.setattr(capabilities_mod, "discover_extensions", lambda: [discovered_cap])
+
+    prepare_calls: dict[str, Any] = {}
+
+    def _fake_prepare(simulator, *, workspace, julia_project, sim_name, dependencies):
+        prepare_calls["dependencies"] = dependencies
+
+    monkeypatch.setattr(env_setup_mod, "prepare_workspace_env", _fake_prepare)
+
+    build_calls: dict[str, Any] = {}
+
+    def _fake_build_agent(session, **kwargs):
+        build_calls["surface"] = kwargs.get("surface")
+        build_calls["extensions"] = kwargs.get("extensions")
+        return object(), object()
+
+    monkeypatch.setattr(builder_mod, "build_agent", _fake_build_agent)
+
+    host = await SessionHost.start(
+        simulator=adapter,
+        workspace=workspace,
+        state_root=tmp_path,
+        surface="tui",
+        extensions=[passed_cap],
+    )
+    try:
+        assert prepare_calls["dependencies"] == [discovered_dep, passed_dep]
+        assert host.session.surface == "tui"
+        assert build_calls["surface"] == "tui"
+        assert discovered_cap in build_calls["extensions"]
+        assert passed_cap in build_calls["extensions"]
+    finally:
+        await host.aclose()
 
 
 def test_unbound_server_requires_a_simulator(tmp_path: Path) -> None:
