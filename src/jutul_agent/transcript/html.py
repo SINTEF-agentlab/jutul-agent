@@ -369,7 +369,7 @@ _FILTER_GROUPS: dict[str, str] = {
     schema.MESSAGE_ASSISTANT: "assistant",
     schema.MESSAGE_REASONING: "reasoning",
     schema.TOOL_CALL: "tools",
-    "tool_result": "tools",
+    schema.TOOL_RESULT: "tools",
     schema.HITL_REQUEST: "approval",
     schema.HITL_RESPONSE: "approval",
     schema.ARTIFACT: "artifact",
@@ -962,7 +962,9 @@ def _render_body(
     # folded into its call, or an approval response folded into its request,
     # shows no card of its own, so it must not inflate the tally.
     rendered_counts = dict(kind_counts)
-    rendered_counts["tool_result"] = rendered_counts.get("tool_result", 0) - len(consumed_results)
+    rendered_counts[schema.TOOL_RESULT] = rendered_counts.get(schema.TOOL_RESULT, 0) - len(
+        consumed_results
+    )
     rendered_counts[schema.HITL_RESPONSE] = rendered_counts.get(schema.HITL_RESPONSE, 0) - len(
         consumed_responses
     )

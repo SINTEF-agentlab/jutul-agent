@@ -93,7 +93,7 @@ from jutul_agent.paths import workspace_root
 from jutul_agent.recent_models import record_recent_model
 from jutul_agent.session import Session
 from jutul_agent.session_host import SessionHost
-from jutul_agent.trace import TraceLog
+from jutul_agent.trace import TraceLog, schema
 from jutul_agent.transcript import render_html, render_markdown
 
 if TYPE_CHECKING:
@@ -413,7 +413,7 @@ class TUIApp(App[None]):
         usages = [
             event.payload
             for event in self._session.trace.iter_events()
-            if event.kind == "model_usage"
+            if event.kind == schema.MODEL_USAGE
         ]
         if not usages:
             return
@@ -575,7 +575,7 @@ class TUIApp(App[None]):
         events = [
             event
             for event in self._session.trace.iter_events()
-            if event.kind in ("message_user", "message_assistant")
+            if event.kind in (schema.MESSAGE_USER, schema.MESSAGE_ASSISTANT)
         ]
         shown = events[-_REPLAY_MAX_MESSAGES:]
 
@@ -594,7 +594,7 @@ class TUIApp(App[None]):
             content = str(event.payload.get("content") or "")
             if not content.strip():
                 continue
-            if event.kind == "message_user":
+            if event.kind == schema.MESSAGE_USER:
                 blocks.append(MessageBlock("You", "user", content, markdown="\n" in content))
             else:
                 blocks.append(MessageBlock("Assistant", "assistant", content, markdown=True))

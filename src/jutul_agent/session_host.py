@@ -291,10 +291,12 @@ class SessionHost:
         new title so a front end can refresh its display. Returns the task so
         the caller can hold a reference.
         """
+        from jutul_agent.trace import schema
+
         if self.titled:
             return None
         events = self.session.trace.iter_events()
-        user_msgs = [e for e in events if e.kind == "message_user"]
+        user_msgs = [e for e in events if e.kind == schema.MESSAGE_USER]
         if len(user_msgs) != 1:
             return None
         self.titled = True
@@ -305,7 +307,7 @@ class SessionHost:
             (
                 str(e.payload.get("content", "")).strip()
                 for e in events
-                if e.kind == "message_assistant"
+                if e.kind == schema.MESSAGE_ASSISTANT
             ),
             "",
         )

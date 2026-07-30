@@ -31,6 +31,9 @@ CONTEXT_COMPACTION = "context_compaction"
 ARTIFACT = "artifact"
 ATTEMPT = "attempt"
 UPLOAD = "upload"
+# The two directions of the user-interface channel: a tool appends UI_COMMAND to
+# drive the front end, the front end reports back as UI_EVENT.
+UI_COMMAND = "ui"
 UI_EVENT = "ui_event"
 
 EVAL_TARGET = "eval_target"
@@ -54,6 +57,7 @@ ALL_KINDS: frozenset[str] = frozenset(
         ARTIFACT,
         ATTEMPT,
         UPLOAD,
+        UI_COMMAND,
         UI_EVENT,
         EVAL_TARGET,
         EVAL_RESULT,
