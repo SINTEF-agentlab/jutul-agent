@@ -8,6 +8,7 @@ from pathlib import Path
 
 from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
 from jutul_agent.session import Session
+from jutul_agent.trace import schema
 
 _DEMO_PATH = Path(__file__).resolve().parents[1] / "examples" / "demo-app" / "demo.py"
 
@@ -40,7 +41,7 @@ def test_set_param_emits_ui_event(tmp_path: Path) -> None:
     set_param = demo._make_set_param_tool(session)
     out = asyncio.run(set_param.ainvoke({"p": 5}))
     assert "5" in out
-    ui_events = [e for e in session.trace.iter_events() if e.kind == "ui"]
+    ui_events = [e for e in session.trace.iter_events() if e.kind == schema.UI_COMMAND]
     assert ui_events[-1].payload == {"action": "set_param", "payload": {"p": 5.0}}
 
 
@@ -49,7 +50,7 @@ def test_plot_response_records_html_artifact(tmp_path: Path) -> None:
     plot_response = demo._make_plot_tool(session)
     out = asyncio.run(plot_response.ainvoke({"p": 3}))
     assert "3" in out
-    artifacts = [e for e in session.trace.iter_events() if e.kind == "artifact"]
+    artifacts = [e for e in session.trace.iter_events() if e.kind == schema.ARTIFACT]
     assert artifacts[-1].payload["mime"] == "text/html"
     assert artifacts[-1].payload["path"].endswith(".html")
     # The tool drove the Julia export.

@@ -43,7 +43,6 @@ from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManag
 from jutul_agent.preview import TOOL_STREAM_RENDER_INTERVAL, TOOL_STREAM_TAIL_CAP
 from jutul_agent.session_host import SessionHost
 from jutul_agent.trace import schema
-from jutul_agent.trace.schema import UI_EVENT, UPLOAD
 
 # The web UI ships pre-built next to this module: ``web_dist`` is the Vite build of
 # ``webapp/`` (the React app), committed and shipped so an install needs no Node.
@@ -648,7 +647,7 @@ def create_app(
         # a threadpool, and the session's own SQLite connection is bound to the thread
         # it was created on (the event loop), so reusing it here raises.
         with TraceLog(host.session.state_dir / "trace.sqlite") as log:
-            usages = [e.payload for e in log.iter_events() if e.kind == "model_usage"]
+            usages = [e.payload for e in log.iter_events() if e.kind == schema.MODEL_USAGE]
         model = host.model or DEFAULT_MODEL
         window = context_window(model)
 
@@ -700,7 +699,7 @@ def create_app(
                     raise HTTPException(status_code=413, detail="upload too large (max 100 MB)")
                 fh.write(chunk)
         rel = f"uploads/{safe}"
-        host.session.trace.append(UPLOAD, {"path": rel})
+        host.session.trace.append(schema.UPLOAD, {"path": rel})
         return {"path": rel}
 
     @app.websocket("/sessions/{session_id}/stream")
@@ -984,7 +983,7 @@ class _StreamState:
         elif kind == "cancel":
             await self.cancel_turn()
         elif kind == "ui_event":
-            self._host.session.trace.append(UI_EVENT, {"payload": message.get("payload")})
+            self._host.session.trace.append(schema.UI_EVENT, {"payload": message.get("payload")})
         elif kind == "command":
             await self._handle_command(message)
         else:
@@ -1201,10 +1200,10 @@ class _StreamState:
         whole trace on every tool completion."""
         for event in self._host.session.trace.events_after(self._side_output_id):
             self._side_output_id = event.id
-            if event.kind == "artifact":
+            if event.kind == schema.ARTIFACT:
                 for wire in artifact_wire_events([event.payload], self._host.session_id):
                     await _safe_send(self._ws, wire)
-            elif event.kind == "ui":
+            elif event.kind == schema.UI_COMMAND:
                 action = str(event.payload.get("action") or "")
                 payload = event.payload.get("payload")
                 await _safe_send(self._ws, protocol.ui_command(action, payload))

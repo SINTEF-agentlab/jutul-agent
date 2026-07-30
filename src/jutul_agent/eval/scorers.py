@@ -651,7 +651,7 @@ def _trace_tool_call_payloads(state: TaskState) -> list[dict]:
         return []
     log = TraceLog(Path(path))
     try:
-        return [event.payload for event in log.iter_events() if event.kind == "tool_call"]
+        return [event.payload for event in log.iter_events() if event.kind == schema.TOOL_CALL]
     finally:
         log.close()
 

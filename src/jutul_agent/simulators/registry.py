@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib
 import importlib.metadata as importlib_metadata
 import pkgutil
+import sys
 from functools import cache
 
 from jutul_agent.simulators.base import SimulatorAdapter
@@ -87,8 +88,6 @@ def _adapter_problem(adapter: SimulatorAdapter) -> str | None:
 
 
 def _warn_skipped(source: str, reason: object) -> None:
-    import sys
-
     print(f"warning: skipping simulator adapter from {source}: {reason}", file=sys.stderr)
 
 

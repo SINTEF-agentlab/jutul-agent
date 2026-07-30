@@ -44,6 +44,7 @@ than restating the strings, and the table below is the payload contract.
 | `artifact` | `plot_julia` / `recapture_plot` / `write_report` | `path` (relative to the session output dir), `mime`, `caption`, `tool_call_id`, `format`, `kind` (`plot`/`report`, routes the browser viz), `size_px`, `dpi`, `slot`, `source_code`, `poster` (thumbnail for an interactive plot), `live_url` |
 | `attempt` | `record_attempt` | `id`, `parent_id`, `rationale`, `parameters_changed`, `metrics`, `candidate_path`, `plot_artifact_path`, `notes` |
 | `upload` | web server | `path` of a file the user uploaded into the workspace |
+| `ui` | a capability's user-interface tool | `action` and `payload`, forwarded to the front end as a `ui` message |
 | `ui_event` | web server | `payload` of an interaction the front end reported (recorded for later analysis) |
 | `eval_target` | bench solver | `expected` golden answer for an eval session |
 | `eval_result` | `jutul-agent review eval-link` | `passed`, `task`, `scores` (written onto the session after scoring) |

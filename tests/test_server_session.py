@@ -76,10 +76,14 @@ def _provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_models_endpoint(tmp_path: Path) -> None:
+    from jutul_agent.interfaces.server import protocol
+
     with _client(echo_agent, tmp_path) as client:
         body = client.get("/models").json()
     assert "default" in body
     assert isinstance(body["providers"], list)
+    # The version a third-party front end negotiates against is announced here.
+    assert body["protocol"] == protocol.PROTOCOL_VERSION
 
 
 def test_models_endpoint_reports_the_launch_default_model(tmp_path: Path) -> None:
@@ -620,6 +624,37 @@ def test_ws_decision_without_pending_is_error(tmp_path: Path) -> None:
             event = ws.receive_json()
     assert event["type"] == "error"
     assert "no approval" in event["message"]
+
+
+async def test_side_outputs_forward_artifacts_and_ui_commands(tmp_path: Path) -> None:
+    """Both directions of the user-interface channel meet at the trace.
+
+    A capability's tool drives the front end by appending a ``ui`` event; the
+    flush turns it into a ``ui`` wire message. The kinds are read back from the
+    trace, so a writer and this reader agreeing is the whole contract.
+    """
+    from jutul_agent.interfaces.server.app import _StreamState
+    from jutul_agent.trace import schema
+
+    session = Session.create(
+        julia=FakeJulia(), state_root=tmp_path, simulator=make_fake_adapter(tmp_path)
+    )
+    host = SessionHost(session=session, agent=None)
+    ws = _FakeWS()
+    st = _StreamState(ws, host)  # type: ignore[arg-type]
+
+    session.trace.append(schema.UI_COMMAND, {"action": "set_param", "payload": {"p": 2}})
+    session.trace.append(
+        schema.ARTIFACT,
+        schema.artifact_payload(path="artifacts/p.png", mime="image/png", caption="fig"),
+    )
+    await st._flush_side_outputs()
+    assert [m["type"] for m in ws.sent] == ["ui", "artifact"]
+    assert ws.sent[0] == {"type": "ui", "action": "set_param", "payload": {"p": 2}}
+
+    # The high-water mark means a second flush re-sends nothing.
+    await st._flush_side_outputs()
+    assert len(ws.sent) == 2
 
 
 def test_artifact_wire_events_png_and_html() -> None:

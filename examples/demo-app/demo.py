@@ -27,6 +27,7 @@ from jutul_agent.agent.capabilities import Capability
 from jutul_agent.session import Session
 from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.simulators.env_setup import prepare_workspace_env
+from jutul_agent.trace import schema
 from jutul_agent.workspace import resolve_julia_project
 
 DEMO_DIR = Path(__file__).resolve().parent
@@ -56,7 +57,7 @@ def _make_set_param_tool(session: Session):
     @tool
     async def set_param(p: float) -> str:
         """Move the parameter control on the user's interface to ``p``."""
-        session.trace.append("ui", {"action": "set_param", "payload": {"p": p}})
+        session.trace.append(schema.UI_COMMAND, {"action": "set_param", "payload": {"p": p}})
         return f"Set the parameter control to p = {p}."
 
     return set_param
@@ -73,8 +74,10 @@ def _make_plot_tool(session: Session):
         if result.error:
             return f"ERROR: {result.error}"
         session.trace.append(
-            "artifact",
-            {"path": rel, "mime": "text/html", "caption": f"DemoSim response (p={p})"},
+            schema.ARTIFACT,
+            schema.artifact_payload(
+                path=rel, mime="text/html", caption=f"DemoSim response (p={p})"
+            ),
         )
         return f"Plotted the interactive response for p = {p}."
 
