@@ -13,6 +13,7 @@ from pathlib import Path
 
 from deepagents.backends import CompositeBackend, LocalShellBackend
 from deepagents.backends.protocol import (
+    DeleteResult,
     EditResult,
     ExecuteResponse,
     GlobResult,
@@ -86,15 +87,23 @@ class RecursiveGrepBackend(CompositeBackend):
     pattern plus a base path (see :func:`split_windows_glob`): ``pathlib``'s
     ``rglob`` rejects absolute patterns, so the absolute ``glob`` form the skills
     use silently matches nothing on Windows otherwise. A no-op off Windows.
+
+    The grep overrides forward ``**kwargs`` because only ``glob`` needs
+    normalizing: the middleware probes the signature for the search options it
+    supports (a match cap, say) and silently falls back to trimming the full
+    result set when an override doesn't accept them, so a fixed signature would
+    quietly disable bounded search on every new option the framework adds.
     """
 
-    def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
-        return super().grep(pattern, path=path, glob=_recursive_glob(glob))
+    def grep(
+        self, pattern: str, path: str | None = None, glob: str | None = None, **kwargs
+    ) -> GrepResult:
+        return super().grep(pattern, path=path, glob=_recursive_glob(glob), **kwargs)
 
     async def agrep(
-        self, pattern: str, path: str | None = None, glob: str | None = None
+        self, pattern: str, path: str | None = None, glob: str | None = None, **kwargs
     ) -> GrepResult:
-        return await super().agrep(pattern, path=path, glob=_recursive_glob(glob))
+        return await super().agrep(pattern, path=path, glob=_recursive_glob(glob), **kwargs)
 
     def glob(self, pattern: str, path: str | None = None) -> GlobResult:
         pattern, path = split_windows_glob(pattern, path)
@@ -118,10 +127,11 @@ class WorkspaceShellBackend(LocalShellBackend):
 
     ``readonly_roots`` are real directories writes are refused under: the
     shared Julia depot's installed package source. Reads and greps there are
-    fine (that's how the agent studies a package); only ``write``/``edit`` are
-    blocked, so the agent can't corrupt the depot for other projects. A
-    ``Pkg.develop`` checkout lives outside the depot and stays writable, so the
-    registry-vs-dev distinction falls out of the path, with no special-casing.
+    fine (that's how the agent studies a package); ``write``, ``edit`` and
+    ``delete`` are blocked, so the agent can't corrupt the depot for other
+    projects. A ``Pkg.develop`` checkout lives outside the depot and stays
+    writable, so the registry-vs-dev distinction falls out of the path, with no
+    special-casing.
 
     ``execute`` refuses to launch ``julia``: Julia belongs in the session
     kernel, where state persists and output streams; a shell julia is a cold
@@ -168,6 +178,15 @@ class WorkspaceShellBackend(LocalShellBackend):
         if reason is not None:
             return EditResult(error=reason)
         return super().edit(file_path, old_string, new_string, replace_all=replace_all)
+
+    def delete(self, file_path: str) -> DeleteResult:
+        # Deleting a directory removes it recursively, so the depot guard matters
+        # here more than for write/edit: one call could take out a package's
+        # whole source tree.
+        reason = self._readonly_reason(file_path)
+        if reason is not None:
+            return DeleteResult(error=reason)
+        return super().delete(file_path)
 
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
         if interpreter_invocation(command, _BLOCKED_INTERPRETERS) is not None:

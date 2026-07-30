@@ -47,6 +47,21 @@ def is_interrupt_payload(text: str) -> bool:
     return lowered.startswith("interrupt(") or "interrupt(value=" in lowered
 
 
+# One ``read_file`` gutter row: a right-justified line marker, optionally with a
+# ``.<n>`` suffix marking the continuation of an over-long line, then the
+# separator. Two spaces is the separator the framework emits today; the tab is
+# the older ``cat -n`` form, which stored transcripts still carry. The separator
+# belongs to the framework and has changed before, so this pattern lives in one
+# place and every surface that shows ``read_file`` output strips through it.
+READ_FILE_GUTTER = re.compile(r"^ *\d+(?:\.\d+)?(?:\t|  )")
+
+
+def strip_read_file_gutter(text: str) -> str:
+    """Drop the line-number gutter from each ``read_file`` row that carries one."""
+
+    return "\n".join(READ_FILE_GUTTER.sub("", line, count=1) for line in text.splitlines())
+
+
 def _extract_tool_messages_from_repr(text: str) -> str:
     """Pull content strings back out of a ``[ToolMessage(content='...', …)]`` repr."""
 

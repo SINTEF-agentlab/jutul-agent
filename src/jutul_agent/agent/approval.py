@@ -15,8 +15,12 @@ _APPROVAL_TOOLS: dict[str, str] = {
     "execute": "Run a shell command in the workspace.",
     "write_file": "Write a file in the workspace.",
     "edit_file": "Edit a file in the workspace.",
+    "delete": "Delete a file or directory (directories go recursively).",
 }
 
+# Deliberately excludes `delete`: these are the tools "accept edits" mode and the
+# session allowlist wave through in bulk, and a recursive delete is not something
+# a blanket "always allow file edits" should cover. It stays one prompt per call.
 _WORKSPACE_EDIT_TOOLS = frozenset({"write_file", "edit_file"})
 _SHELL_TOOLS = frozenset({"execute"})
 
@@ -38,10 +42,10 @@ class ApprovalMode(StrEnum):
     """How side-effecting Deep Agents tools are gated before execution."""
 
     ASK = "ask"
-    """Prompt before execute, write_file, and edit_file (default)."""
+    """Prompt before every gated tool (default)."""
 
     WORKSPACE = "workspace"
-    """Auto-allow workspace write_file and edit_file; still prompt for execute."""
+    """Auto-allow workspace write_file and edit_file; still prompt for the rest."""
 
     AUTO = "auto"
     """Auto-allow all configured approval tools (non-interactive trust mode)."""
@@ -141,8 +145,11 @@ def interrupt_on_for_mode(mode: ApprovalMode) -> dict[str, InterruptOnConfig]:
     if mode == ApprovalMode.AUTO:
         return {}
     if mode == ApprovalMode.WORKSPACE:
+        # "Accept edits" auto-allows exactly the workspace edit tools; anything
+        # else that is gated at all stays gated, so a newly gated tool is not
+        # silently waved through by this mode.
         full = interrupt_on_config()
-        return {name: cfg for name, cfg in full.items() if name == "execute"}
+        return {name: cfg for name, cfg in full.items() if name not in _WORKSPACE_EDIT_TOOLS}
     return interrupt_on_config()
 
 

@@ -78,12 +78,12 @@ plot_julia(
         axislegend(ax)
         fig
     """,
-    slot="thinner_coating",                 # → artifacts/thinner_coating.png
+    slot="thinner_coating",  # → artifacts/thinner_coating.png
 )
 record_attempt(
     rationale="reduce positive-electrode coating thickness by 0.5%",
     metrics={"rmse_V": rmse, "t_end_s": t[end]},
-    plot_artifact_path="artifacts/thinner_coating.png",   # match the slot
+    plot_artifact_path="artifacts/thinner_coating.png",  # match the slot
     parent_attempt_id=baseline_id,
 )
 ```

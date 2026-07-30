@@ -27,6 +27,7 @@ from deepagents import (
     register_harness_profile,
 )
 from deepagents.backends import CompositeBackend
+from langchain.agents.middleware import TodoListMiddleware
 
 from jutul_agent.agent.added_dirs import add_dir
 from jutul_agent.agent.approval import ApprovalMode, interrupt_on_for_mode, parse_approval_mode
@@ -483,6 +484,11 @@ def build_agent(
         middleware=[
             m
             for m in (
+                # Opt-in since deepagents stopped installing it by default. The
+                # planning it gives the model is worth its prompt cost on the
+                # long multi-step runs this agent does, and the todo list is a
+                # rendered surface in every front end.
+                TodoListMiddleware(),
                 build_memory_middleware(backend, memory_dir),
                 build_context_editing_middleware(
                     model_id=model_spec if isinstance(model_spec, str) else None,

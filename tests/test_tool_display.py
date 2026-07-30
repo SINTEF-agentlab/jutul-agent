@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from jutul_agent.agent.tool_output import strip_read_file_gutter
 from jutul_agent.interfaces.tui.tool_display import (
     compact_tool_summary,
     display_path,
     display_tool_body,
-    strip_read_file_line_numbers,
 )
 
 
@@ -96,8 +96,15 @@ def test_edit_file_running_body_counts_replacement_text() -> None:
     assert "7 chars" in body
 
 
-def test_strip_read_file_line_numbers() -> None:
-    assert strip_read_file_line_numbers("     1\talpha\n     2\tbeta") == "alpha\nbeta"
+def test_strip_read_file_gutter() -> None:
+    from deepagents.backends.utils import format_content_with_line_numbers
+
+    # The legacy `cat -n` gutter, still present in stored transcripts.
+    assert strip_read_file_gutter("     1\talpha\n     2\tbeta") == "alpha\nbeta"
+    # The gutter `read_file` emits today, built with the framework's formatter
+    # so a change to its separator fails here instead of showing up on a card.
+    numbered = format_content_with_line_numbers(["alpha", "beta"])
+    assert strip_read_file_gutter(numbered) == "alpha\nbeta"
 
 
 def test_run_julia_body_shows_code_then_output() -> None:
@@ -230,3 +237,15 @@ def test_display_tool_body_handles_unparseable_todos() -> None:
     )
     assert isinstance(body, str)
     assert "Updated the plan." in body
+
+
+def test_empty_ls_and_glob_report_no_entries() -> None:
+    # `ls` and `glob` render a sentence rather than an empty list when nothing
+    # matched; counting its lines would report an empty directory as "1 entry".
+    from deepagents.middleware.filesystem import _format_file_paths
+
+    empty = _format_file_paths([])
+    assert compact_tool_summary("ls", {"path": "/ws"}, empty, is_error=False).endswith("0 entries")
+    assert compact_tool_summary("glob", {"pattern": "*.jl"}, empty, is_error=False).endswith(
+        "0 matches"
+    )
