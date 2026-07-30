@@ -389,9 +389,10 @@ def prepare_workspace_env(
             _rebuild_managed_env(adapter, workspace, sim_name, reason=f"was built for {foreign}")
             return
 
-    _sync_workspace_env(adapter, workspace, julia_project, sim_name)
+        _sync_workspace_env(adapter, workspace, julia_project, sim_name)
+        _refresh_warm_sources(adapter, workspace, julia_project, sim_name)
+
     _sync_project_dependencies(julia_project, dependencies)
-    _refresh_warm_sources(adapter, workspace, julia_project, sim_name)
 
     _ensure_simulator_installed(adapter, workspace, julia_project, sim_name)
     _ensure_env_warmed(workspace, julia_project, sim_name)
@@ -504,7 +505,11 @@ def _sync_project_dependencies(julia_project: Path, dependencies: Sequence[Path]
     """Add capability-provided deps to the active Julia project."""
 
     try:
-        added = sync_julia_project_with_dependencies(julia_project, dependencies)
+        added = sync_julia_project_with_dependencies(
+            julia_project,
+            dependencies,
+            warn=lambda msg: print(f"warning: {msg}", file=sys.stderr),
+        )
     except Exception as exc:
         print(f"warning: capability dependency sync failed: {exc}", file=sys.stderr)
         return

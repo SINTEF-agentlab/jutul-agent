@@ -8,7 +8,7 @@ import pytest
 
 from jutul_agent.simulators import env_setup
 from jutul_agent.simulators.base import SimulatorAdapter
-from jutul_agent.workspace import mark_warm_source, workspace_julia_env
+from jutul_agent.workspace import WARM_SOURCE_MARKER, workspace_julia_env
 
 
 def _adapter(module_dir: Path) -> SimulatorAdapter:
@@ -293,15 +293,25 @@ def test_prepare_workspace_env_leaves_user_root_project_alone(
     workspace = tmp_path / "ws"
     workspace.mkdir()
     root = workspace / "Project.toml"
-    root.write_text('[deps]\nFoo = "uuid"\n', encoding="utf-8")
+    # A [sources] table of its own: the warm-source refresh acts on any project
+    # that has one, so a user-owned project must be kept out of that path.
+    original = '[deps]\nFoo = "uuid"\n\n[sources]\nFoo = {path = "Foo"}\n'
+    root.write_text(original, encoding="utf-8")
     (workspace / "Manifest.toml").write_text("[deps.Foo]\n", encoding="utf-8")
+
+    installs: list[Path] = []
+    monkeypatch.setattr(
+        env_setup, "resolve_and_instantiate", lambda project, **kw: installs.append(project)
+    )
 
     env_setup.prepare_workspace_env(
         _adapter(module_dir), workspace=workspace, julia_project=workspace
     )
 
-    assert root.read_text(encoding="utf-8") == '[deps]\nFoo = "uuid"\n'
+    assert root.read_text(encoding="utf-8") == original
     assert not workspace_julia_env(workspace).exists()
+    assert installs == []
+    assert not (workspace / WARM_SOURCE_MARKER).exists()
 
 
 def test_prepare_workspace_env_syncs_capability_dependencies(
@@ -314,10 +324,6 @@ def test_prepare_workspace_env_syncs_capability_dependencies(
     env = workspace_julia_env(workspace)
     env.mkdir(parents=True)
     (env / "Project.toml").write_text('[deps]\nFoo = "uuid"\n', encoding="utf-8")
-    # Mark the env's warm sources current so the unrelated warm-source refresh step
-    # is a no-op here; it recopies every [sources] entry as if relative to the
-    # template, which mishandles a capability dep's absolute source path.
-    mark_warm_source(env, module_dir / "julia_env")
 
     local_pkg = tmp_path / "FooCap"
     local_pkg.mkdir()
@@ -343,6 +349,48 @@ def test_prepare_workspace_env_syncs_capability_dependencies(
     assert installs  # resolve_and_instantiate ran after the capability dep was added
 
 
+def test_prepare_workspace_env_keeps_a_capability_package_on_a_later_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dep is already declared and the warm sources are stale (post-upgrade).
+
+    The refresh then walks every [sources] entry, including the capability's
+    absolute path, so it must leave that package where it is.
+    """
+    module_dir = _make_template(tmp_path)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    env = workspace_julia_env(workspace)
+    env.mkdir(parents=True)
+
+    local_pkg = tmp_path / "FooCap"
+    (local_pkg / "src").mkdir(parents=True)
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
+    )
+    (local_pkg / "src" / "FooCap.jl").write_text("module FooCap end\n", encoding="utf-8")
+
+    (env / "Project.toml").write_text(
+        "[deps]\n"
+        'Foo = "uuid"\n'
+        'FooCap = "11111111-1111-1111-1111-111111111111"\n'
+        "\n[sources]\n"
+        f'FooCap = {{path = "{local_pkg.as_posix()}"}}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(env_setup, "resolve_and_instantiate", lambda project, **kw: None)
+
+    env_setup.prepare_workspace_env(
+        _adapter(module_dir),
+        workspace=workspace,
+        julia_project=env,
+        dependencies=[local_pkg / "Project.toml"],
+    )
+
+    assert (local_pkg / "src" / "FooCap.jl").exists()
+
+
 def test_prepare_workspace_env_syncs_capability_dependencies_into_user_root_project(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -353,7 +401,6 @@ def test_prepare_workspace_env_syncs_capability_dependencies_into_user_root_proj
     root = workspace / "Project.toml"
     root.write_text('[deps]\nFoo = "uuid"\n', encoding="utf-8")
     (workspace / "Manifest.toml").write_text("[deps.Foo]\n", encoding="utf-8")
-    mark_warm_source(workspace, module_dir / "julia_env")
 
     local_pkg = tmp_path / "FooCap"
     local_pkg.mkdir()
@@ -378,6 +425,8 @@ def test_prepare_workspace_env_syncs_capability_dependencies_into_user_root_proj
     assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
     assert not workspace_julia_env(workspace).exists()
     assert installs == [workspace]
+    # The capability's own package is still there; syncing must not move or copy it.
+    assert (local_pkg / "Project.toml").exists()
 
 
 def test_prepare_workspace_env_warns_when_dependency_sync_fails(
@@ -415,7 +464,6 @@ def test_prepare_workspace_env_warns_when_dependency_resolve_fails(
     root = workspace / "Project.toml"
     root.write_text('[deps]\nFoo = "uuid"\n', encoding="utf-8")
     (workspace / "Manifest.toml").write_text("[deps.Foo]\n", encoding="utf-8")
-    mark_warm_source(workspace, module_dir / "julia_env")
 
     local_pkg = tmp_path / "FooCap"
     local_pkg.mkdir()

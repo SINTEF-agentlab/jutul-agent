@@ -8,7 +8,7 @@ import contextlib
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from jutul_agent import __version__
 from jutul_agent.interfaces.cli._helpers import (
@@ -32,6 +32,11 @@ from jutul_agent.workspace import (
     load_workspace_config,
     resolve_julia_project,
 )
+
+if TYPE_CHECKING:
+    # Imported for typing only; the runtime import stays inside _run_session so the
+    # capability entry points are not scanned on an unrelated subcommand.
+    from jutul_agent.agent.capabilities import Capability
 
 
 def build_parser(prog: str = "jutul-agent tui") -> argparse.ArgumentParser:
@@ -357,7 +362,7 @@ async def _run_with_backend(
     session_id: str,
     state_dir: Path,
     *,
-    extensions: Sequence[Any] = (),
+    extensions: Sequence[Capability] = (),
     resuming: bool = False,
 ) -> int:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
