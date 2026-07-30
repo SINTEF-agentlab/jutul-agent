@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
 
 from jutul_agent.simulators.base import SimulatorAdapter
@@ -32,6 +33,7 @@ from jutul_agent.workspace import (
     recopy_warm_sources,
     resolve_julia_project,
     sync_julia_env_with_template,
+    sync_julia_project_with_dependencies,
     warm_source_is_current,
     workspace_is_simulator_source,
     write_env_template_stamp,
@@ -40,6 +42,17 @@ from jutul_agent.workspace import (
 
 class EnvSetupError(RuntimeError):
     pass
+
+
+def _info(msg: str) -> None:
+    """Print a progress line with uvicorn's own "INFO:" console prefix.
+
+    Env setup runs both from the CLI and inline before the web server starts;
+    matching uvicorn's format (and its stderr stream) keeps these progress
+    lines visually consistent with its own startup log lines instead of
+    reading as unrelated stray output when interleaved on the console.
+    """
+    print(f"INFO:     {msg}", file=sys.stderr, flush=True)
 
 
 def is_workspace_env_ready(workspace: Path | None = None) -> bool:
@@ -248,7 +261,7 @@ def verify_julia_runs(project: Path) -> None:
     Raises ``EnvSetupError`` on failure.
     """
 
-    print("Verifying Julia runs in the env...", flush=True)
+    _info("Verifying Julia runs in the env...")
     _run_pkg(project, ["print(1 + 1)"])
 
 
@@ -348,6 +361,7 @@ def prepare_workspace_env(
     workspace: Path,
     julia_project: Path,
     sim_name: str | None = None,
+    dependencies: Sequence[Path] | None = None,
 ) -> None:
     """Make the workspace's Julia env ready for ``adapter`` before launch.
 
@@ -374,8 +388,11 @@ def prepare_workspace_env(
         if foreign is not None:
             _rebuild_managed_env(adapter, workspace, sim_name, reason=f"was built for {foreign}")
             return
+
         _sync_workspace_env(adapter, workspace, julia_project, sim_name)
         _refresh_warm_sources(adapter, workspace, julia_project, sim_name)
+
+    _sync_project_dependencies(julia_project, dependencies)
 
     _ensure_simulator_installed(adapter, workspace, julia_project, sim_name)
     _ensure_env_warmed(workspace, julia_project, sim_name)
@@ -406,10 +423,9 @@ def _rebuild_managed_env(
 ) -> None:
     """Replace the managed workspace env with the active simulator's template."""
 
-    print(
+    _info(
         f"Workspace Julia env {reason}; rebuilding it for {adapter.display_name} "
-        "from the template (one-time, can take a few minutes)...",
-        flush=True,
+        "from the template (one-time, can take a few minutes)..."
     )
     try:
         bootstrap_workspace(adapter, workspace=ws, force=True, precompile=True)
@@ -453,7 +469,10 @@ def _sync_workspace_env(
     before = project_toml.read_text(encoding="utf-8") if project_toml.exists() else None
 
     try:
-        added = sync_julia_env_with_template(adapter.julia_env_template_path, workspace=ws)
+        added = sync_julia_env_with_template(
+            adapter.julia_env_template_path,
+            workspace=ws,
+        )
     except Exception as exc:
         print(f"warning: env sync failed: {exc}", file=sys.stderr)
         return
@@ -461,7 +480,7 @@ def _sync_workspace_env(
     if not added:
         return
 
-    print(f"Updating workspace env with {', '.join(added)} (added upstream)...", flush=True)
+    _info(f"Updating workspace env with {', '.join(added)} (added upstream)...")
     try:
         resolve_and_instantiate(julia_project, precompile=False, capture=True)
         # The env now matches the current template; refresh the stamp so the
@@ -480,6 +499,32 @@ def _sync_workspace_env(
             f"         (cause: {exc})",
             file=sys.stderr,
         )
+
+
+def _sync_project_dependencies(julia_project: Path, dependencies: Sequence[Path] | None) -> None:
+    """Add capability-provided deps to the active Julia project."""
+
+    try:
+        added = sync_julia_project_with_dependencies(
+            julia_project,
+            dependencies,
+            warn=lambda msg: print(f"warning: {msg}", file=sys.stderr),
+        )
+    except Exception as exc:
+        print(f"warning: capability dependency sync failed: {exc}", file=sys.stderr)
+        return
+
+    if added:
+        _info(f"Updating Julia project with {', '.join(added)} (added by capability)...")
+        try:
+            resolve_and_instantiate(julia_project, precompile=False, capture=True)
+        except EnvSetupError as exc:
+            print(
+                "Warning: could not resolve and instantiate the "
+                + f"capability dependencies: ({exc}). ",
+                file=sys.stderr,
+            )
+            return
 
 
 def _refresh_warm_sources(
@@ -505,7 +550,7 @@ def _refresh_warm_sources(
     if not recopy_warm_sources(julia_project, template):
         return  # user-owned env (no [sources]); nothing to refresh
 
-    print("Updating the in-env JutulAgent runtime (jutul-agent was updated)…", flush=True)
+    _info("Updating the in-env JutulAgent runtime (jutul-agent was updated)…")
     try:
         resolve_and_instantiate(julia_project, precompile=False, capture=True)
     except EnvSetupError as exc:
@@ -538,10 +583,9 @@ def _ensure_simulator_installed(
     if manifest_has_package(julia_project, pkg):
         return
 
-    print(
+    _info(
         f"Workspace Julia env has not resolved {pkg} yet — installing "
-        "(one-time, can take a few minutes)...",
-        flush=True,
+        "(one-time, can take a few minutes)..."
     )
     try:
         # Resolve + install only; the warm-up bake is _ensure_env_warmed's job.
@@ -604,10 +648,7 @@ def _ensure_env_warmed(ws: Path, julia_project: Path, sim_name: str | None) -> N
     if env_precompile_is_current(julia_project):
         return  # nothing changed since the last bake; skip without spawning Julia
 
-    print(
-        "Precompiling the Julia env (one-time after a change; can take a few minutes)...",
-        flush=True,
-    )
+    _info("Precompiling the Julia env (one-time after a change; can take a few minutes)...")
     try:
         precompile_env(julia_project)
     except EnvSetupError as exc:

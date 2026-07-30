@@ -12,6 +12,7 @@ from jutul_agent.agent import builder
 from jutul_agent.agent.capabilities import (
     Capability,
     HttpToolSpec,
+    collect_dependency_paths,
     collect_prompt_fragments,
     collect_skill_dirs,
     collect_subagents,
@@ -49,11 +50,13 @@ def test_collect_helpers(session: Session) -> None:
     cap = _cap(
         tools=(lambda _s: _demo_tool,),
         skill_dirs=(("/skills/demo", "Demo"),),
+        dependencies=(Path("/local/Foo/Project.toml"),),
         subagents=(lambda _s: {"name": "sub"},),
         prompt_fragment="  FRAGMENT  ",
     )
     assert [t.name for t in collect_tools([cap], session)] == ["_demo_tool"]
     assert collect_skill_dirs([cap]) == [("/skills/demo", "Demo")]
+    assert collect_dependency_paths([cap]) == [Path("/local/Foo/Project.toml")]
     assert collect_subagents([cap], session) == [{"name": "sub"}]
     assert collect_prompt_fragments([cap]) == ["  FRAGMENT  "]
     assert collect_prompt_fragments([_cap(prompt_fragment="   ")]) == []
@@ -224,6 +227,19 @@ def test_build_agent_skips_other_surface(session: Session, monkeypatch) -> None:
     )
     builder.build_agent(session, surface="tui", extensions=[cap])
     assert "_demo_tool" not in [t.name for t in captured["tools"]]
+
+
+def test_build_agent_defaults_surface_to_the_session(session: Session, monkeypatch) -> None:
+    """No explicit ``surface=`` falls back to what the session was created for."""
+    captured = _capture_create_deep_agent(monkeypatch)
+    session.surface = "web"
+    cap = Capability(
+        name="ext",
+        tools=(lambda _s: _demo_tool,),
+        surfaces=("web",),
+    )
+    builder.build_agent(session, extensions=[cap])
+    assert "_demo_tool" in [t.name for t in captured["tools"]]
     assert "EXTENSION FRAGMENT" not in captured["system_prompt"]
 
 

@@ -17,7 +17,6 @@ the app is served at http://127.0.0.1:8742.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -27,6 +26,8 @@ from langchain_core.tools import tool
 from jutul_agent.agent.capabilities import Capability
 from jutul_agent.session import Session
 from jutul_agent.simulators.base import SimulatorAdapter
+from jutul_agent.simulators.env_setup import prepare_workspace_env
+from jutul_agent.workspace import resolve_julia_project
 
 DEMO_DIR = Path(__file__).resolve().parent
 JULIA_ENV = DEMO_DIR / "julia_env"
@@ -121,7 +122,6 @@ def create_demo_app():
             model=model,
             approval_mode=approval_mode,
             workspace=WORKSPACE,
-            julia_project=JULIA_ENV,
             prepare_env=False,
             surface="web",
             extensions=[demo_capability(), *extensions],
@@ -136,13 +136,14 @@ def create_demo_app():
 
 
 def ensure_env() -> None:
-    """Instantiate the demo Julia env on first run (resolves DemoSim/WGLMakie/Bonito)."""
-    if (JULIA_ENV / "Manifest.toml").exists():
-        return
-    print("Instantiating the demo Julia env (first run, this can take a while)...")
-    subprocess.run(
-        ["julia", f"--project={JULIA_ENV}", "-e", "using Pkg; Pkg.instantiate()"],
-        check=True,
+    """Prepare the demo's workspace Julia env without touching the template."""
+
+    print("Preparing the demo Julia env (this can take a while)...")
+    prepare_workspace_env(
+        DEMO_ADAPTER,
+        workspace=WORKSPACE,
+        julia_project=resolve_julia_project(WORKSPACE),
+        sim_name=DEMO_ADAPTER.name,
     )
 
 

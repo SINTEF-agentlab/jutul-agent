@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from jutul_agent.workspace import (
     merge_simulator_config,
     resolve_julia_project,
     sync_julia_env_with_template,
+    sync_julia_project_with_dependencies,
     workspace_is_simulator_source,
     workspace_julia_env,
     write_workspace_config,
@@ -112,6 +114,60 @@ def test_bootstrap_julia_env_copies_template(tmp_path: Path) -> None:
     assert (project / "JutulAgent" / "Project.toml").exists()
 
 
+def test_bootstrap_julia_env_copies_template_sources(tmp_path: Path) -> None:
+    """A [sources] path pointing outside the template is copied in alongside the env.
+
+    The package lives next to the template rather than inside it, so the plain
+    template copy cannot account for it landing next to the env.
+    """
+    template = tmp_path / "template"
+    template.mkdir()
+    (tmp_path / "DemoSim" / "src").mkdir(parents=True)
+    (tmp_path / "DemoSim" / "Project.toml").write_text('name = "DemoSim"\n', encoding="utf-8")
+    (template / "Project.toml").write_text(
+        "[deps]\n"
+        'DemoSim = "399ba059-2ef4-46df-b0ff-fda998e6d1cf"\n'
+        "\n[sources]\n"
+        'DemoSim = {path = "../DemoSim"}\n',
+        encoding="utf-8",
+    )
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    project = bootstrap_julia_env(template, workspace=ws)
+
+    # `../DemoSim` resolves relative to the env, so the copy sits beside it.
+    assert (project.parent / "DemoSim" / "Project.toml").exists()
+
+
+def test_bootstrap_julia_env_leaves_absolute_source_paths_in_place(tmp_path: Path) -> None:
+    """An absolute [sources] path names a package that already exists on disk.
+
+    ``env_dir / absolute`` collapses onto that package, so copying it would wipe
+    and rewrite the package the entry points at.
+    """
+    external = tmp_path / "FooCap"
+    (external / "src").mkdir(parents=True)
+    (external / "Project.toml").write_text('name = "FooCap"\n', encoding="utf-8")
+    (external / "src" / "FooCap.jl").write_text("module FooCap end\n", encoding="utf-8")
+
+    template = tmp_path / "template"
+    template.mkdir()
+    (template / "Project.toml").write_text(
+        "[deps]\n"
+        'FooCap = "11111111-1111-1111-1111-111111111111"\n'
+        "\n[sources]\n"
+        f'FooCap = {{path = "{external.as_posix()}"}}\n',
+        encoding="utf-8",
+    )
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    bootstrap_julia_env(template, workspace=ws)
+
+    assert (external / "src" / "FooCap.jl").exists()
+
+
 def test_merge_simulator_config_updates_one_entry() -> None:
     base = WorkspaceConfig(simulators={"jutuldarcy": SimulatorConfig()})
     updated = merge_simulator_config(base, "jutuldarcy", source_path=Path("/tmp/src"))
@@ -152,6 +208,289 @@ def test_sync_adds_missing_deps_from_template(
     text = (env / "Project.toml").read_text(encoding="utf-8")
     assert 'CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"' in text
     assert 'Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"' in text
+
+
+def test_sync_adds_extra_deps_from_capabilities(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text(
+        '[deps]\nJutul = "c6b0b931-bd15-49f6-a31f-cf7d80eb5e81"\n',
+        encoding="utf-8",
+    )
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
+    )
+
+    added = sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"])
+    assert added == ["FooCap"]
+
+    text = (env / "Project.toml").read_text(encoding="utf-8")
+    assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
+    assert f'FooCap = {{path = "{local_pkg.resolve().as_posix()}"}}' in text
+
+
+def test_sync_adds_dependencies_to_root_project(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    proj = ws / "Project.toml"
+    proj.write_text('[deps]\nJutul = "uuid"\n', encoding="utf-8")
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
+    )
+
+    added = sync_julia_project_with_dependencies(
+        ws,
+        [local_pkg / "Project.toml"],
+    )
+
+    assert added == ["FooCap"]
+    text = proj.read_text(encoding="utf-8")
+    assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
+    assert f'FooCap = {{path = "{local_pkg.resolve().as_posix()}"}}' in text
+
+
+def test_sync_adds_the_dependencys_own_deps_as_plain_deps(tmp_path: Path) -> None:
+    """A capability's tools `include` its sources into Main.
+
+    The `using` lines in those files resolve against this project, so the
+    dependency's own deps are declared here; only the dependency itself gets a
+    [sources] path.
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text(
+        '[deps]\nJutul = "c6b0b931-bd15-49f6-a31f-cf7d80eb5e81"\n',
+        encoding="utf-8",
+    )
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\n'
+        'uuid = "11111111-1111-1111-1111-111111111111"\n'
+        "[deps]\n"
+        'Bar = "22222222-2222-2222-2222-222222222222"\n',
+        encoding="utf-8",
+    )
+
+    added = sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"])
+    assert added == ["Bar", "FooCap"]
+
+    text = (env / "Project.toml").read_text(encoding="utf-8")
+    assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in text
+    assert 'Bar = "22222222-2222-2222-2222-222222222222"' in text
+    # Bar rides in as a normal dep, to be resolved from the registry.
+    assert "Bar" not in text.split("[sources]")[-1]
+
+
+def test_sync_keeps_an_existing_pin_for_a_dependencys_own_dep(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text(
+        '[deps]\nBar = "already-there"\n',
+        encoding="utf-8",
+    )
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\n'
+        'uuid = "11111111-1111-1111-1111-111111111111"\n'
+        "[deps]\n"
+        'Bar = "22222222-2222-2222-2222-222222222222"\n',
+        encoding="utf-8",
+    )
+
+    assert sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"]) == ["FooCap"]
+
+    text = (env / "Project.toml").read_text(encoding="utf-8")
+    assert 'Bar = "already-there"' in text
+    assert "22222222" not in text
+
+
+def test_sync_adds_a_dependencys_own_deps_on_a_later_run(tmp_path: Path) -> None:
+    """The package itself is already declared, its deps are not.
+
+    This is the state after an upgrade that added a dep to the capability's
+    package, so the second sync still has work to do.
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\n'
+        'uuid = "11111111-1111-1111-1111-111111111111"\n'
+        "[deps]\n"
+        'Bar = "22222222-2222-2222-2222-222222222222"\n',
+        encoding="utf-8",
+    )
+    (env / "Project.toml").write_text(
+        "[deps]\n"
+        'FooCap = "11111111-1111-1111-1111-111111111111"\n'
+        "\n[sources]\n"
+        f'FooCap = {{path = "{local_pkg.as_posix()}"}}\n',
+        encoding="utf-8",
+    )
+
+    assert sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"]) == ["Bar"]
+    assert 'Bar = "22222222-2222-2222-2222-222222222222"' in (env / "Project.toml").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_sync_skips_a_dependencys_own_dep_that_it_path_sources(tmp_path: Path) -> None:
+    """An unregistered sub-dependency cannot be declared without its own source.
+
+    Pkg would fail with "expected package ... to be registered", so it is left
+    out and reported instead.
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text('[deps]\nJutul = "uuid"\n', encoding="utf-8")
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\n'
+        'uuid = "11111111-1111-1111-1111-111111111111"\n'
+        "[deps]\n"
+        'SubLocal = "22222222-2222-2222-2222-222222222222"\n'
+        "\n[sources]\n"
+        'SubLocal = {path = "../SubLocal"}\n',
+        encoding="utf-8",
+    )
+
+    warnings: list[str] = []
+    added = sync_julia_project_with_dependencies(
+        env, [local_pkg / "Project.toml"], warn=warnings.append
+    )
+
+    assert added == ["FooCap"]
+    assert "SubLocal" not in (env / "Project.toml").read_text(encoding="utf-8")
+    assert any("SubLocal" in msg for msg in warnings)
+
+
+def test_sync_skips_a_dependency_whose_uuid_clashes_with_a_declared_dep(tmp_path: Path) -> None:
+    """A name already resolved from elsewhere is left alone.
+
+    Adding a [sources] path under it would make Pkg fail on the UUID mismatch.
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    original = '[deps]\nFooCap = "99999999-9999-9999-9999-999999999999"\n'
+    (env / "Project.toml").write_text(original, encoding="utf-8")
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
+    )
+
+    warnings: list[str] = []
+    added = sync_julia_project_with_dependencies(
+        env, [local_pkg / "Project.toml"], warn=warnings.append
+    )
+
+    assert added == []
+    assert (env / "Project.toml").read_text(encoding="utf-8") == original
+    assert any("clashes" in msg for msg in warnings)
+
+
+def test_sync_warns_when_a_dependency_is_not_a_julia_package(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text('[deps]\nJutul = "uuid"\n', encoding="utf-8")
+
+    warnings: list[str] = []
+    added = sync_julia_project_with_dependencies(env, [tmp_path / "nope"], warn=warnings.append)
+
+    assert added == []
+    assert any("not a Julia package" in msg for msg in warnings)
+
+
+def test_sync_merges_local_preferences_from_dependency(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text(
+        '[deps]\nJutul = "c6b0b931-bd15-49f6-a31f-cf7d80eb5e81"\n',
+        encoding="utf-8",
+    )
+    (env / "LocalPreferences.toml").write_text(
+        '[Other]\na = 1\n\n[FooCap]\nexisting = "kept"\n',
+        encoding="utf-8",
+    )
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
+    )
+    (local_pkg / "LocalPreferences.toml").write_text(
+        '[FooCap]\nexisting = "clobbered"\nnew = "added"\n\n[Bar]\nb = 2\n',
+        encoding="utf-8",
+    )
+
+    added = sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"])
+    assert added == ["FooCap"]
+
+    pref = tomllib.loads((env / "LocalPreferences.toml").read_text(encoding="utf-8"))
+    assert pref["Other"] == {"a": 1}
+    # A key the target already had for FooCap is not clobbered by the dependency's copy...
+    assert pref["FooCap"]["existing"] == "kept"
+    # ...but a new key the dependency adds is merged in.
+    assert pref["FooCap"]["new"] == "added"
+    # A whole new table from the dependency's LocalPreferences.toml is merged in too.
+    assert pref["Bar"] == {"b": 2}
+
+
+def test_sync_creates_local_preferences_when_target_has_none(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    proj = ws / "Project.toml"
+    proj.write_text('[deps]\nJutul = "uuid"\n', encoding="utf-8")
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        'name = "FooCap"\nuuid = "11111111-1111-1111-1111-111111111111"\n',
+        encoding="utf-8",
+    )
+    (local_pkg / "LocalPreferences.toml").write_text(
+        "[FooCap]\nprecompile = true\n", encoding="utf-8"
+    )
+
+    sync_julia_project_with_dependencies(ws, [local_pkg / "Project.toml"])
+
+    pref = tomllib.loads((ws / "LocalPreferences.toml").read_text(encoding="utf-8"))
+    assert pref["FooCap"]["precompile"] is True
 
 
 def test_sync_is_noop_when_already_in_sync(tmp_path: Path, _template_with_extra_deps: Path) -> None:

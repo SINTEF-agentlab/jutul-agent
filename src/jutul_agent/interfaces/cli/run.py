@@ -6,8 +6,9 @@ import argparse
 import asyncio
 import contextlib
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from jutul_agent import __version__
 from jutul_agent.interfaces.cli._helpers import (
@@ -31,6 +32,11 @@ from jutul_agent.workspace import (
     load_workspace_config,
     resolve_julia_project,
 )
+
+if TYPE_CHECKING:
+    # Imported for typing only; the runtime import stays inside _run_session so the
+    # capability entry points are not scanned on an unrelated subcommand.
+    from jutul_agent.agent.capabilities import Capability
 
 
 def build_parser(prog: str = "jutul-agent tui") -> argparse.ArgumentParser:
@@ -202,6 +208,7 @@ async def _run_session(
     *,
     resume_id: str | None = None,
 ) -> int:
+    from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
     from jutul_agent.julia.requirements import JuliaRequirementError, require_julia
     from jutul_agent.juliakernel import JuliaStartupError, KernelConfig
     from jutul_agent.simulators.env_setup import EnvSetupError, prepare_workspace_env
@@ -214,6 +221,7 @@ async def _run_session(
 
     ws = workspace_root()
     julia_project = args.julia_project or resolve_julia_project(ws)
+    extensions = discover_extensions()
 
     if args.julia_project is not None:
         # An explicit project override is used as-is; the user owns it.
@@ -230,6 +238,7 @@ async def _run_session(
                 workspace=ws,
                 julia_project=julia_project,
                 sim_name=args.sim or config.simulator,
+                dependencies=collect_dependency_paths(extensions),
             )
         except EnvSetupError as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -282,6 +291,7 @@ async def _run_session(
                 config,
                 session_id,
                 state_dir,
+                extensions=extensions,
                 resuming=bool(resume_id),
             )
         except JuliaStartupError as exc:
@@ -352,6 +362,7 @@ async def _run_with_backend(
     session_id: str,
     state_dir: Path,
     *,
+    extensions: Sequence[Capability] = (),
     resuming: bool = False,
 ) -> int:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -413,6 +424,7 @@ async def _run_with_backend(
                         approval_mode=approval_mode,
                         package_sources=package_sources,
                         added_dirs=dirs,
+                        extensions=extensions,
                     )
 
                 from jutul_agent.credentials import missing_credential

@@ -280,3 +280,29 @@ def test_session_resume_requires_existing_trace(tmp_path: Path, fake_julia, fake
             session_id="2026-01-01-0000-dead",
             state_root=tmp_path,
         )
+
+
+def test_session_create_defaults_surface_to_tui(tmp_path: Path, fake_julia, fake_adapter) -> None:
+    session = Session.create(julia=fake_julia, state_root=tmp_path, simulator=fake_adapter)
+    assert session.surface == "tui"
+    session.finalize()
+
+
+def test_session_surface_round_trips_through_create_and_resume(
+    tmp_path: Path, fake_julia, fake_adapter
+) -> None:
+    original = Session.create(
+        julia=fake_julia, state_root=tmp_path, simulator=fake_adapter, surface="web"
+    )
+    assert original.surface == "web"
+    original.finalize()
+
+    resumed = Session.resume(
+        julia=fake_julia,
+        simulator=fake_adapter,
+        session_id=original.session_id,
+        state_root=tmp_path,
+        surface="web",
+    )
+    assert resumed.surface == "web"
+    resumed.finalize()

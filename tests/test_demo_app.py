@@ -54,3 +54,23 @@ def test_plot_response_records_html_artifact(tmp_path: Path) -> None:
     assert artifacts[-1].payload["path"].endswith(".html")
     # The tool drove the Julia export.
     assert any("Bonito.export_static" in code for code in session.julia.calls)
+
+
+def test_ensure_env_refreshes_capability_dependencies(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    captured: dict[str, object] = {}
+
+    def _fake_prepare(adapter, *, workspace, julia_project, sim_name):
+        captured["workspace"] = workspace
+        captured["julia_project"] = julia_project
+        captured["sim_name"] = sim_name
+
+    monkeypatch.setattr(demo, "WORKSPACE", workspace)
+    monkeypatch.setattr(demo, "prepare_workspace_env", _fake_prepare)
+
+    demo.ensure_env()
+
+    assert captured["workspace"] == workspace
+    assert captured["sim_name"] == "demo"

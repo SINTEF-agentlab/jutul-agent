@@ -233,6 +233,10 @@ class Session:
     # Whether this session continues an earlier conversation. The thread state
     # is restored from the checkpointer; the Julia REPL is not.
     resumed: bool = False
+    # The front end driving this session ("tui" or "web"); tools that only receive
+    # the session (e.g. a capability's ToolFactory) read this to match the surface
+    # ``build_agent`` was composed for.
+    surface: str = "tui"
     _ephemeral_memory_dir: Path | None = field(default=None, repr=False)
     # Folders holding a report written this session, whose sidecar transcript is
     # refreshed at turn end (see ``refresh_report_transcripts``).
@@ -248,6 +252,7 @@ class Session:
         state_root: Path | None = None,
         ephemeral_memory: bool = False,
         open_windows: bool = False,
+        surface: str = "tui",
     ) -> Session:
         sid = session_id or default_session_id()
         dir_ = session_dir(sid, state_root=state_root)
@@ -278,6 +283,7 @@ class Session:
             session_id=sid,
             ephemeral_memory=ephemeral_memory,
             open_windows=open_windows,
+            surface=surface,
             _ephemeral_memory_dir=ephemeral_dir,
         )
 
@@ -291,6 +297,7 @@ class Session:
         state_root: Path | None = None,
         ephemeral_memory: bool = False,
         open_windows: bool = False,
+        surface: str = "tui",
     ) -> Session:
         """Reopen an earlier session: same id, trace, and output folder.
 
@@ -327,6 +334,7 @@ class Session:
             session_id=session_id,
             ephemeral_memory=ephemeral_memory,
             open_windows=open_windows,
+            surface=surface,
             title=read_session_title(dir_),
             resumed=True,
             _ephemeral_memory_dir=ephemeral_dir,

@@ -20,8 +20,12 @@ import hashlib
 import json
 import shutil
 import tomllib
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
+
+import tomli_w
 
 from jutul_agent.paths import workspace_root
 
@@ -493,6 +497,159 @@ def sync_julia_env_with_template(
     return sorted(missing)
 
 
+def sync_julia_project_with_dependencies(
+    julia_project: Path,
+    dependencies: Sequence[Path] | None,
+    *,
+    warn: Callable[[str], None] | None = None,
+) -> list[str]:
+    """Add local package dependencies to an existing Julia project if missing.
+
+    Each dependency path may point to a package root or its ``Project.toml``.
+    The helper reads the package's own ``Project.toml`` to recover the package
+    name and UUID, then adds both a ``[deps]`` entry and a ``[sources]`` entry
+    pointing at that local path. This applies to whichever Julia project is
+    active, including a user-owned root ``Project.toml``.
+
+    The dependency's own ``[deps]`` are declared here too. A capability's tools
+    typically ``include`` source files out of the package into ``Main``, where the
+    top-level ``using`` lines in those files resolve against *this* project rather
+    than the package's own, so the packages they name have to be visible here.
+    Sub-dependencies the package itself path-sources are skipped: they are not
+    registered, so declaring them without a ``[sources]`` entry of their own would
+    only make ``Pkg.resolve`` fail.
+
+    Existing entries are never rewritten, so a name the project already declares
+    keeps its current UUID and source.
+    """
+
+    note = warn or (lambda _msg: None)
+
+    if not dependencies:
+        return []
+
+    proj = julia_project / "Project.toml"
+    if not proj.exists():
+        note(f"no Project.toml at {julia_project}; capability dependencies not added")
+        return []
+
+    try:
+        proj_data = tomllib.loads(proj.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        note(f"could not read {proj} ({exc}); capability dependencies not added")
+        return []
+
+    pref = julia_project / "LocalPreferences.toml"
+    try:
+        pref_data = tomllib.loads(pref.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        pref_data = {}
+
+    target_deps = proj_data.get("deps", {})
+    target_sources = proj_data.get("sources", {})
+    additions: dict[str, str] = {}
+    sources: dict[str, dict[str, str]] = {}
+
+    for raw_dependency in dependencies:
+        dependency_root, package_name, package_uuid, dependency_data = _dependency_metadata(
+            raw_dependency
+        )
+        if package_name is None or package_uuid is None:
+            note(
+                f"capability dependency {raw_dependency} is not a Julia package "
+                "(no readable Project.toml with a name and uuid); skipping it"
+            )
+            continue
+        declared = target_deps.get(package_name, additions.get(package_name))
+        if declared is not None and declared != package_uuid:
+            # Adding a [sources] path under a name the project already resolves from
+            # elsewhere would make Pkg fail on the UUID mismatch; leave it alone.
+            note(
+                f"capability dependency {package_name} ({package_uuid}) at "
+                f"{dependency_root} clashes with the {package_name} = "
+                f'"{declared}" this project already declares; skipping it'
+            )
+            continue
+        if declared is None:
+            additions[package_name] = package_uuid
+        if package_name not in target_sources:
+            sources[package_name] = {"path": dependency_root.as_posix()}
+
+        dependency_sources = dependency_data.get("sources", {})
+        for sub_name, sub_uuid in dependency_data.get("deps", {}).items():
+            if not isinstance(sub_uuid, str):
+                continue
+            if sub_name in target_deps or sub_name in additions:
+                continue  # already declared here; keep the UUID and source in place
+            if sub_name in dependency_sources:
+                note(
+                    f"{package_name} resolves {sub_name} from a local path of its own, "
+                    f"so {sub_name} is left out of {julia_project.name}; declare it as a "
+                    "capability dependency too if the tools need it at the top level"
+                )
+                continue
+            additions[sub_name] = sub_uuid
+
+        new_pref = dependency_root / "LocalPreferences.toml"
+        try:
+            new_pref_data = tomllib.loads(new_pref.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            new_pref_data = {}
+
+        for key, value in new_pref_data.items():
+            if key not in pref_data:
+                pref_data[key] = value
+            elif isinstance(value, dict) and isinstance(pref_data[key], dict):
+                for subkey, subvalue in value.items():
+                    pref_data[key].setdefault(subkey, subvalue)
+
+    if not additions and not sources:
+        return []
+
+    new_text = proj.read_text(encoding="utf-8")
+    if additions:
+        new_text = _append_deps(new_text, additions)
+    if sources:
+        new_text = _append_sources(new_text, sources)
+    proj.write_text(new_text, encoding="utf-8")
+    if pref_data:
+        pref.write_text(tomli_w.dumps(pref_data), encoding="utf-8")
+
+    return sorted({*additions, *sources})
+
+
+def _dependency_metadata(
+    dependency: Path,
+) -> tuple[Path, str | None, str | None, dict[str, Any]]:
+    """Resolve a capability dependency path to ``(root, name, uuid, project_data)``.
+
+    The path may be a package directory or the package's ``Project.toml``.
+    """
+
+    path = dependency.expanduser().resolve()
+    if path.is_dir():
+        root = path
+        proj = root / "Project.toml"
+    elif path.name == "Project.toml":
+        root = path.parent
+        proj = path
+    else:
+        root = path.parent
+        proj = root / "Project.toml"
+
+    try:
+        data = tomllib.loads(proj.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return root, None, None, {}
+
+    name = data.get("name")
+    uuid = data.get("uuid")
+    if not isinstance(name, str) or not isinstance(uuid, str):
+        return root, None, None, {}
+
+    return root, name, uuid, data
+
+
 def _append_deps(project_toml_text: str, deps: dict[str, str]) -> str:
     """Insert ``deps`` into the ``[deps]`` table (created if absent)."""
 
@@ -570,6 +727,12 @@ def _copy_source_packages(template_path: Path, env_dir: Path, sources: dict[str,
         if path == SHARED_JULIA_PACKAGE_DIRNAME:
             sync_shared_julia_package(env_dir)
             continue
+        if Path(path).is_absolute():
+            # Only the template's own relative warm-package paths are copied here. A
+            # capability dependency declares an absolute path to a package that
+            # already lives on disk, and `env_dir / absolute` collapses onto that
+            # package, so the rmtree below would delete the user's own source.
+            continue
         src = template_path / path
         if not src.is_dir():
             continue
@@ -614,6 +777,12 @@ def bootstrap_julia_env(
     # and version-specific, so the workspace resolves its own at instantiate time.
     shutil.copytree(template_path, target, ignore=shutil.ignore_patterns("Manifest.toml"))
     sync_shared_julia_package(target)
+    template_proj = template_path / "Project.toml"
+    try:
+        template = tomllib.loads(template_proj.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        template = {}
+    _copy_source_packages(template_path, target, template.get("sources", {}))
     # Stamp the template Project.toml (drives the rebuild-staleness warning) and
     # fingerprint the warm-package source (drives the auto re-copy when the bundled
     # JutulAgent runtime itself changes); see env_template_drifted / warm_source_is_current.
