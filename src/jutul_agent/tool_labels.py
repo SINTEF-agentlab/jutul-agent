@@ -11,6 +11,8 @@ from __future__ import annotations
 _TOOL_LABELS: dict[str, str] = {
     "run_julia": "Julia",
     "plot_julia": "Julia plot",
+    "recapture_plot": "Recapture plot",
+    "close_plots": "Close plots",
     "execute": "Shell",
     "read_file": "Read",
     "write_file": "Write",

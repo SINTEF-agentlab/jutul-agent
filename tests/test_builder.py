@@ -180,10 +180,9 @@ def test_resolve_model_for_agent_enables_gemini_thoughts(
 def test_agent_tool_surface_is_pinned(tmp_path) -> None:
     """Pin the tools the model is offered, and require a gate on each mutating one.
 
-    A framework upgrade can add or drop a tool without a line of our code
-    changing: deepagents 0.7.0 both introduced a recursive `delete` and stopped
-    installing the todo list by default. Pinning the set turns either into a
-    failure here instead of a surprise in a live session.
+    The framework decides which file tools exist, so an upgrade can add one or
+    stop installing one without a line of our code changing. Pinning the set
+    turns either into a failure here instead of a surprise in a live session.
     """
     from jutul_agent.agent.approval import ApprovalMode, interrupt_on_for_mode
     from jutul_agent.agent.builder import build_agent
@@ -220,10 +219,39 @@ def test_agent_tool_surface_is_pinned(tmp_path) -> None:
         "glob",
         "grep",
         "execute",
-        "task",
         "write_todos",
+        # Only because the scripted model matches no harness profile, so the
+        # stock general-purpose subagent survives; see the test below.
+        "task",
     }
     # Everything that mutates the filesystem or spawns a process asks first.
     assert {"write_file", "edit_file", "delete", "execute"} == set(
         interrupt_on_for_mode(ApprovalMode.ASK)
     )
+    # No tool reaches a person as its raw agent-facing id.
+    from jutul_agent.tool_labels import tool_label
+
+    assert [name for name in sorted(names) if tool_label(name) == name] == []
+
+
+def test_agent_drops_delegation_without_a_subagent(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A model our profile applies to is offered no ``task`` tool.
+
+    The delegation tool exists only while some subagent does, and our profile
+    turns the stock general-purpose one off. A model with no registered profile
+    keeps it, so the surface a real session sees has to be pinned against a
+    profiled model rather than a scripted one.
+    """
+    from jutul_agent.agent.builder import _resolve_model_for_agent, build_agent
+    from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
+    from jutul_agent.session import Session
+
+    register_provider_profiles()
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    session = Session.create(
+        julia=FakeJulia(), state_root=tmp_path, simulator=make_fake_adapter(tmp_path)
+    )
+    agent, _ = build_agent(session, model=_resolve_model_for_agent("openai:gpt-5.4-mini"))
+    assert "task" not in set(agent.nodes["tools"].bound.tools_by_name)
