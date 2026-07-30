@@ -83,11 +83,26 @@ adding tasks.
 
 ## Dependency policy
 
-Dependencies are locked (`uv.lock`). Upgrade deliberately with
-`uv lock --upgrade-package <name>` and run the suite. deepagents in
-particular is pinned to a known-good version: it moves fast, and its
-middleware/streaming internals have broken us before. Treat any deepagents
-bump as a change that needs the live smoke and a TUI pilot pass.
+Dependencies are locked (`uv.lock`) and resolution is pinned to a snapshot
+date (`tool.uv.exclude-newer` in `pyproject.toml`). To move the whole stack
+forward: bump that date, run `uv lock --upgrade`, run the suite, commit. Plain
+`uv lock` keeps the versions already resolved, so it will not move anything.
+To move one package, `uv lock --upgrade-package <name>`.
+
+deepagents needs more care than the rest, because it owns the agent's tool
+surface and the format of what those tools print. Stay on the stable line (not
+the `aN` pre-releases), and check two things by hand on a bump, since neither
+shows up as a failing import:
+
+- The tool surface. The framework decides which file tools exist, so a bump can
+  add one or stop installing one. `test_agent_tool_surface_is_pinned` pins the
+  exact set and requires every mutating tool to be approval-gated.
+- Tool output formats. Anything that parses what a tool prints is a contract the
+  framework can change silently, so those tests build their input with the
+  framework's own formatter rather than a hand-written sample.
+
+Then run the live smoke (`/compact`, a streamed tool, a HITL approve) and a TUI
+pilot pass.
 
 ## Releasing
 

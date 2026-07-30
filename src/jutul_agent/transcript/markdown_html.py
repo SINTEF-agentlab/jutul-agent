@@ -7,6 +7,8 @@ from functools import lru_cache
 
 from markdown_it import MarkdownIt
 
+from jutul_agent.agent.tool_output import READ_FILE_GUTTER, strip_read_file_gutter
+
 _MD_MARKERS = re.compile(
     r"(^|\n)(#{1,6}\s|\*\*[^*]+\*\*|```|^\s*[-*+]\s|^\s*\d+\.\s|\|.+\|)",
     re.MULTILINE,
@@ -36,19 +38,21 @@ def looks_like_markdown(text: str) -> bool:
     return stripped.startswith("# ") and "\n" in stripped
 
 
-_NUMBERED_LINE = re.compile(r"^\s*\d+\t")
-
-
 def strip_line_number_prefixes(text: str) -> str:
-    """Remove ``cat -n`` style prefixes from ``read_file`` tool output."""
+    """Remove the line-number gutter from ``read_file`` tool output.
+
+    Gated on most of the opening lines carrying a gutter, because this runs on
+    stored transcript text where the tool name may be unreliable and a file of
+    numbered prose should be left alone.
+    """
     lines = text.splitlines()
     if len(lines) < 2:
         return text
     sample = lines[: min(len(lines), 24)]
-    numbered = sum(1 for ln in sample if _NUMBERED_LINE.match(ln))
+    numbered = sum(1 for ln in sample if READ_FILE_GUTTER.match(ln))
     if numbered < max(3, len(sample) // 2):
         return text
-    return "\n".join(_NUMBERED_LINE.sub("", ln, count=1) for ln in lines)
+    return strip_read_file_gutter(text)
 
 
 def strip_yaml_frontmatter(text: str) -> str:

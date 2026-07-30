@@ -332,3 +332,38 @@ async def test_resumed_thread_restores_conversation(tmp_path: Path) -> None:
         assert any("Hi there" in c for c in contents)
         assert any("Hello!" in c for c in contents)
     resumed.finalize()
+
+
+async def test_delete_is_interrupted_before_it_runs(tmp_path: Path) -> None:
+    """A recursive delete must reach the human before it touches the filesystem.
+
+    The tool is the framework's, added to the file toolset by a version bump
+    rather than by us, so the gate is worth asserting end to end and not just in
+    the approval config.
+    """
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "run.jl").write_text("x = 1\n", encoding="utf-8")
+
+    session = Session.create(
+        julia=FakeJulia(), state_root=tmp_path, simulator=make_fake_adapter(tmp_path)
+    )
+    model = make_scripted_model(
+        [
+            scripted_tool_call(
+                tool_name="delete",
+                args={"file_path": str(scratch)},
+                tool_call_id="call_delete_1",
+            )
+        ]
+    )
+    agent, _ = build_agent(session, model=model, checkpointer=MemorySaver())
+    runner = TurnRunner(agent, thread_id=session.session_id, trace=session.trace)
+
+    try:
+        result = await runner.run_prompt("Clean up the scratch directory.")
+        assert len(result.interrupts) == 1
+        assert result.interrupts[0].value["action_requests"][0]["name"] == "delete"
+        assert scratch.exists(), "delete ran before the human answered"
+    finally:
+        session.finalize()

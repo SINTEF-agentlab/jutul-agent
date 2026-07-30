@@ -180,3 +180,50 @@ def test_resolve_model_for_agent_enables_gemini_thoughts(
     assert _resolve_model_for_agent("google_genai:gemini-2.0-flash") == (
         "google_genai:gemini-2.0-flash"
     )
+
+
+def test_agent_tool_surface_is_pinned(tmp_path) -> None:
+    """Pin the tools the model is offered, and require a gate on each mutating one.
+
+    A framework upgrade can add or drop a tool without a line of our code
+    changing: deepagents 0.7.0 both introduced a recursive `delete` and stopped
+    installing the todo list by default. Pinning the set turns either into a
+    failure here instead of a surprise in a live session.
+    """
+    from fakes import FakeJulia, make_fake_adapter, make_scripted_model, scripted_final
+    from jutul_agent.agent.approval import ApprovalMode, interrupt_on_for_mode
+    from jutul_agent.agent.builder import build_agent
+    from jutul_agent.session import Session
+
+    session = Session.create(
+        julia=FakeJulia(), state_root=tmp_path, simulator=make_fake_adapter(tmp_path)
+    )
+    agent, _ = build_agent(session, model=make_scripted_model([scripted_final("done")]))
+    names = set(agent.nodes["tools"].bound.tools_by_name)
+
+    assert names == {
+        # Ours.
+        "run_julia",
+        "reset_julia",
+        "plot_julia",
+        "recapture_plot",
+        "close_plots",
+        "record_attempt",
+        "write_report",
+        "remember",
+        # The framework's.
+        "ls",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "delete",
+        "glob",
+        "grep",
+        "execute",
+        "task",
+        "write_todos",
+    }
+    # Everything that mutates the filesystem or spawns a process asks first.
+    assert {"write_file", "edit_file", "delete", "execute"} == set(
+        interrupt_on_for_mode(ApprovalMode.ASK)
+    )

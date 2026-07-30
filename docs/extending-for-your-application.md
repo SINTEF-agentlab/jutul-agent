@@ -68,13 +68,14 @@ Publish a `Capability` (or a function returning one) under the
 # mypackage/capability.py
 from jutul_agent.agent.capabilities import Capability
 
+
 def my_capability() -> Capability:
     return Capability(
         name="mysim-web",
-        tools=(make_my_tool,),          # factories taking the Session
+        tools=(make_my_tool,),  # factories taking the Session
         skill_dirs=(("/abs/path/skills", "MySim web"),),
         prompt_fragment="How to use the app's controls...",
-        surfaces=("web",),              # only on the web surface; omit for all
+        surfaces=("web",),  # only on the web surface; omit for all
     )
 ```
 

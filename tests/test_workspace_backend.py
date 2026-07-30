@@ -1,8 +1,8 @@
 """Tests for the workspace backend: real paths, the depot write-guard, and grep.
 
 The agent's filesystem is real paths; installed package source in the shared
-Julia depot is read-only (writes refused), a ``Pkg.develop`` checkout is
-writable, and a type-filtered grep recurses into subdirectories.
+Julia depot is read-only (writes and deletes refused), a ``Pkg.develop``
+checkout is writable, and a type-filtered grep recurses into subdirectories.
 """
 
 from __future__ import annotations
@@ -129,6 +129,56 @@ def test_grep_with_extension_filter_recurses_into_subdirs(tmp_path: Path, source
     hit = backend.grep("plot_variable_graph", path=str(source_dir), glob="*.jl")
     matches = getattr(hit, "matches", hit)
     assert matches, "grep with glob='*.jl' must recurse into src/ext/"
+
+
+def test_grep_forwards_search_options_to_the_composite(tmp_path: Path) -> None:
+    # Our grep override exists only to normalize `glob`, so it must pass the
+    # framework's other search arguments straight through. deepagents inspects
+    # the signature and silently degrades to trimming a fully materialized
+    # result when one is missing, so a narrowed override is invisible until a
+    # search on a big tree is unexpectedly slow.
+    for index in range(3):
+        (tmp_path / f"a{index}.jl").write_text("using Jutul\n", encoding="utf-8")
+
+    backend = build_backend(workspace=tmp_path)
+    capped = backend.grep("using Jutul", path=str(tmp_path), glob="*.jl", max_count=1)
+    assert capped.error is None
+    assert len(capped.matches) == 1
+    assert capped.truncated
+
+
+async def test_agrep_forwards_search_options_to_the_composite(tmp_path: Path) -> None:
+    for index in range(3):
+        (tmp_path / f"a{index}.jl").write_text("using Jutul\n", encoding="utf-8")
+
+    backend = build_backend(workspace=tmp_path)
+    capped = await backend.agrep("using Jutul", path=str(tmp_path), glob="*.jl", max_count=1)
+    assert capped.error is None
+    assert len(capped.matches) == 1
+    assert capped.truncated
+
+
+def test_delete_is_refused_inside_the_read_only_depot(tmp_path: Path, source_dir: Path) -> None:
+    # `delete` removes a directory recursively, so the depot guard has to cover
+    # it too: one call would otherwise take out an installed package's source.
+    backend = build_backend(
+        workspace=tmp_path,
+        package_sources=[PackageSource(name="BattMo", path=source_dir)],
+    )
+    result = backend.delete(str(source_dir / "examples"))
+    assert result.error is not None
+    assert "read-only" in result.error
+    assert (source_dir / "examples" / "demo.jl").exists()
+
+
+def test_delete_removes_a_workspace_directory(tmp_path: Path) -> None:
+    backend = build_backend(workspace=tmp_path)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "run.jl").write_text("x = 1\n", encoding="utf-8")
+
+    assert backend.delete(str(scratch)).error is None
+    assert not scratch.exists()
 
 
 def test_execute_refuses_shell_julia_only(tmp_path) -> None:

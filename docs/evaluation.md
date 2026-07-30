@@ -147,6 +147,7 @@ from jutul_agent.eval.solver import jutul_agent_solver, load_eval_credentials
 
 load_eval_credentials()
 
+
 @task
 def my_suite() -> Task:
     sample = Sample(

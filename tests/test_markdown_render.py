@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from jutul_agent.agent.tool_output import READ_FILE_GUTTER
 from jutul_agent.transcript.markdown_html import (
     looks_like_markdown,
     render_markdown_html,
@@ -44,11 +45,32 @@ def test_render_markdown_keeps_real_markdown() -> None:
 
 
 def test_strip_line_number_prefixes() -> None:
+    # The legacy `cat -n` gutter, which older stored transcripts still carry.
     text = "1\t---\n2\tname: wells\n3\tdescription: test\n"
     assert strip_line_number_prefixes(text).startswith("---\nname: wells")
 
     padded = "     1\t---\n     2\tname: wells\n     3\tdescription: test\n"
     assert strip_line_number_prefixes(padded).startswith("---\nname: wells")
+
+
+def test_strip_line_number_prefixes_matches_the_real_read_file_gutter() -> None:
+    """Strip the gutter the framework actually emits, not a hand-written copy.
+
+    The separator is the framework's to choose and it has changed before; a
+    hand-written sample keeps passing while the renderer silently stops
+    stripping, so build the input with the same formatter `read_file` uses.
+    """
+    from deepagents.backends.utils import format_content_with_line_numbers
+
+    lines = ["---", "name: wells", "description: test", "---", "", "# Title"]
+    numbered = format_content_with_line_numbers("\n".join(lines))
+    assert strip_line_number_prefixes(numbered).splitlines() == lines
+
+    # Over-long lines are split into `<n>.<chunk>` continuation rows.
+    wide = format_content_with_line_numbers(["x" * 5000, "short", "also short"])
+    assert not any(
+        READ_FILE_GUTTER.match(ln) for ln in strip_line_number_prefixes(wide).splitlines()
+    )
 
 
 def test_strip_yaml_frontmatter() -> None:

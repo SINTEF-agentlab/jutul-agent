@@ -22,14 +22,15 @@ def test_interrupt_on_for_auto_is_empty() -> None:
     assert interrupt_on_for_mode(ApprovalMode.AUTO) == {}
 
 
-def test_interrupt_on_for_workspace_only_shell() -> None:
+def test_interrupt_on_for_workspace_drops_only_the_edit_tools() -> None:
     config = interrupt_on_for_mode(ApprovalMode.WORKSPACE)
-    assert set(config) == {"execute"}
+    assert not {"write_file", "edit_file"} & set(config)
+    assert {"execute", "delete"} <= set(config)
 
 
 def test_interrupt_on_for_ask_includes_file_tools() -> None:
     config = interrupt_on_for_mode(ApprovalMode.ASK)
-    assert {"execute", "write_file", "edit_file"} <= set(config)
+    assert {"execute", "write_file", "edit_file", "delete"} <= set(config)
 
 
 def test_workspace_edits_only_interrupt() -> None:
@@ -55,6 +56,17 @@ def test_allowlist_auto_approves_matching_interrupt() -> None:
     allowlist.add(ALLOWLIST_FILE_EDITS)
     assert interrupt_matches_allowlist(payload, allowlist)
     assert should_auto_approve_interrupt(payload, ApprovalMode.ASK, allowlist=allowlist)
+
+
+def test_delete_is_never_waved_through_with_file_edits() -> None:
+    # A recursive delete is gated on its own: neither "accept edits" mode nor an
+    # "always allow file edits" choice covers it, so it costs one prompt each time.
+    payload = {"action_requests": [{"name": "delete", "args": {"file_path": "/scratch"}}]}
+    allowlist = ToolAllowlist()
+    allowlist.add(ALLOWLIST_FILE_EDITS)
+    assert not interrupt_is_workspace_edits_only(payload)
+    assert not interrupt_matches_allowlist(payload, allowlist)
+    assert not should_auto_approve_interrupt(payload, ApprovalMode.WORKSPACE, allowlist=allowlist)
 
 
 def test_approval_mode_cycles() -> None:

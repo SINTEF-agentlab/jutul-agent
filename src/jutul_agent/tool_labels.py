@@ -15,6 +15,7 @@ _TOOL_LABELS: dict[str, str] = {
     "read_file": "Read",
     "write_file": "Write",
     "edit_file": "Edit",
+    "delete": "Delete",
     "glob": "Find files",
     "grep": "Search",
     "ls": "List",

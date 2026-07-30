@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from jutul_agent.agent.tool_output import is_interrupt_payload
+from jutul_agent.agent.tool_output import is_interrupt_payload, strip_read_file_gutter
 from jutul_agent.interfaces.tui._rendering import (
     fenced_block,
     shorten,
@@ -31,7 +31,6 @@ _COMPACT_TOOLS = frozenset(
         "plot_julia",
     }
 )
-_NUMBERED_LINE = re.compile(r"^\s*\d+\t")
 
 
 def uses_compact_display(tool_name: str, *, is_error: bool, output: str = "") -> bool:
@@ -113,7 +112,7 @@ def display_tool_body(
     # reaching here means its output didn't parse, so fall through to the
     # generic rendering rather than returning nothing.
     code_section = _julia_code_section(tool_name, args)
-    full = strip_read_file_line_numbers(output) if tool_name == "read_file" else output
+    full = strip_read_file_gutter(output) if tool_name == "read_file" else output
     language = _TOOL_LANGUAGES.get(tool_name, "")
 
     summary_meta = _summarize_output(full)
@@ -196,19 +195,9 @@ def _join_nonempty(*parts: str) -> str:
     return "\n".join(part for part in parts if part)
 
 
-def strip_read_file_line_numbers(text: str) -> str:
-    lines = []
-    for line in text.splitlines():
-        if _NUMBERED_LINE.match(line):
-            lines.append(_NUMBERED_LINE.sub("", line, count=1))
-        else:
-            lines.append(line)
-    return "\n".join(lines)
-
-
 def _read_file_summary(args: dict[str, Any], output: str) -> str:
     path = _path_arg(args)
-    text = strip_read_file_line_numbers(output)
+    text = strip_read_file_gutter(output)
     lines = [line for line in text.splitlines() if line.strip()]
     return f"Read {path} · {len(lines)} lines"
 
@@ -305,9 +294,14 @@ def _plot_julia_summary(args: dict[str, Any], output: str) -> str:
     return head
 
 
+# What `ls` and `glob` render instead of an empty list. Without this the card
+# counts the sentence itself and an empty directory reads as "1 entry".
+_NO_MATCHES = "No files found"
+
+
 def _parse_path_list(output: str) -> list[str]:
     candidate = output.strip()
-    if not candidate:
+    if not candidate or candidate == _NO_MATCHES:
         return []
     for parser in (json.loads, ast.literal_eval):
         try:
