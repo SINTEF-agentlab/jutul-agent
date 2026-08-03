@@ -75,6 +75,8 @@ def test_discover_extensions_loads_capability(monkeypatch) -> None:
     cap = Capability(name="discovered")
 
     class _EntryPoint:
+        name = "ext"
+
         def load(self):
             return cap
 
@@ -82,15 +84,30 @@ def test_discover_extensions_loads_capability(monkeypatch) -> None:
     assert discover_extensions() == [cap]
 
 
-def test_discover_extensions_skips_broken(monkeypatch) -> None:
+def test_discover_extensions_skips_broken_but_says_why(monkeypatch, capsys) -> None:
+    """A capability that fails to load is otherwise indistinguishable from one
+    that is not installed, and the cause is usually a fixable setup step."""
     import importlib.metadata as importlib_metadata
 
     class _Broken:
-        def load(self):
-            raise RuntimeError("boom")
+        name = "brokenext"
 
-    monkeypatch.setattr(importlib_metadata, "entry_points", lambda group: [_Broken()])
+        def load(self):
+            raise RuntimeError("SEISMIC_DATA_DIR is not set")
+
+    class _NotACapability:
+        name = "wrongext"
+
+        def load(self):
+            return lambda: "not a capability"
+
+    monkeypatch.setattr(
+        importlib_metadata, "entry_points", lambda group: [_Broken(), _NotACapability()]
+    )
     assert discover_extensions() == []
+    warned = capsys.readouterr().err
+    assert "brokenext" in warned and "SEISMIC_DATA_DIR is not set" in warned
+    assert "wrongext" in warned and "not a Capability" in warned
 
 
 # --- declarative HTTP tools -----------------------------------------------
