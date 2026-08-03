@@ -12,6 +12,13 @@ Jutul = "2b460a1a-8a2b-45b2-b125-b5c536396eb9"
 JutulAgent = "79b12aa6-73c9-4fa8-9c54-e97745f42687"
 JutulAgentBattMo = "f9f14f6a-5be2-4b55-b75d-847ac964f0ff"
 
+# The web interface's interactive plotting backend. Keep it here rather than in a
+# separate env stacked over this one: Julia resolves each env independently, so
+# only a resolve that also sees the simulator's constraints can pick Makie and HTTP
+# versions that satisfy both. See docs/architecture.md.
+Bonito = "824d6782-a2ef-11e9-3a09-e5662e0c26f8"
+WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
+
 # Floor at the release the skills are written against, so a stale env can't drift
 # behind them (it fails to resolve and the drift check prompts a rebuild). Bump it
 # when the skills are updated for a newer BattMo.

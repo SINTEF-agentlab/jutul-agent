@@ -296,26 +296,12 @@ class SessionHost:
 
         stack = AsyncExitStack()
         try:
-            # The web surface stacks the WGLMakie/Bonito overlay on top of the
-            # workspace env so interactive plots work without putting those heavy
-            # packages in the base (TUI/CLI) env, and gives the kernel a GL context
-            # so native plotters (whose methods live in the GLMakie extension) load.
-            # Both are best-effort: without them the session still runs with the
-            # agent's inline plots / static PNGs.
+            # The web surface gives the kernel a GL context so the native plotters
+            # (whose methods live in the GLMakie extension) load. Best-effort:
+            # without it the session still runs with the agent's inline plots and
+            # static PNGs. WGLMakie and Bonito need nothing here; they are ordinary
+            # deps of the workspace env, resolved with the simulator's own.
             if surface == "web":
-                import asyncio as _asyncio
-
-                from jutul_agent.interfaces.server.web_overlay import (
-                    WebOverlayError,
-                    ensure_web_overlay,
-                    load_path_for,
-                )
-
-                try:
-                    overlay = await _asyncio.to_thread(ensure_web_overlay)
-                    env["JULIA_LOAD_PATH"] = load_path_for(project, overlay)
-                except WebOverlayError as exc:
-                    print(f"warning: {exc}", file=sys.stderr)
                 _add_headless_display(stack, env)
 
             kernel_config = KernelConfig(

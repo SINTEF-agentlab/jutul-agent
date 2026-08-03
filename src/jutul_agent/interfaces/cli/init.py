@@ -116,11 +116,6 @@ def run(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    # Bake the web-plotting overlay (WGLMakie + Bonito) now too, so the first
-    # `jutul-agent web` is fast. It's a global, one-time build shared by every
-    # workspace, and every interface uses the same env underneath.
-    overlay_status = _ensure_web_overlay() if args.precompile else None
-
     new_config = config
     if new_config.simulator != sim_name:
         new_config = dc_replace(new_config, simulator=sim_name)
@@ -137,30 +132,12 @@ def run(args: argparse.Namespace) -> int:
         print("  env:           replaced from template (--force)")
     if args.precompile:
         print("  precompile:    done (Pkg.instantiate + Pkg.precompile)")
-        print(f"  web overlay:   {overlay_status}")
         _note_headless_plotting()
     else:
         print("  precompile:    skipped (--no-precompile); the first session will build the env")
 
     _maybe_prompt_for_provider_key(new_config)
     return 0
-
-
-def _ensure_web_overlay() -> str:
-    """Build the web-plotting overlay (WGLMakie + Bonito), returning a status note.
-
-    Best-effort: a failure (e.g. offline on first run) is reported but does not
-    fail init — the first `jutul-agent web` builds it lazily instead.
-    """
-    from jutul_agent.interfaces.server.web_overlay import WebOverlayError, ensure_web_overlay
-
-    try:
-        ensure_web_overlay()
-    except WebOverlayError:
-        return "not built now; the first `jutul-agent web` will build it"
-    except Exception:  # never let an unexpected overlay issue fail the whole init
-        return "skipped; the first `jutul-agent web` will build it"
-    return "ready (WGLMakie + Bonito)"
 
 
 def _note_headless_plotting() -> None:

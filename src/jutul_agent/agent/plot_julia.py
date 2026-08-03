@@ -112,25 +112,10 @@ async def _load_web_plot_backend(session: Session, adapter: SimulatorAdapter) ->
     loaded = await session.julia.eval("import CairoMakie, WGLMakie, Bonito")
     if loaded.error:
         return (
-            f"ERROR: interactive web plots need WGLMakie + Bonito (the web overlay env) "
-            f"alongside the {adapter.name} env, which did not load. Julia said: "
+            f"ERROR: interactive web plots need WGLMakie + Bonito in the {adapter.name} "
+            f"env, which did not load. Rebuild the env with "
+            f"`jutul-agent init --sim {adapter.name} --force`. Julia said: "
             f"{_truncate(loaded.error, 300)}"
-        )
-    # The base env and the stacked overlay must share one Makie, or backend
-    # interop (figure built under one, rendered by the other) breaks. Guard it
-    # once with a clear, actionable message instead of a cryptic later failure.
-    # Use a unique sentinel rather than scanning the output for "true": the eval's
-    # output also carries stderr, where a stray "true" (in a path or warning) would
-    # make a genuine version mismatch wrongly pass this guard.
-    consistent = await session.julia.eval(
-        'CairoMakie.Makie === WGLMakie.Makie ? "JUTUL_MAKIE_MATCH" : "JUTUL_MAKIE_MISMATCH"'
-    )
-    if consistent.error or "JUTUL_MAKIE_MATCH" not in consistent.output:
-        return (
-            "ERROR: the web-plotting overlay and the workspace env resolved different "
-            "Makie versions, so interactive plots can't render. Rebuild the overlay: "
-            "delete the 'web-overlay' directory under the jutul-agent state home and "
-            "restart the server."
         )
     # Best-effort: enables native plotters when a GL context is available.
     await session.julia.eval(jl.IMPORT_GLMAKIE_OFFSCREEN)

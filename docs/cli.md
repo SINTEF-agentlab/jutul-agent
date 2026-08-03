@@ -82,8 +82,8 @@ approval that headless mode cannot ask for.
 ## jutul-agent init (alias: setup)
 
 Bootstrap the workspace: write `.jutul-agent/config.toml`, copy the simulator's
-Julia env template, and (by default) precompile the env and the web-plotting
-overlay so the first session in any interface is fast.
+Julia env template, and (by default) precompile the env, plotting backends
+included, so the first session in any interface is fast.
 
 | Option | Meaning |
 |---|---|
