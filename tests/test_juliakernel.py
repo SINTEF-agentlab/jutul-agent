@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import io
 import shutil
+import signal
 import socket
 from pathlib import Path
 
@@ -18,7 +19,7 @@ import pytest
 
 from jutul_agent.juliakernel import JuliaKernel, KernelConfig, OutputChunk
 from jutul_agent.juliakernel.connection import KernelConnection
-from jutul_agent.juliakernel.kernel import JuliaStartupError, _thread_flag
+from jutul_agent.juliakernel.kernel import JuliaStartupError, _describe_exit, _thread_flag
 
 _HAS_JULIA = shutil.which("julia") is not None
 needs_julia = pytest.mark.skipif(not _HAS_JULIA, reason="requires `julia` on PATH")
@@ -55,6 +56,21 @@ def test_thread_flag_always_reserves_an_interactive_thread() -> None:
     assert _thread_flag("4") == "4,1"
     assert _thread_flag("auto") == "auto"  # auto already implies 1 interactive
     assert _thread_flag("4,2") == "4,2"  # explicit pools are respected
+
+
+def test_exit_status_names_the_way_the_process_died() -> None:
+    """A death has to be attributable: a crash and an OOM kill need different fixes."""
+    assert _describe_exit(None) == "exit status unknown"
+    assert _describe_exit(1) == "exit code 1"
+    # Windows encodes the fault in the status; the hex form is the searchable one.
+    assert "0xC0000005" in _describe_exit(0xC0000005)
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGKILL"), reason="POSIX signals")
+def test_a_signalled_death_points_at_its_usual_cause() -> None:
+    assert "SIGKILL" in _describe_exit(-signal.SIGKILL)
+    assert "out-of-memory" in _describe_exit(-signal.SIGKILL)
+    assert "SIGSEGV" in _describe_exit(-signal.SIGSEGV)
 
 
 async def test_startup_error_for_missing_julia() -> None:
@@ -381,17 +397,31 @@ async def test_background_task_output_stays_out_of_the_result() -> None:
 
 @pytest.mark.integration
 @needs_julia
-async def test_killed_process_surfaces_as_error_not_a_hang() -> None:
+async def test_killed_process_surfaces_as_error_not_a_hang(tmp_path: Path) -> None:
     """If the process dies mid-eval, the blocked eval wakes with a clean error.
 
     The connection poisons the pending eval's future when the control socket or
-    the process pipes close, so the await raises instead of hanging forever.
+    the process pipes close, so the await raises instead of hanging forever. The
+    error names the exit status and points at the log, because "the kernel
+    exited" alone leaves the caller guessing between a crash and a kill.
     """
-    async with JuliaKernel(KernelConfig()) as k:
+    log = tmp_path / "julia.log"
+    async with JuliaKernel(KernelConfig(stderr_file=log)) as k:
         task = asyncio.create_task(k.eval("sleep(60)"))
         await asyncio.sleep(0.5)
         assert k._proc is not None
         k._proc.kill()  # hard kill mid-eval, not a survivable SIGINT
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError) as excinfo:
             await task
         assert not k.running
+        message = str(excinfo.value)
+        assert "exited unexpectedly" in message
+        assert ("SIGKILL" in message) or ("exit code" in message)  # Windows has no signals
+        assert str(log) in message
+
+        # The next call is the one a user is most likely to see, since a death
+        # often lands under a tool call they have already moved on from; it has
+        # to explain itself too, not just report that nothing is running.
+        with pytest.raises(RuntimeError) as later:
+            await k.eval("1 + 1")
+        assert ("SIGKILL" in str(later.value)) or ("exit code" in str(later.value))

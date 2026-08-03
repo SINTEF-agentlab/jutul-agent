@@ -98,11 +98,14 @@ def make_run_julia_tool(session: Session):
         except Exception as exc:
             # A transport-level failure (not a Julia error): the session died,
             # e.g. the process was killed or crashed. Surface it as a recoverable
-            # error rather than a raw traceback, and point at the way out.
+            # error rather than a raw traceback, and point at the way out. The
+            # kernel explains what it can about the death; keep that intact, since
+            # a crash and an out-of-memory kill call for different next steps.
             return (
-                f"ERROR: the Julia session is unavailable ({type(exc).__name__}: {exc}). "
-                "The process may have been killed or crashed; call `reset_julia` to "
-                "start a fresh session."
+                f"ERROR: the Julia session is unavailable: {exc or type(exc).__name__}\n"
+                "Call `reset_julia` to start a fresh session. A session that dies "
+                "repeatedly on the same step is running out of memory or hitting a "
+                "crash, so retrying it unchanged will not help."
             )
         if result.error:
             # Keep anything the code printed before it threw, then the error.

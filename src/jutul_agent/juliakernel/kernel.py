@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import IO, Self
 
 from .config import KernelConfig
-from .connection import KernelConnection, PendingEval
+from .connection import KernelConnection, KernelDied, PendingEval
 from .result import EvalResult, OnChunk
 from .text import render_terminal_output
 
@@ -34,6 +34,12 @@ _SERVER_JL = Path(__file__).resolve().parent / "server.jl"
 # After cancelling an eval we interrupt it and wait this long for its result frame;
 # past this we treat it as wedged and restart.
 _INTERRUPT_DRAIN_TIMEOUT = 10.0
+# The pipes usually reach EOF a moment before the process is reaped, so allow the
+# exit status a short wait rather than reporting it as unknown.
+_EXIT_STATUS_TIMEOUT = 2.0
+# How much of Julia's own last output to quote back; a crash banner and the top of
+# its backtrace fit, a whole solver log does not.
+_DEATH_TAIL_CHARS = 600
 
 
 class JuliaStartupError(RuntimeError):
@@ -154,7 +160,10 @@ class JuliaKernel:
         if self._proc is None:
             raise RuntimeError("JuliaKernel must be used inside an `async with` block")
         if not self.running:
-            raise RuntimeError("the Julia kernel is not running")
+            # Every call after a death lands here, so it explains itself the same
+            # way the one that witnessed the death does; otherwise only the first
+            # caller learns why and the rest see a bare "not running".
+            raise await self._explain_death(KernelDied("the Julia kernel exited unexpectedly"))
         conn = self._conn
         assert conn is not None
         async with self._lock:
@@ -165,6 +174,8 @@ class JuliaKernel:
                 # itself; the recovery below still needs the result frame to
                 # land in it (a cancelled future could never be resolved).
                 status, payload = await asyncio.shield(pending.future)
+            except KernelDied as exc:
+                raise await self._explain_death(exc) from None
             except asyncio.CancelledError:
                 # The caller was cancelled mid-eval. Interrupt the eval and wait
                 # for its one result frame so the session stays usable, rather
@@ -175,6 +186,29 @@ class JuliaKernel:
             finally:
                 conn.end_eval(pending)
         return self._build_result(status, payload, pending)
+
+    async def _explain_death(self, exc: KernelDied) -> KernelDied:
+        """Restate a kernel death with the exit status and Julia's last output.
+
+        The transport only knows that the connection went away, which leaves a
+        crash, an out-of-memory kill and a plain exit indistinguishable to the
+        caller even though each needs a different response. The supervisor owns
+        the process, so it can say which one happened and quote the output that
+        came just before.
+        """
+        proc = self._proc
+        code = proc.returncode if proc is not None else None
+        if proc is not None and code is None:
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(_EXIT_STATUS_TIMEOUT):
+                    code = await proc.wait()
+        parts = [f"{exc}: {_describe_exit(code)}"]
+        tail = self._conn.stderr_tail.decode("utf-8", "replace").strip() if self._conn else ""
+        if tail:
+            parts.append(f"Julia's last output:\n{tail[-_DEATH_TAIL_CHARS:]}")
+        if self._config.stderr_file is not None:
+            parts.append(f"Full log: {self._config.stderr_file}")
+        return KernelDied("\n".join(parts))
 
     async def _recover_from_cancel(self, pending: PendingEval) -> None:
         """Leave the session usable after an eval was cancelled mid-flight.
@@ -395,6 +429,29 @@ class JuliaKernel:
         env["JK_TOKEN"] = self._token
 
         return cfg.julia_executable, args, env
+
+
+def _describe_exit(code: int | None) -> str:
+    """How the process ended, in the terms of whichever platform ended it.
+
+    POSIX reports a signal as a negative code; SIGKILL is called out because the
+    common source of one nobody sent is the out-of-memory killer. Windows has no
+    signals and encodes a fault in the status itself, so a large code is also
+    given in hex, the form its documentation and search results use.
+    """
+    if code is None:
+        return "exit status unknown"
+    if code < 0:
+        try:
+            name = signal.Signals(-code).name
+        except ValueError:
+            name = f"signal {-code}"
+        if -code == getattr(signal, "SIGKILL", None):
+            return f"killed by {name}, usually the system out-of-memory killer"
+        return f"killed by {name}, which normally means a crash inside native code"
+    if code > 0xFF:
+        return f"exit code {code} (0x{code:08X}), which normally means a crash inside native code"
+    return f"exit code {code}"
 
 
 def _thread_flag(threads: str | None) -> str:
