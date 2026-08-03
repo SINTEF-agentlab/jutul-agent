@@ -42,11 +42,11 @@ jutul-agent init --sim jutuldarcy
 ```
 
 `init` writes `.jutul-agent/config.toml`, copies the simulator's Julia env
-template, and **precompiles by default**: it instantiates the env, warms the
-precompile caches, and bakes the web-plotting overlay (WGLMakie + Bonito, a
-one-time global build). The first time can take a while (Julia compiles the
-simulator and the plotting stacks), after which the first session in any
-interface starts in seconds. Useful variants:
+template, and **precompiles by default**: it instantiates the env and warms the
+precompile caches, including the terminal and web plotting backends. The first
+time can take a while (Julia compiles the simulator and the plotting stacks),
+after which the first session in any interface starts in seconds. Useful
+variants:
 
 ```sh
 jutul-agent init --sim jutuldarcy --no-precompile                      # quick bootstrap, bake later

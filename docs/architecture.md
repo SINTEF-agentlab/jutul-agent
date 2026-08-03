@@ -169,6 +169,19 @@ The shared `JutulAgent` Julia package (`julia_runtime/`) is synced into every
 env at bootstrap and carries cross-simulator runtime helpers, including the
 ensemble runner.
 
+A workspace has exactly one Julia environment, shared by every interface. The
+plotting backends for both the terminal (GLMakie, CairoMakie) and the web
+(WGLMakie, Bonito) are ordinary deps of that one env, so a single `Pkg`
+resolve satisfies the simulator's constraints and the plotting stack's at the
+same time. Splitting the web backends into a second environment stacked via
+`JULIA_LOAD_PATH` does not work: Julia resolves each environment on its own, so
+the second one pins whatever versions of Makie and HTTP were newest when it was
+built, and at load time whichever environment comes first in the path wins for
+every package both provide. The packages on the losing side then run against
+versions they were never compiled against. Capability dependencies land in the
+same env for the same reason (see
+[extending for your application](extending-for-your-application.md)).
+
 Adding a simulator adds data in that folder; the registry discovers it
 automatically. No agent code changes.
 

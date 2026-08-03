@@ -83,3 +83,22 @@ def test_broken_installed_entry_point_is_skipped(tmp_path, monkeypatch) -> None:
     )
     # The bundled simulators are still there; the broken one is ignored.
     assert "jutuldarcy" in registry.names()
+
+
+@pytest.mark.parametrize("name", registry.names())
+def test_env_template_declares_the_web_plotting_backend(name: str) -> None:
+    """Every simulator env resolves WGLMakie and Bonito alongside the simulator.
+
+    They have to be deps of the same environment, not of a second one stacked on
+    top: Julia resolves each environment independently, so a standalone resolve
+    picks the newest Makie and HTTP rather than the ones the simulator's stack
+    pins, and whichever environment comes first in the load path then wins for
+    every package both provide. The packages that lost the tie are left running
+    against versions they were never compiled for.
+    """
+
+    import tomllib
+
+    template = registry.get(name).julia_env_template_path / "Project.toml"
+    deps = tomllib.loads(template.read_text(encoding="utf-8")).get("deps", {})
+    assert {"WGLMakie", "Bonito"} <= set(deps), f"{name} env template is missing web backends"

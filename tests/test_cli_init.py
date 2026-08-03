@@ -85,13 +85,10 @@ def test_instantiate_alias_runs_precompile_path(
         captured_cmds.append(argv)
         return _Result()
 
-    import jutul_agent.interfaces.server.web_overlay as web_overlay
     import jutul_agent.simulators.env_setup as env_setup
 
     monkeypatch.setattr(env_setup.shutil, "which", lambda _: "/usr/bin/julia")
     monkeypatch.setattr(env_setup.subprocess, "run", _fake_run)
-    overlay_calls: list[int] = []
-    monkeypatch.setattr(web_overlay, "ensure_web_overlay", lambda **_: overlay_calls.append(1))
 
     code = main(
         [
@@ -106,17 +103,15 @@ def test_instantiate_alias_runs_precompile_path(
     captured = capsys.readouterr()
     assert code == 0, captured.err
     assert "precompile:    done" in captured.out
-    assert "web overlay:   ready" in captured.out
     assert len(captured_cmds) >= 2
     assert any("Pkg.instantiate()" in cmd[-1] for cmd in captured_cmds)
-    assert overlay_calls == [1]  # the web overlay is baked during precompile
 
 
-def test_init_precompiles_and_builds_overlay_by_default(
+def test_init_precompiles_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # No flags: precompile is the default, and the web overlay is built so the
-    # first `jutul-agent web` is fast out of the box.
+    # No flags: the env (plotting backends included) is baked so the first
+    # session in any interface is fast out of the box.
     ws = tmp_path / "ws-default"
     ws.mkdir()
 
@@ -124,28 +119,23 @@ def test_init_precompiles_and_builds_overlay_by_default(
         returncode = 0
         stdout = "julia version 1.12.0\n"
 
-    import jutul_agent.interfaces.server.web_overlay as web_overlay
     import jutul_agent.simulators.env_setup as env_setup
 
     monkeypatch.setattr(env_setup.shutil, "which", lambda _: "/usr/bin/julia")
     monkeypatch.setattr(env_setup.subprocess, "run", lambda *a, **k: _Result())
-    overlay_built = []
-    monkeypatch.setattr(web_overlay, "ensure_web_overlay", lambda **_: overlay_built.append(1))
 
     code = main(["init", "--sim", "jutuldarcy", "--workspace", str(ws)])
     out = capsys.readouterr().out
     assert code == 0
     assert "precompile:    done" in out
-    assert overlay_built == [1]
 
 
-def test_init_no_precompile_skips_bake_and_overlay(
+def test_init_no_precompile_skips_the_bake(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ws = tmp_path / "ws-skip"
     ws.mkdir()
 
-    import jutul_agent.interfaces.server.web_overlay as web_overlay
     import jutul_agent.simulators.env_setup as env_setup
 
     monkeypatch.setattr(env_setup.shutil, "which", lambda _: "/usr/bin/julia")
@@ -155,11 +145,8 @@ def test_init_no_precompile_skips_bake_and_overlay(
         stdout = "julia version 1.12.0\n"
 
     monkeypatch.setattr(env_setup.subprocess, "run", lambda *a, **k: _Version())
-    overlay_built = []
-    monkeypatch.setattr(web_overlay, "ensure_web_overlay", lambda **_: overlay_built.append(1))
 
     code = main(["init", "--sim", "jutuldarcy", "--no-precompile", "--workspace", str(ws)])
     out = capsys.readouterr().out
     assert code == 0
     assert "skipped (--no-precompile)" in out
-    assert overlay_built == []  # no bake, no overlay
