@@ -15,6 +15,7 @@ expose its own routines over HTTP.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -86,15 +87,20 @@ def discover_extensions() -> list[Capability]:
     """Capabilities published by installed packages under the extension entry point.
 
     Each entry point resolves to a ``Capability`` or a zero-argument callable
-    that returns one. A broken entry point is skipped rather than failing the
-    whole session.
+    that returns one. A broken entry point is warned about and skipped rather
+    than failing the whole session: one bad extension must not cost the user
+    every other tool. The warning matters as much as the skip, because a
+    capability that fails to load is otherwise indistinguishable from one that
+    is not installed, and the usual cause is a setup step the user can fix
+    (an unset environment variable, a missing data folder).
     """
     import importlib.metadata as importlib_metadata
 
     capabilities: list[Capability] = []
     try:
         entry_points = importlib_metadata.entry_points(group=EXTENSION_ENTRY_POINT_GROUP)
-    except Exception:
+    except Exception as exc:
+        print(f"warning: could not read installed extensions: {exc}", file=sys.stderr)
         return capabilities
     for entry_point in entry_points:
         try:
@@ -102,10 +108,20 @@ def discover_extensions() -> list[Capability]:
             capability = (
                 loaded() if not isinstance(loaded, Capability) and callable(loaded) else loaded
             )
-            if isinstance(capability, Capability):
-                capabilities.append(capability)
-        except Exception:
+        except Exception as exc:
+            print(
+                f"warning: skipping extension {entry_point.name!r}: {exc}",
+                file=sys.stderr,
+            )
             continue
+        if not isinstance(capability, Capability):
+            print(
+                f"warning: skipping extension {entry_point.name!r}: it resolved to "
+                f"{type(capability).__name__}, not a Capability",
+                file=sys.stderr,
+            )
+            continue
+        capabilities.append(capability)
     return capabilities
 
 
