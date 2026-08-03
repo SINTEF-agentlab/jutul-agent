@@ -92,6 +92,12 @@ def _web_figure_block(user_code: str) -> str:
     still renders as an interactive WebGL view once routed. Both the static-export
     and live-serve builders start from this, so the figure-resolution logic lives in
     one place.
+
+    Absorbing the display costs a real GL screen, so the screens are closed once the
+    figure is in hand: an invisible one is still a live context whose render loop
+    keeps running for the rest of the session, against the same GPU driver the next
+    solve shares. The figure is unaffected, being data rather than the window that
+    was showing it.
     """
 
     return (
@@ -118,6 +124,9 @@ def _web_figure_block(user_code: str) -> str:
         '        "plot_julia: the code did not produce a Makie figure. Return a Figure, "  *\n'
         '        "or call a plotter that builds one."\n'
         "    )\n"
+        # Release the GL screen the display absorption opened; the web surface never
+        # shows it, and its render loop would outlive the plot.
+        "    try; GLMakie.closeall(); catch; end\n"
     )
 
 

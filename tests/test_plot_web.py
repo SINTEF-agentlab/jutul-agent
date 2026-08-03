@@ -129,6 +129,33 @@ async def test_web_surface_static_fallback_when_server_down(tmp_path: Path) -> N
         log.close()
 
 
+async def test_web_render_releases_the_gl_screen_it_opened(tmp_path: Path) -> None:
+    # A native plotter displays internally, which with an offscreen GLMakie active
+    # opens a real GL screen whose render loop then runs for the rest of the
+    # session, sharing a GPU driver with every solve that follows. The web surface
+    # never shows that screen, so it is closed once the figure is in hand.
+    seen: list[str] = []
+
+    async def fake_eval(code: str) -> EvalResult:
+        seen.append(code)
+        if "CairoMakie.Makie === WGLMakie.Makie" in code:
+            return EvalResult(output="JUTUL_MAKIE_MATCH")
+        if "Bonito.Server" in code:
+            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+        return EvalResult(output="")
+
+    session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
+    tool = make_plot_julia_tool(session, surface="web")
+
+    await _call(tool, {"code": "plot_reservoir(case)", "slot": "setup"})
+
+    render = next(c for c in seen if "Bonito.route!" in c)
+    assert "GLMakie.closeall()" in render
+    # After the figure is resolved: closing first would discard what was displayed.
+    assert render.index("plot_reservoir(case)") < render.index("GLMakie.closeall()")
+    assert render.index("GLMakie.closeall()") < render.index("Bonito.route!")
+
+
 async def test_web_surface_reports_missing_backend(tmp_path: Path) -> None:
     async def fake_eval(code: str) -> EvalResult:
         if code.strip() == "import CairoMakie, WGLMakie, Bonito":
