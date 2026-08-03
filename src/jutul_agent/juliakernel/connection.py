@@ -29,6 +29,14 @@ _STDERR_TAIL_CAP = 16 * 1024
 _LOG_READ_SIZE = 64 * 1024
 
 
+class KernelDied(RuntimeError):
+    """The Julia process went away while an eval was in flight or waiting.
+
+    Distinct from the other transport errors so the supervisor, which owns the
+    process and therefore its exit status, can add why it went away.
+    """
+
+
 @dataclass
 class PendingEval:
     """One in-flight eval: its frame id, completion future, and output."""
@@ -112,7 +120,7 @@ class KernelConnection:
         )
         self._next_id += 1
         if self.closed.is_set():
-            pending.future.set_exception(RuntimeError("the Julia kernel exited unexpectedly"))
+            pending.future.set_exception(KernelDied("the Julia kernel exited unexpectedly"))
             return pending
         self._current = pending
         return pending
@@ -206,12 +214,12 @@ class KernelConnection:
         if self._death_reason:
             message += f" ({self._death_reason})"
         if not self._ready.done():
-            self._ready.set_exception(RuntimeError(message))
+            self._ready.set_exception(KernelDied(message))
             self._ready.exception()  # consumed here if nobody awaits ready_token
         pending = self._current
         self._current = None
         if pending is not None and not pending.future.done():
-            pending.future.set_exception(RuntimeError(message))
+            pending.future.set_exception(KernelDied(message))
 
     async def _log_pump(self, reader: asyncio.StreamReader, *, is_stderr: bool) -> None:
         """Tail one of the process's own pipes into the log (no protocol here)."""
