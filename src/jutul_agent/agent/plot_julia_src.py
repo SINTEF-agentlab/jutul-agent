@@ -168,7 +168,7 @@ def web_render_call(*, user_code: str, png_path: Path, html_path: Path) -> str:
     )
 
 
-def web_server_start(port: int) -> str:
+def web_server_start(port: int, session_id: str) -> str:
     """Julia to start the session's Bonito server once (idempotent), returning the
     actual port it is bound to.
 
@@ -183,20 +183,32 @@ def web_server_start(port: int) -> str:
     Returning the real port is what keeps the advertised live URL pointing at the
     server the figures are actually routed on — a mismatch here is a dead "refused
     to connect" embed.
+
+    ``proxy_url`` tells Bonito to write every URL it hands the browser (asset
+    links and the widget websocket) as ``/live/<session_id>/...`` instead of an
+    absolute ``127.0.0.1:<port>``, so they resolve through the app server's own
+    ``/live/...`` reverse proxy (see ``interfaces/server/app.py``) rather than a
+    raw port the browser may have no route to (an SSH/VS Code/Docker port
+    forward that only knows about the app's own port). This is the same
+    site-relative-prefix mechanism Bonito already uses for JupyterHub/Binder.
     """
 
     # ``global`` (not ``Main.X = ``) so the assignment defines the Main global even
     # under Julia 1.12's stricter check, which rejects assigning to a qualified
-    # global that doesn't exist yet. ``__JUTUL_WEB_PORT__`` records the port the
-    # server was actually bound to, so a later call returns it regardless of the
-    # port this call requested.
+    # global that doesn't exist yet. ``__JUTUL_WEB_PORT__`` reads back
+    # ``__JUTUL_WEB_SERVER__.port`` rather than echoing the requested port: if the
+    # requested port lost the free/rebind race (grabbed by someone else between
+    # Python releasing it and Julia binding), Bonito's `start` silently retries on
+    # port+1, port+2, ... and updates `.port` to whatever it actually bound —
+    # echoing the request instead would advertise a dead port nothing listens on.
     return (
         "begin\n"
         "    import WGLMakie, Bonito\n"
         "    if !isdefined(Main, :__JUTUL_WEB_SERVER__)\n"
-        f'        global __JUTUL_WEB_SERVER__ = Bonito.Server("127.0.0.1", {int(port)})\n'
+        f'        global __JUTUL_WEB_SERVER__ = Bonito.Server("127.0.0.1", {int(port)};\n'
+        f'            proxy_url = raw"/live/{session_id}/")\n'
         "        global __JUTUL_WEB_FIGS__ = Dict{String,Any}()\n"
-        f"        global __JUTUL_WEB_PORT__ = {int(port)}\n"
+        "        global __JUTUL_WEB_PORT__ = __JUTUL_WEB_SERVER__.port\n"
         "    end\n"
         # Print the bound port on a uniquely-tagged line so the Python side reads it
         # back unambiguously — taking "the last run of digits" from the output would

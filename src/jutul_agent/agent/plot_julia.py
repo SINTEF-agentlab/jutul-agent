@@ -283,7 +283,9 @@ def make_plot_julia_tool(session: Session, *, surface: str = "tui"):
                 return err  # don't latch: a fixable load failure can be retried
             backend_loaded = True
         if web and live_base is None:
-            started = await session.julia.eval(jl.web_server_start(_free_port()))
+            started = await session.julia.eval(
+                jl.web_server_start(_free_port(), session.session_id)
+            )
             # The server prints its bound port on a uniquely-tagged line; read that
             # rather than scanning for digits (a startup log line could carry others).
             match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
@@ -297,7 +299,14 @@ def make_plot_julia_tool(session: Session, *, surface: str = "tui"):
                         file=sys.stderr,
                     )
             else:
-                live_base = f"http://127.0.0.1:{match.group(1)}"
+                # A site-relative path, not the raw ``127.0.0.1:<port>`` Bonito
+                # actually listens on: the browser reaches it through this app
+                # server's ``/live/...`` reverse proxy (see interfaces/server/app.py),
+                # which is the one port whatever forwarded this session's connection
+                # (an SSH tunnel, VS Code/Cursor remote, Docker) already knows about.
+                # ``session.web_plot_port`` is what tells that proxy where to send it.
+                live_base = f"/live/{session.session_id}"
+                session.web_plot_port = int(match.group(1))
         return None
 
     @tool

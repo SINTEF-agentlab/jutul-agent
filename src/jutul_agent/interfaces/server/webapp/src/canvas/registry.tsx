@@ -5,7 +5,7 @@
 // surface — e.g. a MapLibre map to place geothermal wells — by calling
 // `registerPanel("map", MapPanel)`; no change to the canvas core is needed.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { View } from "../store";
 
@@ -50,6 +50,55 @@ export function ImagePanel({ view, active, reloadToken, onLoaded }: PanelProps) 
   );
 }
 
+// A fresh live plot's Bonito route can take a couple of seconds to start
+// answering (the Julia kernel only pumps its event loop once something else
+// runs it). That doesn't show up as an iframe `error` event: a failed
+// navigation (refused/unreachable) still fires `load` (the browser loads its
+// own error page as the frame's "content"), and browsers don't fire `error`
+// for iframe navigation failures at all. So detect readiness by pinging the
+// URL directly and retrying with backoff, instead of mounting the iframe and
+// hoping a DOM event tells us it failed.
+const LIVE_RETRY_DELAYS_MS = [400, 800, 1200, 2000, 3000];
+
+function useLiveReady(url: string, enabled: boolean, resetKey: number): boolean {
+  const [ready, setReady] = useState(!enabled);
+  useEffect(() => {
+    if (!enabled) {
+      setReady(true);
+      return;
+    }
+    setReady(false);
+    let cancelled = false;
+    let attempt = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tryOnce = () => {
+      // HEAD + no-cors: enough to learn whether *something* is listening and
+      // responding on this origin, without invoking the actual plot route or
+      // reading a response we're not allowed to see cross-origin.
+      fetch(url, { method: "HEAD", mode: "no-cors", cache: "no-store" })
+        .then(() => {
+          if (!cancelled) setReady(true);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt < LIVE_RETRY_DELAYS_MS.length) {
+            const delay = LIVE_RETRY_DELAYS_MS[attempt];
+            attempt += 1;
+            timer = setTimeout(tryOnce, delay);
+          } else {
+            setReady(true); // give up; mount anyway so the loader clears
+          }
+        });
+    };
+    tryOnce();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [url, enabled, resetKey]);
+  return ready;
+}
+
 export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps) {
   // A live WebGL figure reflows once right after `load` (WGLMakie sizes to its
   // parent only after mounting), so clearing the loader on `load` would flash a
@@ -59,10 +108,12 @@ export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps)
   // Clear a pending hold-timer if the panel unmounts first (tab/canvas closed),
   // so a stale onLoaded can't fire against a view that is already gone.
   useEffect(() => () => clearTimeout(timer.current), []);
+  const ready = useLiveReady(view.url, view.kind === "plot", reloadToken);
   const handleLoad = () => {
     if (hold) timer.current = setTimeout(onLoaded, hold);
     else onLoaded();
   };
+  if (!ready) return null; // keep the canvas's own loading spinner up while probing
   return (
     <iframe
       className={active ? "active" : ""}

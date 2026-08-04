@@ -237,6 +237,11 @@ class Session:
     # the session (e.g. a capability's ToolFactory) read this to match the surface
     # ``build_agent`` was composed for.
     surface: str = "tui"
+    # The bound port of this session's Bonito live-plot server (web surface only),
+    # once ``plot_julia`` starts it; ``None`` before that. The server's ``/live/...``
+    # reverse proxy reads this to know which local port to forward a live plot's
+    # traffic to, so the browser never needs its own route to that ephemeral port.
+    web_plot_port: int | None = None
     _ephemeral_memory_dir: Path | None = field(default=None, repr=False)
     # Folders holding a report written this session, whose sidecar transcript is
     # refreshed at turn end (see ``refresh_report_transcripts``).
