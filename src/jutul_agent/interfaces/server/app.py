@@ -19,7 +19,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -451,6 +459,107 @@ def create_app(
         if target is None:
             raise HTTPException(status_code=404, detail="no such artifact")
         return FileResponse(target)
+
+    @app.api_route("/live/{session_id}/{path:path}", methods=["GET", "HEAD"])
+    async def live_plot_proxy(session_id: str, path: str, request: Request) -> Response:
+        """Reverse-proxy a session's live Bonito plot server through this port.
+
+        A live plot's Bonito server binds a fresh, unpredictable localhost port
+        per session; handing the browser that raw ``127.0.0.1:<port>`` URL only
+        works when the browser shares this machine's network namespace. Under any
+        port-forwarded setup (an SSH tunnel, VS Code/Cursor remote, Docker) only
+        this app server's own port is known to whatever is forwarding connections,
+        so the raw port is a permanent, unfixable connection-refused. Bonito's
+        ``proxy_url`` (set in ``plot_julia_src.web_server_start``) already writes
+        every URL it hands the browser as ``/live/<session_id>/...``, so this route
+        only needs to strip that prefix and forward to the real port.
+        """
+        host = manager.get(session_id)
+        port = host.session.web_plot_port if host is not None else None
+        if port is None:
+            raise HTTPException(status_code=404, detail="no live plot server for this session")
+
+        import httpx
+
+        hop_by_hop = {"host", "content-length", "connection"}
+        headers = [(k, v) for k, v in request.headers.items() if k.lower() not in hop_by_hop]
+        async with httpx.AsyncClient() as client:
+            try:
+                upstream = await client.request(
+                    request.method,
+                    f"http://127.0.0.1:{port}/{path}",
+                    params=request.query_params,
+                    headers=headers,
+                    content=await request.body(),
+                    timeout=30.0,
+                )
+            except httpx.TransportError as exc:
+                raise HTTPException(status_code=502, detail=f"live plot server unreachable: {exc}")
+        strip = {"content-length", "content-encoding", "transfer-encoding", "connection"}
+        response_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in strip}
+        return Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            headers=response_headers,
+            media_type=upstream.headers.get("content-type"),
+        )
+
+    @app.websocket("/live/{session_id}/{path:path}")
+    async def live_plot_ws_proxy(websocket: WebSocket, session_id: str, path: str) -> None:
+        """Pump a live plot's widget websocket (a slider, a field selector) through
+        the same reverse proxy as ``live_plot_proxy``, for the same reason: the
+        browser has no route to Bonito's own port, only to this one."""
+        host = manager.get(session_id)
+        port = host.session.web_plot_port if host is not None else None
+        if port is None:
+            await websocket.close(code=1011)
+            return
+
+        import websockets
+        from websockets.exceptions import ConnectionClosed
+
+        await websocket.accept(subprotocol=websocket.headers.get("sec-websocket-protocol"))
+        upstream_url = f"ws://127.0.0.1:{port}/{path}"
+        if websocket.url.query:
+            upstream_url += f"?{websocket.url.query}"
+
+        try:
+            async with websockets.connect(upstream_url, max_size=None) as upstream:
+
+                async def to_upstream() -> None:
+                    try:
+                        while True:
+                            message = await websocket.receive()
+                            if message["type"] == "websocket.disconnect":
+                                return
+                            data = message.get("bytes")
+                            if data is not None:
+                                await upstream.send(data)
+                                continue
+                            text = message.get("text")
+                            if text is not None:
+                                await upstream.send(text)
+                    finally:
+                        with contextlib.suppress(Exception):
+                            await upstream.close()
+
+                async def from_upstream() -> None:
+                    with contextlib.suppress(ConnectionClosed):
+                        async for message in upstream:
+                            if isinstance(message, bytes):
+                                await websocket.send_bytes(message)
+                            else:
+                                await websocket.send_text(message)
+
+                pumps = {asyncio.create_task(to_upstream()), asyncio.create_task(from_upstream())}
+                _, pending = await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
+                for task in pending:
+                    task.cancel()
+        except (WebSocketDisconnect, OSError):
+            pass
+        finally:
+            with contextlib.suppress(RuntimeError):
+                await websocket.close()
 
     @app.get("/sessions/{session_id}/transcript")
     def get_transcript(session_id: str, format: str = "html") -> Response:

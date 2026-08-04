@@ -64,9 +64,12 @@ async def test_web_surface_serves_plot_live(tmp_path: Path) -> None:
         assert artifact.payload["mime"] == "image/png"
         assert artifact.payload["path"] == "artifacts/pres.png"
         assert artifact.payload["kind"] == "plot"
-        # The live URL uses the port the server reported (51000), not whatever the
-        # tool requested — so it points at where the figures are actually served.
-        assert "127.0.0.1:51000/viz/" in (artifact.payload["live_url"] or "")
+        # The live URL is a site-relative path through this session's reverse proxy
+        # (see interfaces/server/app.py), not the raw port Bonito bound -- the browser
+        # never needs to reach that port directly (it may not be forwarded at all,
+        # e.g. behind an SSH tunnel). The proxy resolves the port from session state.
+        assert f"/live/{session.session_id}/viz/" in (artifact.payload["live_url"] or "")
+        assert session.web_plot_port == 51000
     finally:
         log.close()
 
@@ -92,7 +95,7 @@ async def test_web_surface_live_gl_only_records_html_export(tmp_path: Path) -> N
         artifact = next(ev for ev in log.iter_events() if ev.kind == "artifact")
         assert artifact.payload["mime"] == "text/html"
         assert artifact.payload["path"] == "artifacts/pres.html"
-        assert "127.0.0.1:51000/viz/" in (artifact.payload["live_url"] or "")
+        assert f"/live/{session.session_id}/viz/" in (artifact.payload["live_url"] or "")
     finally:
         log.close()
 

@@ -35,8 +35,11 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
     # Used directly by the declarative HTTP tools (agent/capabilities.py) to call a
-    # host application's endpoints.
+    # host application's endpoints, and by the web interface's live-plot reverse
+    # proxy (interfaces/server/app.py) to forward HTTP/websocket traffic to each
+    # session's Bonito server.
     "httpx>=0.27",
+    "websockets>=13",
     "tomli-w>=1.2.0",
 ]
 
