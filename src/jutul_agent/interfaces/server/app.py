@@ -494,7 +494,9 @@ def create_app(
                     timeout=30.0,
                 )
             except httpx.TransportError as exc:
-                raise HTTPException(status_code=502, detail=f"live plot server unreachable: {exc}")
+                raise HTTPException(
+                    status_code=502, detail=f"live plot server unreachable: {exc}"
+                ) from exc
         strip = {"content-length", "content-encoding", "transfer-encoding", "connection"}
         response_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in strip}
         return Response(
@@ -555,6 +557,10 @@ def create_app(
                 _, pending = await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
                 for task in pending:
                     task.cancel()
+                # Wait for the cancellation to actually land: otherwise the loser can
+                # still be mid-``send`` when we close the client socket below, racing
+                # a "send after close" ASGI error instead of a clean cancel.
+                await asyncio.gather(*pending, return_exceptions=True)
         except (WebSocketDisconnect, OSError):
             pass
         finally:
