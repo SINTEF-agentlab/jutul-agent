@@ -28,6 +28,80 @@ IMPORT_GLMAKIE_OFFSCREEN = (
 )
 
 
+# ``Makie.getscreen`` hands out closed screens: it takes the *first* screen matching the
+# active backend and, while it does ask ``isopen(screen)``, returns it either way. A
+# figure accumulates screens — WGLMakie makes a fresh one for every Bonito session that
+# displays it, and nothing takes the old ones off — so the one it picks can be a corpse.
+# Picking then has no session to ask the browser through, gets an empty buffer, and the
+# click falls through to the camera instead of selecting.
+#
+# Every legitimate re-render pushes another screen: reconnecting to a session, popping the
+# view into its own window, closing a view and reopening it. Removing the accumulation
+# would be the better fix, but it has to key on a session that is *definitively* closed —
+# pruning on ``isopen`` also deletes screens that are merely still connecting, which was
+# measured to take the live view down. So this prefers rather than prunes, and falls back
+# to the first match when nothing is open.
+SCREEN_PREFERENCE_MARKER = "__JUTUL_SCREEN_PREF__"
+
+PREFER_OPEN_SCREEN_GUARD = (
+    "try\n"
+    # Reached through WGLMakie: the web preamble imports that, not Makie itself.
+    "    @eval WGLMakie.Makie function getscreen(scene::Scene, backend = current_backend())\n"
+    "        isempty(scene.current_screens) && return nothing\n"
+    "        local matches = filter(scene.current_screens) do screen\n"
+    "            parentmodule(typeof(screen)) === backend\n"
+    "        end\n"
+    "        isempty(matches) && return nothing\n"
+    "        for screen in matches\n"
+    "            isopen(screen) && return screen\n"
+    "        end\n"
+    "        return first(matches)\n"
+    "    end\n"
+    # Resolve the call the way a scene lookup does. If dispatch still lands in Makie's
+    # own file, the signature moved and the replacement is inert.
+    "    local _sm = which(WGLMakie.Makie.getscreen,\n"
+    "        Tuple{WGLMakie.Makie.Scene, Module})\n"
+    '    local _sinert = occursin("display.jl", String(_sm.file))\n'
+    f'    println("{SCREEN_PREFERENCE_MARKER}=", _sinert ? "inert" : "ok")\n'
+    "catch err\n"
+    f'    println("{SCREEN_PREFERENCE_MARKER}=error: ", err)\n'
+    "end"
+)
+
+# WGLMakie's ``pick`` indexes the pick buffer without checking there is anything in it:
+# ``pick_native`` returns a 0x0 matrix when the screen has no usable Bonito session, and
+# ``plot_matrix[1, 1]`` on that throws.
+#
+# A plotter that picks on click turns that throw into a dead mouse button. Jutul's 3D
+# explorer picks from an ``events(fig).mousebutton`` handler at priority 2, so the throw
+# lands *inside* the Observables notify and every listener behind it is skipped — on the
+# web that is the whole left button: rotation, buttons, sliders, toggles and menus. The
+# right button survives because that handler only looks at the left and middle ones.
+#
+# ``Makie.pick`` already answers ``(nothing, 0)`` when a scene has no screen at all; this
+# restores that answer when it has one whose buffer is empty. Evaluated *inside* WGLMakie
+# so it replaces that package's own method rather than pirating it from here.
+PICK_GUARD_MARKER = "__JUTUL_PICK_GUARD__"
+
+PICK_EMPTY_BUFFER_GUARD = (
+    "try\n"
+    "    @eval WGLMakie function Makie.pick(::Scene, screen::Screen, xy)\n"
+    "        plot_matrix = pick_native(screen, Rect2i(xy..., 1, 1))\n"
+    "        isempty(plot_matrix) && return (nothing, 0)\n"
+    "        return plot_matrix[1, 1]\n"
+    "    end\n"
+    # Resolve the call the way a picking handler does. If dispatch still lands in
+    # WGLMakie's own file, the signature moved and the replacement is inert.
+    "    local _m = which(WGLMakie.Makie.pick,\n"
+    "        Tuple{WGLMakie.Makie.Scene, WGLMakie.Screen, WGLMakie.Makie.Vec{2, Float64}})\n"
+    '    local _inert = occursin("picking.jl", String(_m.file))\n'
+    f'    println("{PICK_GUARD_MARKER}=", _inert ? "inert" : "ok")\n'
+    "catch err\n"
+    f'    println("{PICK_GUARD_MARKER}=error: ", err)\n'
+    "end"
+)
+
+
 def _size_tuple(size: list[int] | None) -> str:
     if size is None:
         return "nothing"

@@ -119,6 +119,26 @@ async def _load_web_plot_backend(session: Session, adapter: SimulatorAdapter) ->
         )
     # Best-effort: enables native plotters when a GL context is available.
     await session.julia.eval(jl.IMPORT_GLMAKIE_OFFSCREEN)
+    # Both guards patch over upstream bugs, once per session and before any figure is
+    # built. Each reports whether it took: when the method it replaces moves upstream it
+    # stops applying silently, and the only symptom is a mouse button that no longer works
+    # in the browser.
+    prefer = await session.julia.eval(jl.PREFER_OPEN_SCREEN_GUARD)
+    if f"{jl.SCREEN_PREFERENCE_MARKER}=ok" not in (prefer.output or ""):
+        print(
+            "warning: could not make screen resolution prefer an open screen; clicking "
+            "a plot (selecting a cell) may not respond "
+            f"({_truncate(prefer.output or prefer.error, 200)})",
+            file=sys.stderr,
+        )
+    guard = await session.julia.eval(jl.PICK_EMPTY_BUFFER_GUARD)
+    if f"{jl.PICK_GUARD_MARKER}=ok" not in (guard.output or ""):
+        print(
+            "warning: could not guard WGLMakie's pick against an empty buffer; a plot "
+            "whose plotter picks on click may not respond to that mouse button "
+            f"({_truncate(guard.output or guard.error, 200)})",
+            file=sys.stderr,
+        )
     return None
 
 
