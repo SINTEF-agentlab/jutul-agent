@@ -130,10 +130,54 @@ def _web_figure_block(user_code: str) -> str:
     )
 
 
+# Detach the screen ``CairoMakie.save`` registers on the figure while it renders the
+# poster. Saving displays the figure to a Cairo screen, ``push_screen!`` puts it on the
+# scene and recursively on every child, and nothing takes it off again — nothing closes a
+# screen that only ever wrote a file.
+#
+# It is not inert once left there: ``push!(scene, plot)`` inserts into *every* screen in
+# ``current_screens``, so the live figure's later plot additions — the explorer adds and
+# deletes a mesh per cell click — are replayed into a screen that will never draw them.
+#
+# Census first, then drop: the filter mutates the very lists the walk reads. Best-effort
+# throughout, and iterative, because a self-referential local function inside the
+# generated block is fragile.
+DETACH_CAIRO_SCREENS = (
+    "    try\n"
+    # Across the whole tree: push_screen! recurses into children, so filtering the
+    # root's list alone leaves every sub-scene still holding it.
+    "        local _jap_seen = Any[]\n"
+    "        local _jap_stack = Any[_fig.scene]\n"
+    "        while !isempty(_jap_stack)\n"
+    "            local _jap_s = pop!(_jap_stack)\n"
+    "            for _jap_scr in _jap_s.current_screens\n"
+    "                if _jap_scr isa CairoMakie.Screen &&\n"
+    "                        !any(x -> x === _jap_scr, _jap_seen)\n"
+    "                    push!(_jap_seen, _jap_scr)\n"
+    "                end\n"
+    "            end\n"
+    "            append!(_jap_stack, _jap_s.children)\n"
+    "        end\n"
+    "        for _jap_scr in _jap_seen\n"
+    "            local _jap_drop = Any[_fig.scene]\n"
+    "            while !isempty(_jap_drop)\n"
+    "                local _jap_s = pop!(_jap_drop)\n"
+    "                filter!(x -> x !== _jap_scr, _jap_s.current_screens)\n"
+    "                append!(_jap_drop, _jap_s.children)\n"
+    "            end\n"
+    "        end\n"
+    "    catch\n"
+    "    end\n"
+)
+
+
 def _cairo_poster_block(png_path: Path, *, restore_wgl: bool) -> str:
     """Julia to save the figure's CairoMakie PNG poster best-effort (2D and most 3D
     scenes; a GL-only scene yields none). When ``restore_wgl`` the live path puts
     WGLMakie back as the active backend so later client connections render with it.
+
+    The screen the save leaves behind is detached afterwards; see
+    ``DETACH_CAIRO_SCREENS``.
     """
 
     restore = (
@@ -146,7 +190,7 @@ def _cairo_poster_block(png_path: Path, *, restore_wgl: bool) -> str:
         "    catch\n"
         f"{restore}"
         "    end\n"
-    )
+    ) + DETACH_CAIRO_SCREENS
 
 
 def web_render_call(*, user_code: str, png_path: Path, html_path: Path) -> str:
@@ -252,6 +296,11 @@ def _cairo_poster_or_export(png_path: Path, html_path: Path) -> str:
     if Cairo can't render the scene (GL-only), fall back to exporting a self-contained
     WebGL HTML. Either way WGLMakie is restored as the active backend so later client
     connections to the live route render with it.
+
+    The screen the save leaves behind is detached afterwards. It matters more here than
+    on the static path: this is the *live* figure, so anything left on its scene stays
+    reachable for as long as the browser keeps the view open. See
+    ``DETACH_CAIRO_SCREENS``.
     """
 
     return (
@@ -268,7 +317,7 @@ def _cairo_poster_or_export(png_path: Path, html_path: Path) -> str:
         "    finally\n"
         "        WGLMakie.activate!(resize_to = :parent)\n"
         "    end\n"
-    )
+    ) + DETACH_CAIRO_SCREENS
 
 
 def recapture_call(*, key: str, png_path: Path, size: list[int] | None) -> str:
