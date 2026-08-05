@@ -4,16 +4,19 @@ version = "0.1.0"
 
 # Per-simulator warm-up package for jutul-agent (JutulDarcy). A sibling of the
 # shared JutulAgent package in this env. It owns the single source of truth for the
-# JutulDarcy warm-up: it loads the solver, then GLMakie under
-# @recompile_invalidations (recompiling + caching the solver code GLMakie would
-# otherwise invalidate), and bakes the agent's simulate_reservoir + plot_cell_data
-# paths via @compile_workload. This is what makes the first solve ~0.5s, not ~30s.
+# JutulDarcy warm-up: it loads the solver, then the Makie backends under
+# @recompile_invalidations (recompiling + caching the solver code they would
+# otherwise invalidate), and bakes the agent's simulate_reservoir + plot_reservoir
+# paths via @compile_workload. This is what makes the first solve ~0.5s, not ~30s,
+# and the first plot seconds rather than ~30s.
 
 [deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 Jutul = "2b460a1a-8a2b-45b2-b125-b5c536396eb9"
 JutulDarcy = "82210473-ab04-4dce-b31b-11573c4f8e0a"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
 [compat]
 PrecompileTools = "1"

@@ -7,7 +7,12 @@ module JutulAgent
 
 using PrecompileTools: @compile_workload, @setup_workload
 
+# Every Makie backend a session can hold at once, so the workload below bakes in the
+# world it will run in. Loading a backend invalidates code specialised against the
+# ones already loaded, so a backend that arrives after the bake discards it. GLMakie
+# last: a backend activates itself on load, and the workload wants GLMakie current.
 import CairoMakie
+import WGLMakie
 import GLMakie
 
 include("ensemble.jl")   # submodule JutulAgentEnsemble (Distributed addprocs + pmap)

@@ -75,12 +75,38 @@ precompilation. Start from an existing simulator's and adapt the workload:
 
 - `@recompile_invalidations` around the imports, so the simulator and the
   plotting stack are compiled together.
-- A `@compile_workload` that runs the smallest representative solve and a
-  plot save.
+- Every Makie backend a session can hold at once (`WGLMakie` as well as
+  `GLMakie`), imported inside that block.
+- A `_warm()` function running the smallest representative solve and the
+  plotters your skills teach, each figure saved through GLMakie *and*
+  CairoMakie (the plot tool builds with one and writes its durable record with
+  the other, and neither is warm from the other).
+- A `@compile_workload` whose whole body is `try _warm() catch end`.
 
 This is what makes the difference between a first solve in seconds and one in
-minutes. Set the adapter's `warm_package` to its name, and it is loaded in
-the background at session start.
+minutes, and the same for the first plot. Set the adapter's `warm_package` to
+its name, and it is loaded in the background at session start.
+
+Three things are easy to get wrong here, and all of them fail silently:
+
+- **Bake the plotter the skills teach, not a cheaper relative of it.** The
+  workload only warms the call it actually makes. A skill that teaches an
+  interactive explorer is not served by baking the plain mesh plotter
+  underneath it.
+- **Activate GLMakie before building a figure.** A Makie backend activates
+  itself on load, so whichever you imported last is current, and the
+  interactive plotters refuse to build under a non-interactive one.
+- **Bake in the world the session runs in.** Loading a Makie backend
+  invalidates code specialised against the backends already loaded, and that
+  reaches well past plotting into the solver. A backend the session loads
+  later than the warm package therefore discards part of the bake, solve
+  included, so the warm package has to load them all up front.
+
+The `try` is required (a context-less precompile has no GL and must still bake
+the solve), which is exactly why the workload lives in `_warm()`:
+`tests/test_simulators_smoke.py` calls it directly, without the swallow, so a
+workload that has stopped baking anything fails a test instead of quietly
+making every first call slow again.
 
 ## 4. Skills
 
