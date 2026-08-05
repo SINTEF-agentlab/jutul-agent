@@ -93,3 +93,34 @@ async def test_simulator_warm_package_loads(adapter: SimulatorAdapter, warm_disp
         assert result.error is None, f"{adapter.name}: {result.error}"
         loaded = await julia.eval(f"@isdefined({adapter.warm_package})")
         assert "true" in loaded.output, f"{adapter.name}: warm package not in scope"
+
+
+@pytest.mark.parametrize(
+    "adapter",
+    [a for a in _ADAPTERS if a.warm_package],
+    ids=[a.name for a in _ADAPTERS if a.warm_package],
+)
+async def test_simulator_warm_workload_runs(adapter: SimulatorAdapter, warm_display) -> None:
+    """The warm package's workload still runs, so its bake is not a silent no-op.
+
+    ``@compile_workload`` has to swallow exceptions: a context-less precompile
+    cannot plot, and must still bake the solve. The cost is that a workload which
+    has drifted out of step with its simulator's API bakes nothing and says nothing.
+    The env looks built, loads fine, and every first call is slow again, none of
+    which any other test here can see.
+
+    Each warm package therefore exposes ``_warm()``: the same workload without the
+    swallow. Running it is cheap when the bake landed and slow-but-green when it did
+    not, so what this catches is the workload erroring out.
+    """
+    env = adapter.julia_env_template_path
+    if not _env_ready(adapter):
+        pytest.skip(f"{adapter.name} env not instantiated (run `Pkg.instantiate()` on {env})")
+
+    kernel_env = {"DISPLAY": warm_display} if warm_display else None
+    config = KernelConfig(julia_project=env, env=kernel_env)
+    async with JuliaKernel(config) as julia:
+        result = await julia.eval(f"using {adapter.warm_package}")
+        assert result.error is None, f"{adapter.name}: {result.error}"
+        ran = await julia.eval(f"{adapter.warm_package}._warm()")
+        assert ran.error is None, f"{adapter.name}: warm workload failed: {ran.error}"
