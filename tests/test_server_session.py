@@ -7,6 +7,9 @@ A test ``SessionManager`` is injected with a host factory that wraps those fakes
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -1127,3 +1130,74 @@ def test_resume_reattaches_to_a_live_idle_session(tmp_path: Path) -> None:
         assert resp.status_code == 200
         assert resp.json()["kernel_restarted"] is False
         assert manager.get(sid) is before  # the same live host, not a rebuilt one
+
+
+async def _accept_recording_server(recorder: list[bytes]):
+    """A bare TCP listener that records anything a client sends it."""
+
+    async def handle(reader, writer):
+        with contextlib.suppress(Exception):
+            recorder.append(await asyncio.wait_for(reader.read(1), timeout=0.3))
+        writer.close()
+
+    return await asyncio.start_server(handle, "127.0.0.1", 0)
+
+
+def test_readiness_probe_never_reaches_the_plot_server(tmp_path: Path) -> None:
+    """A HEAD on a live plot route must not be forwarded to Bonito.
+
+    The canvas polls this route to learn when the live server is up, retrying with
+    backoff. Bonito renders the figure's app for anything that reaches its route --
+    HEAD included -- and every render leaves a WGLMakie screen and a session
+    registered on the figure that nothing removes, because no browser ever attaches
+    to a probe. Makie resolves a scene's screen by taking the first match, so those
+    corpses shadow the live view and picking (with the click-to-select built on it)
+    stops working.
+
+    Asserting the upstream received *no bytes* is the point: a forwarding proxy
+    would send it a request line, which is exactly what allocates the screen.
+    """
+
+    manager = _manager(echo_agent, tmp_path)
+    client = TestClient(create_app(manager))
+    sid = client.post("/sessions", json={"sim": "demo", "model": "ollama:qwen3"}).json()[
+        "session_id"
+    ]
+
+    # Nothing serving live plots for this session yet.
+    assert client.head(f"/live/{sid}/viz/anything").status_code == 404
+
+    received: list[bytes] = []
+
+    async def run() -> tuple[int, list[bytes]]:
+        server = await _accept_recording_server(received)
+        port = server.sockets[0].getsockname()[1]
+        manager.get(sid).session.web_plot_port = port
+        resp = client.head(f"/live/{sid}/viz/plot")
+        server.close()
+        await server.wait_closed()
+        return resp.status_code, received
+
+    status, sent = asyncio.run(run())
+    assert status == 200, "a reachable plot server must read as ready"
+    assert sent == [] or sent == [b""], f"probe was forwarded upstream: {sent!r}"
+
+
+def test_readiness_probe_reports_an_unreachable_plot_server(tmp_path: Path) -> None:
+    """A recorded port with nothing behind it must not read as ready.
+
+    Otherwise the canvas mounts a live frame against a dead port instead of waiting.
+    """
+
+    manager = _manager(echo_agent, tmp_path)
+    client = TestClient(create_app(manager))
+    sid = client.post("/sessions", json={"sim": "demo", "model": "ollama:qwen3"}).json()[
+        "session_id"
+    ]
+
+    with socket.socket() as probe:  # a port nothing is listening on
+        probe.bind(("127.0.0.1", 0))
+        dead_port = probe.getsockname()[1]
+    manager.get(sid).session.web_plot_port = dead_port
+
+    assert client.head(f"/live/{sid}/viz/plot").status_code == 502

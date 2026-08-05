@@ -481,6 +481,30 @@ def create_app(
 
         import httpx
 
+        # Answer a readiness probe here rather than forwarding it. Bonito renders the
+        # figure's app for *any* request reaching its route, HEAD included, and each
+        # render leaves behind a WGLMakie screen that nothing removes, because no browser
+        # attaches to a HEAD. The canvas polls this route to find out when the live server
+        # is up, so a figure that takes a moment collects a fistful of dead screens — and
+        # those shadow the real view, since Makie resolves a scene's screen by taking the
+        # first backend match, breaking picking and the click-to-select built on it.
+        #
+        # A readiness check only has to answer "is the server there", which a connection
+        # settles without rendering anything.
+        if request.method == "HEAD":
+            try:
+                _reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection("127.0.0.1", port), timeout=5.0
+                )
+            except (TimeoutError, OSError) as exc:
+                raise HTTPException(
+                    status_code=502, detail=f"live plot server unreachable: {exc}"
+                ) from exc
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+            return Response(status_code=200)
+
         hop_by_hop = {"host", "content-length", "connection"}
         headers = [(k, v) for k, v in request.headers.items() if k.lower() not in hop_by_hop]
         async with httpx.AsyncClient() as client:
