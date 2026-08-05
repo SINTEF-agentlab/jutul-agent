@@ -200,8 +200,69 @@ def _web_figure_block(user_code: str) -> str:
         "    )\n"
         # Release the GL screen the display absorption opened; the web surface never
         # shows it, and its render loop would outlive the plot.
-        "    try; GLMakie.closeall(); catch; end\n"
+        "    try; GLMakie.closeall(); catch; end\n" + RESTORE_OPAQUE_OVERLAY_DEPTH_WRITES
     )
+
+
+# GLMakie reads ``transparency = true`` as "composite me after all opaque geometry", and
+# has an order-independent pass that does it. WGLMakie has none: the attribute reaches
+# three.js as nothing but ``depthWrite: false`` (``create_material`` in ThreeHelper.js),
+# so the plot writes colour and no depth, and whatever renders after it paints over.
+# Upstream calls this a bug — MakieOrg/Makie.jl#4673, open and untouched since 2024-12 —
+# so this compensates for it rather than anticipating a fix.
+# ``transparent`` is set unconditionally there, so clearing the attribute costs no alpha
+# blending — it only gives the plot its depth writes back.
+#
+# Something does render after it: ``plot_explorer`` draws its gradient backdrop last and
+# leans on already-written depth to stay behind the 3D content. JutulDarcy's
+# ``plot_well!`` draws its well-name ``text!`` with ``transparency = true``, so the
+# backdrop erased every label except where the mesh sat behind one and held the depth test
+# off it — readable over the reservoir, gone over open background, fine in the terminal.
+#
+# Keyed on opacity, not on the plot being text: a plot with nothing to blend gains nothing
+# from ``transparency`` under either backend, and loses the depth that keeps it on screen
+# under this one. Anything not provably opaque keeps the attribute, and only the
+# annotation primitives are considered — surfaces, images and volumes are where
+# transparency does real work, so this doesn't get a vote there.
+RESTORE_OPAQUE_OVERLAY_DEPTH_WRITES = (
+    "    try\n"
+    "        local _jap_scenes = Any[_fig.scene]\n"
+    "        while !isempty(_jap_scenes)\n"
+    "            local _jap_s = pop!(_jap_scenes)\n"
+    "            local _jap_plots = Any[_jap_s.plots...]\n"
+    # Recipes nest, so walk each plot's own children rather than the scene's top level.
+    "            while !isempty(_jap_plots)\n"
+    "                local _jap_p = pop!(_jap_plots)\n"
+    "                if _jap_p isa _M.Text || _jap_p isa _M.Lines ||\n"
+    "                        _jap_p isa _M.LineSegments || _jap_p isa _M.Scatter\n"
+    "                    local _jap_opaque = false\n"
+    # Fail closed: an attribute set we cannot read leaves the plot exactly as the
+    # plotter asked for it.
+    "                    try\n"
+    "                        local _jap_c = _jap_p.color[]\n"
+    # One colour, many colours, or per-element values whose alpha lives in the
+    # colormap rather than in the values themselves.
+    "                        local _jap_cols = _jap_c isa AbstractArray{<:Real} ?\n"
+    "                            _M.to_colormap(_jap_p.colormap[]) :\n"
+    "                            _jap_c isa AbstractArray ? _jap_c : (_jap_c,)\n"
+    "                        _jap_opaque = _jap_p.alpha[] >= 1 &&\n"
+    "                            all(x -> _M.RGBAf(_M.to_color(x)).alpha >= 1, _jap_cols)\n"
+    "                    catch\n"
+    "                        _jap_opaque = false\n"
+    "                    end\n"
+    # Best-effort per plot: one plot whose attribute will not take must not cost the
+    # rest of the figure its overlays.
+    "                    if _jap_opaque\n"
+    "                        try; _jap_p.transparency[] = false; catch; end\n"
+    "                    end\n"
+    "                end\n"
+    "                append!(_jap_plots, _jap_p.plots)\n"
+    "            end\n"
+    "            append!(_jap_scenes, _jap_s.children)\n"
+    "        end\n"
+    "    catch\n"
+    "    end\n"
+)
 
 
 # Detach the screen ``CairoMakie.save`` registers on the figure while it renders the
