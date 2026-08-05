@@ -34,6 +34,7 @@ from pathlib import Path
 
 import pytest
 
+from jutul_agent.agent import plot_julia_src as jl
 from jutul_agent.agent.plot_julia import make_plot_julia_tool
 from jutul_agent.display import has_display, managed_display, xvfb_available
 from jutul_agent.juliakernel import JuliaKernel, KernelConfig
@@ -93,6 +94,15 @@ def _gl_ready(env_dir: Path) -> bool:
         (env_dir / "Project.toml").exists()
         and (env_dir / "Manifest.toml").exists()
         and manifest_has_package(env_dir, "GLMakie")
+    )
+
+
+def _wgl_ready(env_dir: Path) -> bool:
+    """Env is instantiated *and* actually resolved WGLMakie (the web plotting stack)."""
+    return (
+        (env_dir / "Project.toml").exists()
+        and (env_dir / "Manifest.toml").exists()
+        and manifest_has_package(env_dir, "WGLMakie")
     )
 
 
@@ -248,3 +258,41 @@ async def test_native_plotters_render_to_png(tmp_path: Path, plot_display) -> No
                 failures.append(f"{slot}: PNG looks blank ({png.stat().st_size} bytes)")
         session.finalize()
         assert not failures, "native plotters failed:\n" + "\n".join(failures)
+
+
+@pytest.mark.skipif(
+    not _julia_available() or not _wgl_ready(JUTULDARCY_ENV),
+    reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
+)
+async def test_pick_guard_still_applies_to_the_installed_wglmakie() -> None:
+    """The empty-buffer pick guard actually replaces the method it means to.
+
+    This one is a *canary over someone else's code*. The guard patches an upstream
+    bug -- WGLMakie's single-point `pick` indexes the pick buffer without checking it
+    is non-empty -- by redefining that method. Which means it is pinned to a signature
+    we do not own: rename `pick_native`, or resign `Makie.pick`, and the redefinition
+    stops applying.
+
+    Nothing would fail loudly if that happened. The plot still renders; the buffer is
+    still empty on the first click; the BoundsError comes back, propagates out of the
+    Observables notify, and every listener behind the picking handler is skipped -- so
+    a mouse button silently stops working in the browser and nothing points at why.
+
+    So assert dispatch actually lands on the replacement: if it resolves back into
+    WGLMakie's own picking.jl, the guard is inert and this fails while it is still
+    cheap to notice. When upstream checks the buffer itself, this test is the signal
+    to drop the guard rather than keep carrying it.
+    """
+
+    config = KernelConfig(julia_project=JUTULDARCY_ENV)
+    async with JuliaKernel(config) as julia:
+        loaded = await julia.eval("import WGLMakie")
+        assert not loaded.error, f"WGLMakie did not load: {loaded.error}"
+
+        result = await julia.eval(jl.PICK_EMPTY_BUFFER_GUARD)
+        assert not result.error, f"guard raised: {result.error}"
+        assert f"{jl.PICK_GUARD_MARKER}=ok" in (result.output or ""), (
+            "the pick guard no longer applies to this WGLMakie -- dispatch still lands "
+            "in its own picking.jl, so the empty-buffer BoundsError is back and the "
+            f"mouse button it kills is dead again. Julia said: {result.output!r}"
+        )
