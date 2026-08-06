@@ -41,7 +41,7 @@ export type ThreadItem =
       note?: string;
     }
   | { kind: "viz-chip"; id: string; viewId: string; title: string; viewKind: ViewKind }
-  | { kind: "artifact-image"; id: string; viewId: string; url: string; title: string }
+  | { kind: "artifact-image"; id: string; url: string; title: string }
   | { kind: "artifact-file"; id: string; url: string; caption: string }
   | { kind: "sys-note"; id: string; text: string; level?: "warn" }
   | { kind: "ui-note"; id: string; action: string; payload: Record<string, unknown> }
@@ -134,6 +134,7 @@ export interface SessionActions {
   addContext: (markdown: string) => void;
   // canvas
   openView: (id: string) => void;
+  openImage: (url: string, title: string) => void;
   closeCanvas: () => void;
   removeView: (id: string) => void;
   pinDoc: (url: string, title: string, slot: string) => void;
@@ -318,17 +319,11 @@ export function createSessionStore() {
     const onArtifact = (msg: Extract<ServerMessage, { type: "artifact" }>) => {
       finalizeAssistant();
       if (msg.mime && msg.mime.startsWith("image/")) {
-        const id = viewIdOf(msg);
+        // No view yet: its card shows the image in full, so a canvas tab up front
+        // is one per image nobody asked for. `openImage` registers one on demand.
         const title = msg.caption || "Image";
-        upsertView(
-          { id, url: msg.url, title, kind: "image", poster: msg.url, nonce: 0 },
-          false,
-        );
         set((s) => ({
-          items: [
-            ...s.items,
-            { kind: "artifact-image", id: nextId(), viewId: id, url: msg.url, title },
-          ],
+          items: [...s.items, { kind: "artifact-image", id: nextId(), url: msg.url, title }],
         }));
       } else {
         set((s) => ({
@@ -528,6 +523,12 @@ export function createSessionStore() {
 
       openView: (id) =>
         set((s) => (s.views[id] ? { activeView: id, canvasOpen: true } : {})),
+
+      openImage: (url, title) => {
+        const id = viewIdOf({ url });
+        upsertView({ id, url, title, kind: "image", poster: url, nonce: 0 }, false);
+        get().openView(id);
+      },
 
       closeCanvas: () => set({ canvasOpen: false }),
 
