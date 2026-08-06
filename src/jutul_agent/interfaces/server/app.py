@@ -544,8 +544,19 @@ def create_app(
         if websocket.url.query:
             upstream_url += f"?{websocket.url.query}"
 
+        # No keepalive on this hop. The client library's default is to ping the
+        # upstream every 20s and tear the connection down when a pong does not come
+        # back in another 20s, but the peer here is the Julia process: its plot
+        # server's handler tasks share a thread pool with whatever the kernel is
+        # computing, so a long solve can leave them unscheduled for minutes. Pinging
+        # measures how busy Julia is, not whether the connection is alive, and every
+        # timeout kills a working socket that the browser then reconnects, in a loop
+        # for as long as the solve runs. The socket itself still reports a plot
+        # server that actually goes away.
         try:
-            async with websockets.connect(upstream_url, max_size=None) as upstream:
+            async with websockets.connect(
+                upstream_url, max_size=None, ping_interval=None
+            ) as upstream:
 
                 async def to_upstream() -> None:
                     try:
@@ -573,13 +584,17 @@ def create_app(
                                 await websocket.send_text(message)
 
                 pumps = {asyncio.create_task(to_upstream()), asyncio.create_task(from_upstream())}
-                _, pending = await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
+                done, pending = await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
                 for task in pending:
                     task.cancel()
                 # Wait for the cancellation to actually land: otherwise the loser can
                 # still be mid-``send`` when we close the client socket below, racing
-                # a "send after close" ASGI error instead of a clean cancel.
-                await asyncio.gather(*pending, return_exceptions=True)
+                # a "send after close" ASGI error instead of a clean cancel. Gather the
+                # winner as well, so that a pump which ended by raising has its
+                # exception retrieved here: an unretrieved one stays on the task until
+                # it is collected and then prints itself as a bare, unattributed
+                # traceback, typically long after the connection it belongs to.
+                await asyncio.gather(*done, *pending, return_exceptions=True)
         except (WebSocketDisconnect, OSError):
             pass
         finally:
