@@ -50,6 +50,14 @@ class Capability:
     way ``JutulAgent<Sim>`` does. Without a workload, ``Pkg.precompile`` caches
     the module's top level but none of the type-specialised inference behind its
     entry points, and the first real call pays that in full.
+
+    ``warm_code`` are Julia snippets run in the background once the packages are
+    loaded and the GL context is up. This is for what precompilation cannot reach:
+    code a workload cannot run because it only exists at top level in ``Main`` (a
+    script the tools ``include``), or specialisations that depend on values a bake
+    has no way to produce. Each snippet is best-effort and must be cheap enough
+    that a user who types quickly does not wait behind it -- the kernel evaluates
+    serially, so a slow snippet delays their first call rather than helping it.
     """
 
     name: str
@@ -57,6 +65,7 @@ class Capability:
     skill_dirs: tuple[tuple[str, str], ...] = ()
     dependencies: tuple[Path, ...] = ()
     warm_packages: tuple[str, ...] = ()
+    warm_code: tuple[str, ...] = ()
     subagents: tuple[SubagentFactory, ...] = ()
     prompt_fragment: str = ""
     ui_actions: tuple[str, ...] = ()
@@ -92,6 +101,11 @@ def collect_warm_packages(capabilities: Sequence[Capability]) -> list[str]:
             if name.strip():
                 seen.setdefault(name.strip(), None)
     return list(seen)
+
+
+def collect_warm_code(capabilities: Sequence[Capability]) -> list[str]:
+    """The capability-provided Julia snippets to run at session start, in order."""
+    return [code for cap in capabilities for code in cap.warm_code if code.strip()]
 
 
 def collect_subagents(capabilities: Sequence[Capability], session: Session) -> list[dict[str, Any]]:
