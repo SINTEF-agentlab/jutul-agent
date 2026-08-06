@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Sequence
 from typing import Any
 
 
-def load_statement(warm_package: str) -> str:
-    """The ``using`` that brings up the simulator's Julia world, warm package first.
+def load_statement(warm_package: str, capability_packages: Sequence[str] = ()) -> str:
+    """The ``using`` that brings up the session's Julia world, most-derived first.
 
     The warm package depends on the shared one, so naming it first loads both in the
     order they were baked in. Order is not cosmetic here: a pkgimage is only valid
@@ -26,11 +27,23 @@ def load_statement(warm_package: str) -> str:
     shared package second costs nothing, since by then it is loaded and this only
     binds it into ``Main``, which is what the generated plot code calls it through.
 
+    ``capability_packages`` follow the simulator's, not the other way round. A
+    capability package is a sibling of the warm package rather than a dependant — it
+    is built on the simulator, but knows nothing of ``JutulAgent<Sim>`` — so "most
+    derived" does not order the pair, and the question is only which bake survives.
+    Measured on the geoteric capability: naming it first costs 6.08s of recompilation
+    at load, naming it after the warm package 1.56s. The warm package brings the
+    backends and the shared runtime, so going second means arriving into a world that
+    is already complete, with nothing left to invalidate it.
+
     A simulator with no warm package loads the shared one alone: it is where the
     figure-capture helpers live, and is needed either way.
     """
 
-    return f"using {warm_package}, JutulAgent" if warm_package else "using JutulAgent"
+    names = [warm_package] if warm_package else []
+    names.extend(n for n in capability_packages if n)
+    names.append("JutulAgent")
+    return "using " + ", ".join(names)
 
 
 # Initialise this session's GLMakie GL context (the per-session cost precompilation
@@ -50,9 +63,11 @@ end
 """
 
 
-def start_warmup(julia: Any, warm_package: str) -> asyncio.Task[Any] | None:
-    """Background warm-up shared by every front end: load the simulator's Julia world,
-    pin HYPRE's threads, then initialise the GL context.
+def start_warmup(
+    julia: Any, warm_package: str, capability_packages: Sequence[str] = ()
+) -> asyncio.Task[Any] | None:
+    """Background warm-up shared by every front end: load the simulator's Julia world
+    (plus any capability packages), pin HYPRE's threads, then initialise the GL context.
 
     The GL step also runs ``GLMakie.activate!(visible = false)``, which is what keeps
     a native plot window from popping up on a machine with a real display — every
@@ -60,7 +75,7 @@ def start_warmup(julia: Any, warm_package: str) -> asyncio.Task[Any] | None:
     Best-effort: each step is wrapped so a missing piece never breaks startup, and the
     returned task is cancelled on session teardown.
     """
-    bootstrap = f"try; @eval {load_statement(warm_package)}; catch; end"
+    bootstrap = f"try; @eval {load_statement(warm_package, capability_packages)}; catch; end"
 
     async def _run() -> None:
         with contextlib.suppress(Exception):
