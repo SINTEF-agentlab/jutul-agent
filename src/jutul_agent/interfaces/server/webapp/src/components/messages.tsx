@@ -267,15 +267,15 @@ export function VizChip({ viewId, title, viewKind }: { viewId: string; title: st
   );
 }
 
-export function ArtifactImageCard({ viewId, url, title }: { viewId: string; url: string; title: string }) {
-  const openView = useSel((s) => s.openView);
+export function ArtifactImageCard({ url, title }: { url: string; title: string }) {
+  const openImage = useSel((s) => s.openImage);
   return (
     <div className="art-card">
       <div className="head">
         <span className="grow">{title}</span>
-        <button className="ghost" onClick={() => openView(viewId)}>Open</button>
+        <button className="ghost" onClick={() => openImage(url, title)}>Open</button>
       </div>
-      <img src={url} alt={title} onClick={() => openView(viewId)} />
+      <img src={url} alt={title} onClick={() => openImage(url, title)} />
     </div>
   );
 }

@@ -96,10 +96,23 @@ describe("canvas views", () => {
 });
 
 describe("artifacts", () => {
-  it("an image artifact becomes a view and an inline image item", () => {
+  it("an image artifact is an inline image item and claims no canvas tab", () => {
+    // Its card shows the image in full, so a tab up front is one the user never
+    // asked for, sitting next to the live views the canvas exists for.
     state().handle({ type: "artifact", url: "/p.png", mime: "image/png", caption: "Fig" });
     expect(byKind("artifact-image")[0]).toMatchObject({ url: "/p.png", title: "Fig" });
+    expect(Object.keys(state().views)).toHaveLength(0);
+    expect(state().canvasOpen).toBe(false);
+  });
+  it("opening an image registers its view on demand and shows it", () => {
+    state().handle({ type: "artifact", url: "/p.png", mime: "image/png", caption: "Fig" });
+    state().openImage("/p.png", "Fig");
     expect(state().views["url:/p.png"].kind).toBe("image");
+    expect(state().activeView).toBe("url:/p.png");
+    expect(state().canvasOpen).toBe(true);
+    // Opening the same image again must not stack a duplicate tab.
+    state().openImage("/p.png", "Fig");
+    expect(state().viewOrder).toEqual(["url:/p.png"]);
   });
   it("a non-image artifact is just a file link, no view", () => {
     state().handle({ type: "artifact", url: "/f.csv", mime: "text/csv", caption: "Data" });
