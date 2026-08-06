@@ -16,6 +16,47 @@ from collections.abc import Sequence
 from typing import Any
 
 
+class YieldsToWork:
+    """A Julia session that drops the background warm-up as soon as real work arrives.
+
+    The warm-up is only ever a bet that the session will be idle for a while. The
+    kernel evaluates serially, so when the bet is wrong the warm-up is no longer free:
+    the user's first call queues behind however much of it is left, and they wait
+    longer than if nothing had been warmed at all.
+
+    Cancelling the warm-up task is enough to settle that. ``JuliaKernel.eval`` already
+    treats cancellation as "interrupt this eval and keep the session", so the in-flight
+    warm-up eval is interrupted, its result frame is drained, and the lock is released
+    before the caller's own eval takes it. Nothing here has to know how that works.
+
+    The distinction between warm-up and real work is structural rather than inspected:
+    the warm-up is handed the kernel itself, and everything else goes through this
+    wrapper, so an eval reaching here is by construction not the warm-up's own.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self._warmup: asyncio.Task[Any] | None = None
+
+    def set_warmup(self, task: asyncio.Task[Any] | None) -> None:
+        self._warmup = task
+
+    async def eval(self, code: str, on_chunk: Any = None) -> Any:
+        self.drop_warmup()
+        return await self._inner.eval(code, on_chunk)
+
+    def drop_warmup(self) -> None:
+        """Cancel the warm-up if one is still running. Idempotent."""
+        task = self._warmup
+        if task is not None and not task.done():
+            task.cancel()
+
+    # Everything else is the kernel's own: reset, restart, interrupt, the async
+    # context manager, and whatever a backend adds.
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
 def load_statement(warm_package: str, capability_packages: Sequence[str] = ()) -> str:
     """The ``using`` that brings up the session's Julia world, most-derived first.
 
@@ -28,8 +69,8 @@ def load_statement(warm_package: str, capability_packages: Sequence[str] = ()) -
     binds it into ``Main``, which is what the generated plot code calls it through.
 
     ``capability_packages`` follow the simulator's, not the other way round. A
-    capability package is a sibling of the warm package rather than a dependant — it
-    is built on the simulator, but knows nothing of ``JutulAgent<Sim>`` — so "most
+    capability package is a sibling of the warm package rather than a dependant. It
+    is built on the simulator, but knows nothing of ``JutulAgent<Sim>``, so "most
     derived" does not order the pair, and the question is only which bake survives.
     Measured on the geoteric capability: naming it first costs 6.08s of recompilation
     at load, naming it after the warm package 1.56s. The warm package brings the
@@ -73,7 +114,7 @@ def start_warmup(
     (plus any capability packages), pin HYPRE's threads, then initialise the GL context.
 
     The GL step also runs ``GLMakie.activate!(visible = false)``, which is what keeps
-    a native plot window from popping up on a machine with a real display — every
+    a native plot window from popping up on a machine with a real display; every
     front end wants its plots offscreen (the TUI shows a PNG, the web serves WGLMakie).
     Best-effort: each step is wrapped so a missing piece never breaks startup, and the
     returned task is cancelled on session teardown.
@@ -98,8 +139,8 @@ def start_warmup(
 
 # Pin HYPRE's OpenMP thread count for this session. JutulDarcy loads HYPRE (its
 # default CPR preconditioner) and lazily calls `HYPRE.Init()` with one thread at the
-# first solve. We look up the loaded HYPRE module by UUID — so this is a no-op for a
-# simulator that doesn't pull HYPRE in, and needs no env-level dependency — then
+# first solve. We look up the loaded HYPRE module by UUID, so this is a no-op for a
+# simulator that doesn't pull HYPRE in, and needs no env-level dependency, then
 # `Init()` (idempotent: the later lazy Init is a no-op) and `SetNumThreads` to the
 # count Python computed (`JUTUL_AGENT_HYPRE_THREADS`). HYPRE clamps it to
 # [1, Sys.CPU_THREADS] internally. Best-effort: any failure leaves HYPRE's
