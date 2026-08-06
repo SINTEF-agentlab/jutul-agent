@@ -8,18 +8,29 @@ import pytest
 
 from jutul_agent.julia.session import EvalResult
 from jutul_agent.lab.fakes import FakeJulia
-from jutul_agent.simulators.warmup import GL_CONTEXT_WARMUP, start_warmup
+from jutul_agent.simulators.warmup import GL_CONTEXT_WARMUP, load_statement, start_warmup
 
 
-async def test_start_warmup_loads_both_runtime_packages() -> None:
+def test_load_statement_names_the_warm_package_first() -> None:
+    # The warm package depends on the shared one, so naming it first loads both in
+    # the order they were baked in. Naming the shared one first would put the session
+    # in a different world than the bake, and the difference is rebuilt at first use.
+    assert load_statement("JutulAgentBattMo") == "using JutulAgentBattMo, JutulAgent"
+
+
+def test_load_statement_binds_the_shared_package_into_main() -> None:
+    # Loading the warm package does not bring the shared package's own name into
+    # scope, and the generated plot code calls it as `JutulAgent.JutulAgentPlots`.
+    for warm_package in ("JutulAgentBattMo", ""):
+        assert load_statement(warm_package).endswith("JutulAgent")
+
+
+async def test_start_warmup_loads_the_packages_in_baked_order() -> None:
     julia = FakeJulia()
     task = start_warmup(julia, "JutulAgentBattMo")
     assert task is not None
     await task
-    # First eval loads the shared runtime + the per-sim warm package; then the GL
-    # context warm-up runs.
-    assert "using JutulAgent" in julia.calls[0]
-    assert "using JutulAgentBattMo" in julia.calls[0]
+    assert load_statement("JutulAgentBattMo") in julia.calls[0]
     assert julia.calls[-1] == GL_CONTEXT_WARMUP
 
 
@@ -28,10 +39,9 @@ async def test_start_warmup_without_warm_package_still_loads_shared() -> None:
     task = start_warmup(julia, "")
     assert task is not None
     await task
-    # A placeholder sim with no warm package still loads the shared runtime and
-    # warms the GL context.
-    assert "using JutulAgent" in julia.calls[0]
-    assert "JutulAgentBattMo" not in julia.calls[0]
+    # A placeholder sim with no warm package still loads the shared runtime, which is
+    # where the capture helpers live, and warms the GL context.
+    assert "using JutulAgent;" in julia.calls[0]
     assert julia.calls[-1] == GL_CONTEXT_WARMUP
 
 

@@ -77,6 +77,9 @@ precompilation. Start from an existing simulator's and adapt the workload:
   plotting stack are compiled together.
 - Every Makie backend a session can hold at once (`WGLMakie` as well as
   `GLMakie`), imported inside that block.
+- The shared `JutulAgent` package, imported inside that block too, and declared
+  in the warm package's own `[deps]`. That makes it a dependency rather than a
+  sibling, which is what lets a session load it by loading this one.
 - A `_warm()` function running the smallest representative solve and the
   plotters your skills teach, each figure saved through GLMakie *and*
   CairoMakie (the plot tool builds with one and writes its durable record with
@@ -101,6 +104,14 @@ Three things are easy to get wrong here, and all of them fail silently:
   reaches well past plotting into the solver. A backend the session loads
   later than the warm package therefore discards part of the bake, solve
   included, so the warm package has to load them all up front.
+- **Load the warm package first, not alongside.** A pkgimage is only valid for
+  the world it was baked in, so the order the session loads packages in has to
+  match the order they were built in, and the shared `JutulAgent` package is
+  built after the simulator's imports. Loading it ahead of the warm package
+  instead invalidates whatever the bake inferred through a method it brings,
+  which is then rebuilt at first use. Depending on it, so that one `using` pulls
+  in both, makes the session's order the baked order by construction; getting
+  this wrong is worth tens of seconds on the first solve and plot.
 
 The `try` is required (a context-less precompile has no GL and must still bake
 the solve), which is exactly why the workload lives in `_warm()`:

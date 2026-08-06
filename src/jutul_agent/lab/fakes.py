@@ -729,6 +729,7 @@ def make_fake_adapter(
     name: str = "fakesim",
     display_name: str = "FakeSim",
     package: str = "FakePkg",
+    warm_package: str = "",
 ) -> SimulatorAdapter:
     module_dir = tmp_path / "sim"
     (module_dir / "skills").mkdir(parents=True, exist_ok=True)
@@ -739,4 +740,5 @@ def make_fake_adapter(
         package_imports=(package,),
         primary_package=package,
         domain_hints="",
+        warm_package=warm_package,
     )
