@@ -387,6 +387,10 @@ def web_server_start(port: int, session_id: str) -> str:
         f'        global __JUTUL_WEB_SERVER__ = Bonito.Server("127.0.0.1", {int(port)};\n'
         f'            proxy_url = raw"/live/{session_id}/")\n'
         "        global __JUTUL_WEB_FIGS__ = Dict{String,Any}()\n"
+        # Routes in least-to-most recently served order. A recapture with no slot
+        # has to name a figure, and the dict above is unordered, so recency is
+        # tracked here rather than recovered from it.
+        "        global __JUTUL_WEB_ORDER__ = String[]\n"
         "        global __JUTUL_WEB_PORT__ = __JUTUL_WEB_SERVER__.port\n"
         "    end\n"
         # Print the bound port on a uniquely-tagged line so the Python side reads it
@@ -417,6 +421,12 @@ def web_live_call(*, user_code: str, png_path: Path, html_path: Path, route: str
         + _web_figure_block(user_code)
         + "    WGLMakie.activate!(resize_to = :parent)\n"
         + f'    Main.__JUTUL_WEB_FIGS__[raw"{route}"] = _fig\n'
+        # Move the route to the end of the recency list (a re-plot on the same slot
+        # reuses its route, so drop any earlier entry rather than double-listing it).
+        "    let _order = Main.__JUTUL_WEB_ORDER__\n"
+        f'        filter!(!=(raw"{route}"), _order)\n'
+        f'        push!(_order, raw"{route}")\n'
+        "    end\n"
         f'    Bonito.route!(Main.__JUTUL_WEB_SERVER__, raw"{route}" => Bonito.App(() ->\n'
         f'        Bonito.DOM.div(Main.__JUTUL_WEB_FIGS__[raw"{route}"];\n'
         '            style = "width:100%; height:100%;")))\n'
@@ -474,6 +484,135 @@ def recapture_call(*, key: str, png_path: Path, size: list[int] | None) -> str:
     )
 
 
+# Printed on the one line the Python side reads back, the way the other Julia/Python
+# handshakes in this file signal a result. A refusal is an ordinary situation with
+# an instruction attached, so it is reported as that instruction rather than raised,
+# which would trail a Julia backtrace the model has to read past.
+WEB_RECAPTURE_REFUSED = "__JUTUL_RECAPTURE_REFUSED__"
+
+# A view the browser has never painted has no pixels to send back, so it answers
+# the request with nothing. That is what happens to every plot but one when several
+# are drawn at once, since only the one the canvas ends up showing gets painted; a
+# view that has been displayed once stays readable afterwards.
+_NOT_ON_SCREEN = (
+    "this plot has not been drawn in the canvas, so it has no view to snapshot. Ask "
+    "the user to select its tab there once, then try again."
+)
+
+
+def viz_route(plot_id: str) -> str:
+    """The Bonito route a live figure is served on, given its slot or plot id.
+
+    One spelling shared by the three sites that need it (serve, recapture, close):
+    they have no way to fail loudly on each other if it drifts, since a route that
+    does not match simply reads as a plot that is not there.
+    """
+
+    return f"/viz/{plot_id}"
+
+
+def web_recapture_call(*, slot: str, png_path: Path) -> str:
+    """Julia to snapshot a live web figure's browser view at its current state.
+
+    The browser owns what the user currently sees, because WGLMakie runs the camera
+    client-side, so the snapshot has to come from there: ``Makie.colorbuffer`` on a
+    WGLMakie screen asks the connected Bonito session to render the scene and send
+    the canvas pixels back. The GLMakie path this replaces looks in a registry that
+    only native windows populate, and so reports "no interactive window" for every
+    web figure.
+
+    A view that cannot answer throws from deep inside the backend, so the read is
+    guarded and reports instead. The capture is bounded by ``timedwait`` so a
+    connection that is dead but not closed cannot stall the tool for the backend's
+    own much longer timeout.
+    """
+
+    # Reached only past the guards below, which is also what proves WGLMakie is
+    # loaded: importing it here would spend seconds of the kernel on a session that
+    # has never plotted, just to answer that there is nothing to snapshot.
+    refuse = f'return println("{WEB_RECAPTURE_REFUSED}", '
+    if slot:
+        resolve = (
+            f'        local _route = raw"{viz_route(slot)}"\n'
+            "        if !haskey(_figs, _route)\n"
+            f"            {refuse}\n"
+            f"                \"no live plot for slot '{slot}' (it may have been closed \" *\n"
+            '                "or released); re-plot it with plot_julia and try again.")\n'
+            "        end\n"
+        )
+    else:
+        resolve = (
+            "        local _order = isdefined(Main, :__JUTUL_WEB_ORDER__) ?"
+            " Main.__JUTUL_WEB_ORDER__ : String[]\n"
+            "        if isempty(_order)\n"
+            f"            {refuse}\n"
+            '                "no live plots in this session to recapture; " *\n'
+            '                "make one with plot_julia first.")\n'
+            "        end\n"
+            "        local _route = last(_order)\n"
+        )
+    return (
+        # A function so the checks can return early; a `begin` block cannot.
+        "(function ()\n"
+        "        local _figs = isdefined(Main, :__JUTUL_WEB_FIGS__) ?"
+        " Main.__JUTUL_WEB_FIGS__ : Dict{String,Any}()\n"
+        f"{resolve}"
+        "        local _fig = _figs[_route]\n"
+        "        local _screen = nothing\n"
+        "        for s in _fig.scene.current_screens\n"
+        "            if s isa Main.WGLMakie.Screen && isopen(s)\n"
+        "                _screen = s\n"
+        "                break\n"
+        "            end\n"
+        "        end\n"
+        f'        _screen === nothing && {refuse}"{_NOT_ON_SCREEN}")\n'
+        "        local _snap = @async Main.WGLMakie.Makie.colorbuffer(_screen)\n"
+        "        if timedwait(() -> istaskdone(_snap), 20.0) !== :ok\n"
+        f"            {refuse}\n"
+        '                "the browser view did not respond to the snapshot request; " *\n'
+        '                "is its tab still open?")\n'
+        "        end\n"
+        "        local _img = try\n"
+        "            fetch(_snap)\n"
+        "        catch\n"
+        "            nothing\n"
+        "        end\n"
+        f'        (_img === nothing || isempty(_img)) && {refuse}"{_NOT_ON_SCREEN}")\n'
+        f'        Main.WGLMakie.PNGFiles.save(raw"{png_path.as_posix()}", _img)\n'
+        '        return "ok"\n'
+        "end)()"
+    )
+
+
 def close_windows_call(key: str) -> str:
     """Julia to close one window by key, or all windows when ``key`` is empty."""
     return f'JutulAgent.JutulAgentPlots.close_windows(raw"{key}")'
+
+
+def close_web_plots_call(slot: str) -> str:
+    """Julia to release live web figures: one slot's route, or all when empty.
+
+    The web counterpart of ``close_windows_call``, which closes native windows and
+    so has nothing to close on this surface. Unrouting the figure and dropping it
+    from the registry is what lets the kernel reclaim what a live figure holds. A
+    tab already open in the browser keeps showing its last frame until reloaded.
+    """
+
+    routes = f'[raw"{viz_route(slot)}"]' if slot else "collect(keys(Main.__JUTUL_WEB_FIGS__))"
+    return (
+        "begin\n"
+        # Guarded rather than imported, so closing costs nothing in a session that
+        # never plotted; a server that exists is also what proves Bonito is loaded.
+        "    if isdefined(Main, :__JUTUL_WEB_SERVER__)\n"
+        f"        for r in {routes}\n"
+        "            delete!(Main.__JUTUL_WEB_FIGS__, r)\n"
+        "            filter!(!=(r), Main.__JUTUL_WEB_ORDER__)\n"
+        "            try\n"
+        "                Main.Bonito.delete_route!(Main.__JUTUL_WEB_SERVER__, r)\n"
+        "            catch\n"
+        "            end\n"
+        "        end\n"
+        "    end\n"
+        '    "ok"\n'
+        "end"
+    )

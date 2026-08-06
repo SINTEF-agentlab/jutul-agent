@@ -194,12 +194,16 @@ def _finalize(
     view: bool,
     lead: str,
     extra_parts: list[str],
+    kind: str = "plot",
 ) -> str | list[dict[str, Any]]:
     """Record the PNG artifact and build the reply (text, or text plus image when view).
 
     Shared by plot_julia and recapture_plot. The PNG artifact is always recorded
     for the transcript and report; the live Makie window or the TUI's open-artifact
     action is how the user actually sees it.
+
+    ``kind`` routes the browser: ``"plot"`` pins a canvas view, anything else
+    (a recapture's ``"snapshot"``) shows inline.
     """
 
     session.trace.append(
@@ -210,7 +214,7 @@ def _finalize(
             caption=caption or slot or rel_path.rsplit("/", 1)[-1],
             tool_call_id=tool_call_id,
             format="png",
-            kind="plot",
+            kind=kind,
             size_px=size,
             dpi=dpi,
             slot=slot,
@@ -398,7 +402,7 @@ def make_plot_julia_tool(session: Session, *, surface: str = "tui"):
             # Serve live (in-figure widgets work) when the session's Bonito server
             # is up; otherwise fall back to a self-contained static export.
             if live_base:
-                route = f"/viz/{plot_id}"
+                route = jl.viz_route(plot_id)
                 call = jl.web_live_call(
                     user_code=code, png_path=abs_path, html_path=html_abs, route=route
                 )
@@ -461,8 +465,9 @@ def make_plot_julia_tool(session: Session, *, surface: str = "tui"):
     return plot_julia
 
 
-def make_recapture_tool(session: Session):
+def make_recapture_tool(session: Session, *, surface: str = "tui"):
     artifacts_dir = session.output_dir / "artifacts"
+    web = surface == "web"
 
     @tool
     async def recapture_plot(
@@ -472,23 +477,23 @@ def make_recapture_tool(session: Session):
         slot: str | None = None,
         size: list[int] | None = None,
     ) -> str | list[dict[str, Any]]:
-        """Snapshot an open plot window at its CURRENT view and show it to you.
+        """Snapshot an open plot at its CURRENT view and show it to you.
 
-        Use this when the user has rotated/zoomed/stepped a live window and asks
-        what it looks like now. It re-renders that window's figure at its current
-        camera/timestep and (by default) returns the downscaled image so you can
-        describe the new view.
+        Use this when the user has rotated/zoomed/stepped a live plot (a native
+        window, or a live view in the web canvas) and asks what it looks like now.
+        It captures that plot at its current camera/timestep and (by default)
+        returns the downscaled image so you can describe the new view.
 
-        `slot` selects **which** window: the slot you gave that plot in
-        `plot_julia`. Omit it for the most recently opened/refreshed window. You
-        can't drive the window (advance its timestep yourself); you only snapshot
-        what the user currently has. Errors if there's no such open window.
+        `slot` selects **which** plot: the slot you gave it in `plot_julia`. Omit
+        it for the most recently opened/refreshed one. You can't drive the plot
+        (advance its timestep yourself); you only snapshot what the user currently
+        has. Errors if there's no such open plot.
 
         Args:
             caption: Optional caption shown in the transcript.
             view: Return the image so you can see it (default true; that's the point).
-            slot: Which window to recapture (its slot); omit for the most recent.
-            size: Optional `(width, height)` in pixels.
+            slot: Which plot to recapture (its slot); omit for the most recent.
+            size: Optional `(width, height)` in pixels (native windows only).
 
         Returns:
             A confirmation string, or, when `view`, a text+image content list.
@@ -500,15 +505,22 @@ def make_recapture_tool(session: Session):
         abs_path = session.output_dir / rel_path
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-        result = await session.julia.eval(
-            jl.recapture_call(key=safe_slot or "", png_path=abs_path, size=size)
-        )
+        if web:
+            # The browser owns the current view, so the snapshot comes from the plot's
+            # connected live session, at whatever size that canvas is.
+            size = None
+            call = jl.web_recapture_call(slot=safe_slot or "", png_path=abs_path)
+        else:
+            call = jl.recapture_call(key=safe_slot or "", png_path=abs_path, size=size)
+        result = await session.julia.eval(call)
         if result.error:
             return f"ERROR: {result.error}"
+        if jl.WEB_RECAPTURE_REFUSED in result.output:
+            return f"ERROR: {result.output.split(jl.WEB_RECAPTURE_REFUSED, 1)[1].strip()}"
 
         extra: list[str] = []
         if safe_slot:
-            extra.append(f"window={safe_slot}")
+            extra.append(f"plot={safe_slot}" if web else f"window={safe_slot}")
         if size is not None:
             extra.append(f"size={size[0]}x{size[1]}")
         return _finalize(
@@ -524,21 +536,25 @@ def make_recapture_tool(session: Session):
             view=view,
             lead="recaptured view to",
             extra_parts=extra,
+            kind="snapshot",
         )
 
     return recapture_plot
 
 
-def make_close_plots_tool(session: Session):
+def make_close_plots_tool(session: Session, *, surface: str = "tui"):
+    web = surface == "web"
+
     @tool
     async def close_plots(slot: str | None = None) -> str:
-        """Close interactive plot windows.
+        """Close interactive plots (native windows, or live views in the web canvas).
 
-        Pass a `slot` to close that one window; omit to close all of them. Use it
-        when the user asks to close/clear plot windows, or to tidy up.
+        Pass a `slot` to close that one plot; omit to close all of them. Use it
+        when the user asks to close/clear plots, or to tidy up a long session
+        (each live plot holds its data in memory until closed or superseded).
 
         Args:
-            slot: The window to close (its slot); omit to close all.
+            slot: The plot to close (its slot); omit to close all.
 
         Returns:
             A short confirmation.
@@ -546,9 +562,10 @@ def make_close_plots_tool(session: Session):
         safe_slot, slot_err = _resolve_slot(slot)
         if slot_err:
             return slot_err
-        result = await session.julia.eval(jl.close_windows_call(safe_slot or ""))
+        make_call = jl.close_web_plots_call if web else jl.close_windows_call
+        result = await session.julia.eval(make_call(safe_slot or ""))
         if result.error:
             return f"ERROR: {result.error}"
-        return f"closed plot window: {safe_slot}" if safe_slot else "closed all plot windows"
+        return f"closed plot: {safe_slot}" if safe_slot else "closed all plots"
 
     return close_plots

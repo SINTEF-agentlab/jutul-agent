@@ -99,7 +99,8 @@ def artifact_payload(
     """Payload for an ``ARTIFACT`` event: one field set for every writer.
 
     ``path`` is relative to the session output dir. ``kind`` routes the
-    browser viz ("plot", "report"); ``poster`` and ``live_url`` carry the
+    browser viz ("plot", "report"), while anything else ("snapshot", for a
+    recapture) shows inline; ``poster`` and ``live_url`` carry the
     interactive plot's thumbnail and live view when they exist.
     """
     return {

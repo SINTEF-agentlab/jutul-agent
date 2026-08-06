@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.agent.plot_julia import make_plot_julia_tool
+from jutul_agent.agent import plot_julia_src as jl_src
+from jutul_agent.agent.plot_julia import (
+    make_close_plots_tool,
+    make_plot_julia_tool,
+    make_recapture_tool,
+)
 from jutul_agent.julia.session import EvalResult
 from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
 from jutul_agent.session import Session
@@ -173,15 +178,186 @@ async def test_web_surface_reports_missing_backend(tmp_path: Path) -> None:
 
 
 async def test_tui_surface_still_uses_glmakie(tmp_path: Path) -> None:
+    session, seen = _recording(tmp_path)
+    tool = make_plot_julia_tool(session)  # default surface = tui
+
+    await _call(tool, {"code": "lines(1:3, 1:3)"})
+    assert any(c.strip() == "using GLMakie" for c in seen)
+    assert not any("Bonito.export_static" in c for c in seen)
+
+
+def _recording(tmp_path: Path) -> tuple[Session, list[str]]:
+    """A session whose Julia records each snippet it is given and answers emptily."""
+
     seen: list[str] = []
 
     async def fake_eval(code: str) -> EvalResult:
         seen.append(code)
         return EvalResult(output="")
 
-    session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
-    tool = make_plot_julia_tool(session)  # default surface = tui
+    return _session(tmp_path, FakeJulia(eval_handler=fake_eval)), seen
 
-    await _call(tool, {"code": "lines(1:3, 1:3)"})
-    assert any(c.strip() == "using GLMakie" for c in seen)
-    assert not any("Bonito.export_static" in c for c in seen)
+
+async def _recapture(tool, args: dict) -> str:
+    msg = await tool.ainvoke(
+        {"type": "tool_call", "name": "recapture_plot", "id": "c1", "args": args}
+    )
+    return str(getattr(msg, "content", msg))
+
+
+async def test_recapture_on_web_snapshots_the_live_view(tmp_path: Path) -> None:
+    """A web recapture must read the browser's canvas, not the native-window registry.
+
+    WGLMakie runs the camera client-side, so the browser is the only place the
+    user's current view exists. The GLMakie path consults a registry that only
+    native windows populate, so on this surface it finds nothing and reports "no
+    interactive window is open" for a plot the user is looking at.
+    """
+
+    session, seen = _recording(tmp_path)
+    tool = make_recapture_tool(session, surface="web")
+
+    result = await _recapture(tool, {"slot": "pres", "view": False})
+    assert "recaptured view" in result
+
+    call = next(c for c in seen if "colorbuffer" in c)
+    assert "/viz/pres" in call  # the slot's live route, not a window key
+    assert "current_screens" in call  # captured from the figure's connected screen
+    assert "PNGFiles.save" in call
+    # The GLMakie registry lookup is what produced the bogus "no window" error.
+    assert "JutulAgentPlots.recapture" not in call
+
+    log = TraceLog(session.state_dir / "trace.sqlite")
+    try:
+        artifact = next(ev for ev in log.iter_events() if ev.kind == "artifact")
+        # A snapshot, not a "plot": the browser shows it inline rather than pinning
+        # another canvas view for every recapture of a plot it already displays.
+        assert artifact.payload["kind"] == "snapshot"
+    finally:
+        log.close()
+
+
+async def test_recapture_on_web_without_a_slot_takes_the_most_recent_plot(
+    tmp_path: Path,
+) -> None:
+    """An unslotted plot's route is a random id, so recency has to be tracked."""
+
+    session, seen = _recording(tmp_path)
+    tool = make_recapture_tool(session, surface="web")
+
+    await _recapture(tool, {"view": False})
+    call = next(c for c in seen if "colorbuffer" in c)
+    assert "last(_order)" in call
+
+
+async def test_live_plot_records_its_route_as_most_recent(tmp_path: Path) -> None:
+    """Serving a plot must put its route last, so an unslotted recapture finds it."""
+
+    seen: list[str] = []
+
+    async def fake_eval(code: str) -> EvalResult:
+        seen.append(code)
+        if "CairoMakie.Makie === WGLMakie.Makie" in code:
+            return EvalResult(output="JUTUL_MAKIE_MATCH")
+        if "Bonito.Server" in code:
+            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+        if "Bonito.route!" in code:
+            (session.output_dir / "artifacts" / "pres.png").write_bytes(b"PNG")
+        return EvalResult(output="")
+
+    session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
+    tool = make_plot_julia_tool(session, surface="web")
+
+    await _call(tool, {"code": "lines(1:3, 1:3)", "slot": "pres"})
+
+    start = next(c for c in seen if "Bonito.Server" in c)
+    assert "__JUTUL_WEB_ORDER__ = String[]" in start
+    render = next(c for c in seen if "Bonito.route!" in c)
+    # Re-plotting a slot reuses its route, so the earlier entry is dropped rather
+    # than leaving the same route listed twice.
+    assert 'filter!(!=(raw"/viz/pres"), _order)' in render
+    assert 'push!(_order, raw"/viz/pres")' in render
+
+
+async def test_web_recapture_reports_a_view_it_cannot_read(tmp_path: Path) -> None:
+    """A hidden plot must report, not throw.
+
+    Only the view the canvas currently shows is rendered by the browser; any other
+    answers the snapshot request with nothing, and decoding that empty reply throws
+    from deep inside the backend. Letting it escape puts a Julia backtrace where an
+    instruction belongs, since the user just has to select that plot's tab.
+    """
+
+    session, seen = _recording(tmp_path)
+    tool = make_recapture_tool(session, surface="web")
+
+    await _recapture(tool, {"slot": "pres", "view": False})
+    call = next(c for c in seen if "colorbuffer" in c)
+
+    # The read is guarded and an empty frame is caught before it reaches the decoder.
+    assert "try" in call and "catch" in call
+    assert "isempty(_img)" in call
+    # Both ways of not being readable say the same actionable thing.
+    assert call.count("has not been drawn in the canvas") == 2
+    assert "select its tab there once" in call
+    # Printed, not raised, so no Julia backtrace rides along with the instruction.
+    assert "error(" not in call
+    assert f'println("{jl_src.WEB_RECAPTURE_REFUSED}"' in call
+
+
+async def test_web_recapture_refusal_is_reported_without_a_backtrace(tmp_path: Path) -> None:
+    """The refusal reaches the model as its instruction and nothing else."""
+
+    async def fake_eval(code: str) -> EvalResult:
+        if "colorbuffer" in code:
+            return EvalResult(output=f"{jl_src.WEB_RECAPTURE_REFUSED}bring it up in the canvas.")
+        return EvalResult(output="")
+
+    session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
+    tool = make_recapture_tool(session, surface="web")
+
+    result = await _recapture(tool, {"slot": "pres", "view": False})
+    assert result == "ERROR: bring it up in the canvas."
+    assert jl_src.WEB_RECAPTURE_REFUSED not in result
+
+
+async def test_close_plots_on_web_releases_the_live_route(tmp_path: Path) -> None:
+    """Closing must unroute the figure, which is what frees what it holds.
+
+    The native path closes GLMakie windows, of which the web surface has none, so
+    it reports success while the figure stays routed and in memory.
+    """
+
+    session, seen = _recording(tmp_path)
+    tool = make_close_plots_tool(session, surface="web")
+
+    await tool.ainvoke(
+        {"type": "tool_call", "name": "close_plots", "id": "c1", "args": {"slot": "pres"}}
+    )
+    call = seen[-1]
+    assert "delete_route!" in call and "/viz/pres" in call
+    assert "__JUTUL_WEB_FIGS__" in call  # dropped from the registry, not just unrouted
+    assert "JutulAgentPlots.close_windows" not in call
+
+    # Closing everything sweeps the registry rather than naming one route.
+    await tool.ainvoke({"type": "tool_call", "name": "close_plots", "id": "c2", "args": {}})
+    assert "keys(Main.__JUTUL_WEB_FIGS__)" in seen[-1]
+
+
+async def test_close_plots_on_tui_still_closes_native_windows(tmp_path: Path) -> None:
+    session, seen = _recording(tmp_path)
+    tool = make_close_plots_tool(session)  # default surface = tui
+
+    await tool.ainvoke({"type": "tool_call", "name": "close_plots", "id": "c1", "args": {}})
+    assert "JutulAgentPlots.close_windows" in seen[-1]
+
+
+async def test_recapture_on_tui_still_uses_the_native_window(tmp_path: Path) -> None:
+    """The GLMakie path is the right one off the web surface and must stay put."""
+
+    session, seen = _recording(tmp_path)
+    tool = make_recapture_tool(session)  # default surface = tui
+
+    await _recapture(tool, {"slot": "pres", "view": False})
+    assert any("JutulAgentPlots.recapture" in c for c in seen)
+    assert not any("colorbuffer" in c for c in seen)

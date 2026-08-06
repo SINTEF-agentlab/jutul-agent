@@ -77,16 +77,21 @@ plots get distinct slots (`slot="reservoir"`, `slot="wells"`) so they stay
 addressable as separate views. This applies on every interface (a desktop window,
 or a tab in the web side panel).
 
-Recapture and close act on **desktop plot windows** (they don't apply on the web,
-where the figure stays live in the browser):
+Both act on whichever kind of view the interface gives you.
 
-- **Recapture** after the user rotates/zooms/steps a window:
-  `recapture_plot(slot="reservoir")` re-renders that plot's figure at its current
-  state and returns the image. Omit `slot` for the most recent. It renders the
-  figure jutul-agent still holds, so it works even if the user closed the window
-  (you get its last state); only `close_plots` discards it. You can't advance the
-  timestep yourself — ask the user to step the window, then recapture.
-- **Close** windows with `close_plots(slot="reservoir")` (one) or `close_plots()` (all).
+- **Recapture** after the user rotates/zooms/steps a plot:
+  `recapture_plot(slot="reservoir")` captures that plot at its current state and
+  returns the image. Omit `slot` for the most recent. On the desktop it re-renders
+  the figure jutul-agent still holds, so it works even after the user closed the
+  window (you get its last state); only `close_plots` discards it. On the web the
+  browser owns the camera, so a plot can only be snapshotted once its view has been
+  drawn in the canvas; recapturing one that hasn't been says what to do about it.
+  Don't recapture a plot you just drew, though: nothing can have changed yet, and
+  `view=true` on `plot_julia` is how you look at your own work. You can't advance
+  the timestep yourself either, so ask the user to step the plot first.
+- **Close** plots with `close_plots(slot="reservoir")` (one) or `close_plots()`
+  (all). Each live plot holds its data until closed or superseded, so closing ones
+  the user is done with is worth doing in a long session.
 
 ## Diagnostics & model structure
 
