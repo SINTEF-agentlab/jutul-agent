@@ -56,7 +56,7 @@ def test_shared_package_has_single_source_with_core_files() -> None:
 
 
 def test_no_env_ships_a_copy_of_the_shared_package() -> None:
-    # The shared package is copied in at bootstrap, not committed per env — so a
+    # The shared package is copied in at bootstrap, not committed per env, so a
     # stale per-env copy can never drift from the single source.
     for name in registry.names():
         env = registry.get(name).julia_env_template_path

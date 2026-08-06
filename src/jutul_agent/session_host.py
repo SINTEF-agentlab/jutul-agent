@@ -2,7 +2,7 @@
 
 A ``SessionHost`` owns a ``Session`` (its Julia kernel, trace, and directories),
 the agent built for it, and the ``TurnRunner`` that drives a turn. ``start`` is
-the single session bootstrap every front end uses — the TUI, the headless CLI,
+the single session bootstrap every front end uses: the TUI, the headless CLI,
 the web server, and the bench solver all stand up sessions here, so the kernel
 environment, capability discovery, and the checkpointer cannot drift between
 them. ``aclose`` tears everything down.
@@ -59,7 +59,7 @@ class SessionHost:
         self._exit_stack = exit_stack
         self._runner: TurnRunner | None = None
         # Kept so the agent can be rebuilt in place (e.g. /model, /approval-mode)
-        # without restarting the kernel — the same checkpointer keeps the history
+        # without restarting the kernel; the same checkpointer keeps the history
         # and the same session keeps the live Julia state.
         self._checkpointer = checkpointer
         self._model = model
@@ -138,7 +138,7 @@ class SessionHost:
             if self.backend
             else list(self._add_dirs)
         )
-        # Build first, then commit the new values — only once it succeeds. A value
+        # Build first, then commit the new values, only once it succeeds. A value
         # build_agent rejects (e.g. an unknown approval mode) must leave the host
         # consistent with the agent still running, not reporting a model/approval it
         # never applied (which a same-value reattach would then take as "unchanged").
@@ -482,7 +482,14 @@ class SessionHost:
                 env=env,
                 threads=str(compute_threads),
             )
-            julia = await stack.enter_async_context(JuliaKernel(kernel_config))
+            kernel = await stack.enter_async_context(JuliaKernel(kernel_config))
+            # The session's tools go through the wrapper, the warm-up gets the kernel
+            # itself. That is what tells the two apart: an eval arriving at the wrapper
+            # is real work, and drops whatever is left of the warm-up before taking the
+            # kernel, so a user who acts early never waits behind it.
+            from jutul_agent.simulators.warmup import YieldsToWork
+
+            julia = YieldsToWork(kernel)
             if resume:
                 session = Session.resume(
                     julia=julia,
@@ -508,8 +515,8 @@ class SessionHost:
                 AsyncSqliteSaver.from_conn_string(str(ckpt_path))
             )
             # Resolve the env's package source dirs (one fast, no-compile call): it
-            # gives the agent the simulator's source path up front — so it needn't
-            # `using <Sim>; pkgdir(<Sim>)` to find it — and guards the read-only depot.
+            # gives the agent the simulator's source path up front, so it needn't
+            # `using <Sim>; pkgdir(<Sim>)` to find it, and guards the read-only depot.
             from jutul_agent.agent.builder import resolve_package_sources
 
             package_sources = await asyncio.to_thread(resolve_package_sources, project)
@@ -560,11 +567,12 @@ class SessionHost:
             from jutul_agent.simulators.warmup import start_warmup
 
             host._warmup_task = start_warmup(
-                julia,
+                kernel,
                 simulator.warm_package,
                 collect_warm_packages(all_extensions),
                 collect_warm_code(all_extensions),
             )
+            julia.set_warmup(host._warmup_task)
         return host
 
 

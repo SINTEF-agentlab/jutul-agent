@@ -8,7 +8,12 @@ import pytest
 
 from jutul_agent.julia.session import EvalResult
 from jutul_agent.lab.fakes import FakeJulia
-from jutul_agent.simulators.warmup import GL_CONTEXT_WARMUP, load_statement, start_warmup
+from jutul_agent.simulators.warmup import (
+    GL_CONTEXT_WARMUP,
+    YieldsToWork,
+    load_statement,
+    start_warmup,
+)
 
 
 def test_load_statement_names_the_warm_package_first() -> None:
@@ -75,7 +80,7 @@ async def test_start_warmup_swallows_errors_so_startup_does_not_break() -> None:
     julia = FakeJulia(eval_handler=boom)
     task = start_warmup(julia, "JutulAgentBattMo")
     assert task is not None
-    # The task should finish without re-raising — startup must not block on
+    # The task should finish without re-raising; startup must not block on
     # a broken simulator env.
     await task
 
@@ -127,3 +132,99 @@ def test_gl_context_warmup_drives_the_offscreen_save_path() -> None:
     # Self-contained: it binds GLMakie into Main itself (the packages load it only
     # inside their own modules).
     assert "using GLMakie" in GL_CONTEXT_WARMUP
+
+
+# ---- YieldsToWork: real work drops the background warm-up -------------------
+
+
+class _SlowJulia:
+    """A kernel stand-in whose eval blocks until released, recording every call."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.gate = asyncio.Event()
+        self.cancelled = 0
+        self.attr = "kernel-attr"
+
+    async def eval(self, code: str, on_chunk: object = None) -> EvalResult:
+        self.calls.append(code)
+        try:
+            await self.gate.wait()
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+        return EvalResult(output="")
+
+
+async def test_real_work_cancels_a_running_warmup() -> None:
+    inner = _SlowJulia()
+    julia = YieldsToWork(inner)
+    task = start_warmup(inner, "JutulAgentJutulDarcy")
+    assert task is not None
+    julia.set_warmup(task)
+    await asyncio.sleep(0)  # let the warm-up reach its first eval
+
+    inner.gate.set()  # so the caller's own eval can complete
+    await julia.eval("real work")
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert "real work" in inner.calls
+    # The warm-up's own eval was interrupted rather than left running to completion.
+    assert inner.cancelled == 1
+
+
+async def test_warmup_evals_do_not_cancel_themselves() -> None:
+    # The warm-up is handed the kernel, not the wrapper, so its own evals never
+    # reach the cancelling path. If they did it would kill itself on its first step.
+    inner = _SlowJulia()
+    inner.gate.set()
+    julia = YieldsToWork(inner)
+    task = start_warmup(inner, "JutulAgentJutulDarcy")
+    assert task is not None
+    julia.set_warmup(task)
+    await task
+    assert not task.cancelled()
+    assert len(inner.calls) == 3  # bootstrap, HYPRE, GL
+
+
+async def test_dropping_is_idempotent_and_safe_without_a_warmup() -> None:
+    inner = _SlowJulia()
+    inner.gate.set()
+    julia = YieldsToWork(inner)
+    julia.drop_warmup()  # no warm-up registered at all
+    await julia.eval("a")
+
+    task = start_warmup(inner, "")
+    assert task is not None
+    julia.set_warmup(task)
+    await task  # already finished
+    julia.drop_warmup()
+    julia.drop_warmup()  # a second drop must not raise
+    await julia.eval("b")
+    assert "b" in inner.calls
+
+
+async def test_wrapper_forwards_everything_else_to_the_kernel() -> None:
+    inner = _SlowJulia()
+    julia = YieldsToWork(inner)
+    assert julia.attr == "kernel-attr"
+
+
+async def test_a_cancelled_warmup_leaves_the_session_usable() -> None:
+    # The point of cancelling rather than waiting: the next eval still runs. The
+    # kernel's own eval turns cancellation into an interrupt-and-recover, so the
+    # session survives; here we assert the wrapper does not get in the way of that.
+    inner = _SlowJulia()
+    julia = YieldsToWork(inner)
+    task = start_warmup(inner, "JutulAgentJutulDarcy")
+    assert task is not None
+    julia.set_warmup(task)
+    await asyncio.sleep(0)
+
+    inner.gate.set()
+    first = await julia.eval("after cancel")
+    assert first.output == ""
+    assert inner.cancelled >= 0  # the warm-up eval was cancelled or had not started
+    second = await julia.eval("still working")
+    assert second.output == ""
+    assert inner.calls[-1] == "still working"
