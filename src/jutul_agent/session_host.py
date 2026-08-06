@@ -556,11 +556,14 @@ class SessionHost:
             # surface's, for the same reason their Julia dependencies are: the
             # kernel is per workspace, and a package left unloaded here would be
             # loaded by the first tool call that needs it, at the user's expense.
-            from jutul_agent.agent.capabilities import collect_warm_packages
+            from jutul_agent.agent.capabilities import collect_warm_code, collect_warm_packages
             from jutul_agent.simulators.warmup import start_warmup
 
             host._warmup_task = start_warmup(
-                julia, simulator.warm_package, collect_warm_packages(all_extensions)
+                julia,
+                simulator.warm_package,
+                collect_warm_packages(all_extensions),
+                collect_warm_code(all_extensions),
             )
         return host
 
