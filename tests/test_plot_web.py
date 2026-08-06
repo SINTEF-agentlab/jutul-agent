@@ -38,7 +38,7 @@ async def test_web_surface_serves_plot_live(tmp_path: Path) -> None:
         if "Bonito.Server" in code:
             # The server prints its bound port on a tagged line; a later log line
             # carries other digits (an address) that a "last run of digits" parse
-            # would wrongly pick — so this guards the tagged-line parse.
+            # would wrongly pick, so this guards the tagged-line parse.
             return EvalResult(output="__JUTUL_WEB_PORT__=51000\n[ Info: listening on :9999")
         if "Bonito.route!" in code:  # the live render: Cairo saves the poster PNG
             (session.output_dir / "artifacts" / "pres.png").write_bytes(b"PNG")

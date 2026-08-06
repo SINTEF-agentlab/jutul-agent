@@ -14,8 +14,9 @@ using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workl
 # bakes in the world a session actually runs in. Loading a backend invalidates code
 # specialised against the ones already there, and that reaches past plotting into the
 # solver, so a backend arriving after the bake throws away part of the solve as well
-# as the plots. The plot tool loads all three: GLMakie builds the figure, WGLMakie
-# serves it to the web UI, and CairoMakie writes the PNG kept as the durable record.
+# as the plots. The plot tool loads all three: GLMakie builds the figure and writes the
+# PNG kept as the durable record, WGLMakie serves it to the web UI, and CairoMakie
+# stands in for GLMakie where there is no GL context to render that PNG with.
 #
 # GLMakie last, and it alone with `using`: a backend activates itself on load, so the
 # last one loaded is current, and the interactive plotters refuse to build under a
@@ -59,11 +60,12 @@ function _warm_solve()
 end
 
 # One figure through the whole plot path, the way the plot tool drives it: build it
-# with GLMakie active, save the native PNG, then save the CairoMakie poster written
-# as the durable record. Neither rasterisation is warm from the other, so both are
-# baked.
+# with GLMakie active and save it, which is both the terminal's PNG and the web
+# surface's durable record, then save it again through CairoMakie, which stands in
+# where there is no GL context to render at that size. Neither rasterisation is warm
+# from the other, so both are baked.
 #
-# Both `activate!` calls are load-bearing, not tidiness. The first: saving the poster
+# Both `activate!` calls are load-bearing, not tidiness. The first: the Cairo save
 # leaves CairoMakie current, and the interactive plotters refuse to build under a
 # non-interactive backend, so the next figure would throw. The last: `_warm()` also
 # runs in a live kernel from the smoke test, and must not leave a backend behind that

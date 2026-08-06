@@ -18,9 +18,10 @@
 ``web_render_call`` and ``web_live_call`` share three more, each a way for a figure to
 reach the browser looking or behaving wrong rather than failing outright:
 
-- ``CairoMakie.save`` registers a screen on the figure's scene and every child scene to
-  render the poster, and nothing removes it -- so the live figure keeps replaying its
-  plot additions into a render target that will never draw them.
+- ``CairoMakie.save``, the poster's fallback rasteriser, registers a screen on the
+  figure's scene and every child scene to render it, and nothing removes it -- so the
+  live figure keeps replaying its plot additions into a render target that will never
+  draw them.
 - ``PICK_EMPTY_BUFFER_GUARD``: WGLMakie's ``pick`` throws on an empty buffer, and a
   plotter that picks on click turns that throw into a dead mouse button for every
   listener behind it.
@@ -65,7 +66,31 @@ def _live_code() -> str:
     )
 
 
-def test_live_call_detaches_the_screen_the_poster_save_leaves_behind() -> None:
+def test_live_call_renders_the_poster_with_the_backend_the_browser_uses() -> None:
+    # The poster is the durable record of a live figure, so it has to agree with the
+    # WebGL view beside it. Cairo has no depth test and draws a 3D scene the browser
+    # never showed, besides costing about twenty times as much; it is the fallback for
+    # a session with no GL context, not the first choice.
+    code = _live_code()
+    assert code.index("GLMakie.save") < code.index("CairoMakie.save")
+
+
+def test_live_call_closes_the_screen_the_gl_poster_opens() -> None:
+    # An offscreen GL screen is still a live context with a running render loop, and
+    # closing it also takes it off the live figure's scene tree.
+    # Not the earlier closeall that drops the screen the user code's own display()
+    # absorption opened: the one after the save, for the screen the save itself opens.
+    code = _live_code()
+    assert "GLMakie.closeall" in code[code.index("GLMakie.save") :]
+
+
+def test_gl_poster_keeps_the_records_resolution() -> None:
+    # CairoMakie's PNG default is 2, and GLMakie's is 1, so an unqualified switch would
+    # quietly halve every stored poster.
+    assert "px_per_unit = 2" in _live_code()
+
+
+def test_live_call_detaches_the_screen_the_cairo_fallback_leaves_behind() -> None:
     code = _live_code()
     assert "CairoMakie.Screen" in code
     assert "current_screens" in code
