@@ -36,6 +36,7 @@ from langchain_core.tools import InjectedToolCallId, tool
 from jutul_agent.agent import plot_julia_src as jl
 from jutul_agent.paths import workspace_root
 from jutul_agent.session import Session
+from jutul_agent.simulators import warmup
 from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.trace.schema import ARTIFACT, artifact_payload
 
@@ -75,6 +76,10 @@ async def _load_plot_backend(session: Session, adapter: SimulatorAdapter) -> str
     plotting is unavailable here.
     """
 
+    helper = await _load_agent_runtime(session)
+    if helper is not None:
+        return helper
+
     gl = await session.julia.eval("using GLMakie")
     if gl.error:
         return (
@@ -85,12 +90,24 @@ async def _load_plot_backend(session: Session, adapter: SimulatorAdapter) -> str
             f"Julia said: {_truncate(gl.error, 300)}"
         )
 
-    # The capture helpers (JutulAgent.JutulAgentPlots) ship precompiled in the
-    # JutulAgent package, so this just loads it rather than eval-ing a script.
-    helper = await session.julia.eval("using JutulAgent")
-    if helper.error:
-        return f"ERROR: failed to load JutulAgent plot helpers: {helper.error}"
+    return None
 
+
+async def _load_agent_runtime(session: Session) -> str | None:
+    """Load the capture helpers (``JutulAgent.JutulAgentPlots``), through the same
+    statement the session's warm-up uses.
+
+    They ship precompiled, so this only pays load latency, but the order the packages
+    load in decides how much of that precompilation survives: a pkgimage is valid only
+    for the world it was baked in, and pulling the shared package in ahead of the
+    simulator's rebuilds the parts of the bake that were inferred through a method the
+    simulator brings. Warm-up normally gets here first; a plot requested before it
+    finishes must not establish a different order.
+    """
+
+    loaded = await session.julia.eval(warmup.load_statement(session.simulator.warm_package))
+    if loaded.error:
+        return f"ERROR: failed to load JutulAgent plot helpers: {loaded.error}"
     return None
 
 
@@ -109,6 +126,13 @@ async def _load_web_plot_backend(session: Session, adapter: SimulatorAdapter) ->
     figures (built by the agent) still render interactively, so its failure is a
     warning, not an error.
     """
+
+    # The live figures are held by JutulAgent.JutulAgentPlots, so this surface needs the
+    # helpers just as the native one does, and before the backends so that the order
+    # the packages load in is the one they were baked in.
+    helper = await _load_agent_runtime(session)
+    if helper is not None:
+        return helper
 
     loaded = await session.julia.eval("import CairoMakie, WGLMakie, Bonito")
     if loaded.error:
