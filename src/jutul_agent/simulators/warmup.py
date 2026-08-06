@@ -64,7 +64,10 @@ end
 
 
 def start_warmup(
-    julia: Any, warm_package: str, capability_packages: Sequence[str] = ()
+    julia: Any,
+    warm_package: str,
+    capability_packages: Sequence[str] = (),
+    warm_code: Sequence[str] = (),
 ) -> asyncio.Task[Any] | None:
     """Background warm-up shared by every front end: load the simulator's Julia world
     (plus any capability packages), pin HYPRE's threads, then initialise the GL context.
@@ -84,6 +87,11 @@ def start_warmup(
             await julia.eval(HYPRE_THREADS_SETUP)
         with contextlib.suppress(Exception):
             await julia.eval(GL_CONTEXT_WARMUP)
+        # Last, and only once the backends are up: a capability's snippets exist to
+        # warm plot and solve paths, which need the GL context this step above built.
+        for code in warm_code:
+            with contextlib.suppress(Exception):
+                await julia.eval(code)
 
     return asyncio.create_task(_run(), name="julia-warmup")
 
