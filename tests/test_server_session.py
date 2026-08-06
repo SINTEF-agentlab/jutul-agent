@@ -1269,3 +1269,66 @@ def test_set_approval_auto_resolves_a_pending_interrupt(tmp_path: Path) -> None:
             events = _drain_turn(ws)
     assert events[-1]["type"] == "turn_end"
     assert events[-1]["text"] == "approval handled"
+
+
+def test_proxied_plot_socket_does_not_keepalive_the_plot_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The proxy must not hold the plot server to a pong deadline.
+
+    The peer on this hop is the Julia process, whose plot-server handler tasks share
+    a thread pool with whatever the kernel is computing: a long solve leaves them
+    unscheduled for far longer than any sane keepalive allows. A ping therefore
+    measures how busy Julia is rather than whether the connection is alive, and the
+    client library's default is to close on the timeout -- which the browser answers
+    by reconnecting, once per timeout, for as long as the solve runs.
+    """
+
+    import websockets
+
+    dial_kwargs: list[dict[str, Any]] = []
+
+    class _IdleUpstream:
+        """Connects, then says nothing -- a plot server whose thread pool is busy."""
+
+        async def __aenter__(self) -> Any:
+            return self
+
+        async def __aexit__(self, *exc: Any) -> bool:
+            return False
+
+        async def send(self, data: Any) -> None:
+            pass
+
+        async def close(self) -> None:
+            pass
+
+        def __aiter__(self) -> Any:
+            return self
+
+        async def __anext__(self) -> Any:
+            await asyncio.sleep(3600)
+            raise StopAsyncIteration
+
+    def spy(url: str, **kwargs: Any) -> _IdleUpstream:
+        dial_kwargs.append(kwargs)
+        return _IdleUpstream()
+
+    monkeypatch.setattr(websockets, "connect", spy)
+
+    manager = _manager(echo_agent, tmp_path)
+    client = TestClient(create_app(manager))
+    sid = client.post("/sessions", json={"sim": "demo", "model": "ollama:qwen3"}).json()[
+        "session_id"
+    ]
+    manager.get(sid).session.web_plot_port = 9999  # never dialled for real
+
+    with client.websocket_connect(f"/live/{sid}/9e53-4780-81c6"):
+        pass
+
+    assert dial_kwargs, "the proxy never dialled the plot server"
+    # Absent is not the same as off: leaving it out is what selects the 20s default.
+    assert "ping_interval" in dial_kwargs[0], "keepalive left at the library default"
+    assert dial_kwargs[0]["ping_interval"] is None, (
+        "keepalive on this hop closes a working socket whenever Julia is busy"
+    )
