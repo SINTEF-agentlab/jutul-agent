@@ -42,12 +42,21 @@ class Capability:
     ``dependencies`` are paths to local Julia package roots or their
     ``Project.toml`` files; the launcher reads the package metadata from that
     path and adds it to the active Julia env before launch.
+
+    ``warm_packages`` are Julia package names to ``using`` at session start,
+    alongside the simulator's own warm package. Declaring one only makes the
+    session *load* it early; what makes the first call fast is the package
+    baking its own hot paths with a ``PrecompileTools.@compile_workload``, the
+    way ``JutulAgent<Sim>`` does. Without a workload, ``Pkg.precompile`` caches
+    the module's top level but none of the type-specialised inference behind its
+    entry points, and the first real call pays that in full.
     """
 
     name: str
     tools: tuple[ToolFactory, ...] = ()
     skill_dirs: tuple[tuple[str, str], ...] = ()
     dependencies: tuple[Path, ...] = ()
+    warm_packages: tuple[str, ...] = ()
     subagents: tuple[SubagentFactory, ...] = ()
     prompt_fragment: str = ""
     ui_actions: tuple[str, ...] = ()
@@ -69,6 +78,20 @@ def collect_skill_dirs(capabilities: Sequence[Capability]) -> list[tuple[str, st
 
 def collect_dependency_paths(capabilities: Sequence[Capability]) -> list[Path]:
     return [Path(path) for cap in capabilities for path in cap.dependencies]
+
+
+def collect_warm_packages(capabilities: Sequence[Capability]) -> list[str]:
+    """The capability-provided Julia packages to load at session start, de-duplicated.
+
+    Order is first-declared-first and duplicates keep their first position, so two
+    capabilities naming the same package load it once, where the earlier one put it.
+    """
+    seen: dict[str, None] = {}
+    for cap in capabilities:
+        for name in cap.warm_packages:
+            if name.strip():
+                seen.setdefault(name.strip(), None)
+    return list(seen)
 
 
 def collect_subagents(capabilities: Sequence[Capability], session: Session) -> list[dict[str, Any]]:
