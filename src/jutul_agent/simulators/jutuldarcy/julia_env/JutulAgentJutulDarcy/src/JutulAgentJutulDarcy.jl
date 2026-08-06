@@ -20,7 +20,14 @@ using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workl
 # GLMakie last, and it alone with `using`: a backend activates itself on load, so the
 # last one loaded is current, and the interactive plotters refuse to build under a
 # non-interactive backend.
+#
+# The shared package is loaded here too, and this is the only place it is loaded from,
+# because a pkgimage is only valid for the world it was baked in: whichever package a
+# session loads first fixes the order, and an order that differs from this one drops
+# the parts of the bake that were inferred through a method the other package brings.
+# Depending on it here makes the session's order the baked order by construction.
 @recompile_invalidations begin
+    import JutulAgent
     import CairoMakie
     import WGLMakie
     using GLMakie

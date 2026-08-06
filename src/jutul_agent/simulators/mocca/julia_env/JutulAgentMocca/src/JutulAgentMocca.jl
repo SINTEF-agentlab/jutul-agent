@@ -9,6 +9,7 @@ using Mocca, Jutul
 using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workload
 
 @recompile_invalidations begin
+    import JutulAgent
     import CairoMakie
     import WGLMakie
     using GLMakie

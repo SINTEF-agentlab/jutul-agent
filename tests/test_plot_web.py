@@ -13,6 +13,7 @@ from jutul_agent.agent.plot_julia import (
 from jutul_agent.julia.session import EvalResult
 from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
 from jutul_agent.session import Session
+from jutul_agent.simulators.warmup import load_statement
 from jutul_agent.trace import TraceLog
 
 
@@ -265,7 +266,10 @@ async def test_live_plot_records_its_route_as_most_recent(tmp_path: Path) -> Non
             (session.output_dir / "artifacts" / "pres.png").write_bytes(b"PNG")
         return EvalResult(output="")
 
-    session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
+    adapter = make_fake_adapter(tmp_path, warm_package="JutulAgentFakeSim")
+    session = Session.create(
+        julia=FakeJulia(eval_handler=fake_eval), state_root=tmp_path, simulator=adapter
+    )
     tool = make_plot_julia_tool(session, surface="web")
 
     await _call(tool, {"code": "lines(1:3, 1:3)", "slot": "pres"})
@@ -361,3 +365,31 @@ async def test_recapture_on_tui_still_uses_the_native_window(tmp_path: Path) -> 
     await _recapture(tool, {"slot": "pres", "view": False})
     assert any("JutulAgentPlots.recapture" in c for c in seen)
     assert not any("colorbuffer" in c for c in seen)
+
+
+async def test_web_surface_loads_the_warm_package_before_it_serves(tmp_path: Path) -> None:
+    # Session warm-up loads the warm package too, but in the background: relying on
+    # that makes an early plot race it. Loading through the same statement warm-up
+    # uses means whichever gets there first establishes the baked load order.
+    seen: list[str] = []
+
+    async def fake_eval(code: str) -> EvalResult:
+        seen.append(code)
+        if "CairoMakie.Makie === WGLMakie.Makie" in code:
+            return EvalResult(output="JUTUL_MAKIE_MATCH")
+        if "Bonito.Server" in code:
+            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+        return EvalResult(output="")
+
+    adapter = make_fake_adapter(tmp_path, warm_package="JutulAgentFakeSim")
+    session = Session.create(
+        julia=FakeJulia(eval_handler=fake_eval), state_root=tmp_path, simulator=adapter
+    )
+    tool = make_plot_julia_tool(session, surface="web")
+
+    await _call(tool, {"code": "lines(1:3, 1:3)", "slot": "pres"})
+
+    expected = load_statement("JutulAgentFakeSim")
+    load = next(i for i, c in enumerate(seen) if c.strip() == expected)
+    serve = next(i for i, c in enumerate(seen) if "Bonito.route!" in c)
+    assert load < serve

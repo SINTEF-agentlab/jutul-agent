@@ -14,6 +14,25 @@ import asyncio
 import contextlib
 from typing import Any
 
+
+def load_statement(warm_package: str) -> str:
+    """The ``using`` that brings up the simulator's Julia world, warm package first.
+
+    The warm package depends on the shared one, so naming it first loads both in the
+    order they were baked in. Order is not cosmetic here: a pkgimage is only valid
+    for the world it was built in, and pulling the shared package in ahead of the
+    simulator's drops the parts of the simulator's bake that were inferred through a
+    method the shared one brings, which are then rebuilt at first use. Naming the
+    shared package second costs nothing, since by then it is loaded and this only
+    binds it into ``Main``, which is what the generated plot code calls it through.
+
+    A simulator with no warm package loads the shared one alone: it is where the
+    figure-capture helpers live, and is needed either way.
+    """
+
+    return f"using {warm_package}, JutulAgent" if warm_package else "using JutulAgent"
+
+
 # Initialise this session's GLMakie GL context (the per-session cost precompilation
 # cannot bake) with a tiny offscreen save. Best-effort: if GLMakie isn't usable here
 # (no GL, no xvfb) the try/catch swallows it and plotting errors at first use.
@@ -32,8 +51,8 @@ end
 
 
 def start_warmup(julia: Any, warm_package: str) -> asyncio.Task[Any] | None:
-    """Background warm-up shared by every front end: load the agent runtime and the
-    per-simulator warm package, pin HYPRE's threads, then initialise the GL context.
+    """Background warm-up shared by every front end: load the simulator's Julia world,
+    pin HYPRE's threads, then initialise the GL context.
 
     The GL step also runs ``GLMakie.activate!(visible = false)``, which is what keeps
     a native plot window from popping up on a machine with a real display — every
@@ -41,10 +60,7 @@ def start_warmup(julia: Any, warm_package: str) -> asyncio.Task[Any] | None:
     Best-effort: each step is wrapped so a missing piece never breaks startup, and the
     returned task is cancelled on session teardown.
     """
-    loads = ["try; @eval using JutulAgent; catch; end"]
-    if warm_package:
-        loads.append(f"try; @eval using {warm_package}; catch; end")
-    bootstrap = "\n".join(loads)
+    bootstrap = f"try; @eval {load_statement(warm_package)}; catch; end"
 
     async def _run() -> None:
         with contextlib.suppress(Exception):
