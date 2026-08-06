@@ -25,6 +25,29 @@ def test_load_statement_binds_the_shared_package_into_main() -> None:
         assert load_statement(warm_package).endswith("JutulAgent")
 
 
+def test_load_statement_names_capability_packages_after_the_simulator() -> None:
+    # A capability package is a sibling of the warm package, not a dependant, so the
+    # order is settled by which bake survives rather than by depth. Measured on the
+    # geoteric capability: first costs 6.08s of recompilation at load, second 1.56s.
+    assert load_statement("JutulAgentJutulDarcy", ("GeotericAgenticDemo",)) == (
+        "using JutulAgentJutulDarcy, GeotericAgenticDemo, JutulAgent"
+    )
+
+
+def test_load_statement_keeps_capability_packages_without_a_warm_package() -> None:
+    # A simulator with no warm package still has to load the capability's, or the
+    # first tool call that needs it pays the load at the user's expense.
+    assert load_statement("", ("Geo", "Flow")) == "using Geo, Flow, JutulAgent"
+
+
+async def test_start_warmup_loads_capability_packages_too() -> None:
+    julia = FakeJulia()
+    task = start_warmup(julia, "JutulAgentJutulDarcy", ["GeotericAgenticDemo"])
+    assert task is not None
+    await task
+    assert load_statement("JutulAgentJutulDarcy", ["GeotericAgenticDemo"]) in julia.calls[0]
+
+
 async def test_start_warmup_loads_the_packages_in_baked_order() -> None:
     julia = FakeJulia()
     task = start_warmup(julia, "JutulAgentBattMo")

@@ -548,12 +548,20 @@ class SessionHost:
             add_dirs=add_dirs,
         )
         if warmup:
-            # Warm the kernel in the background: load the warm package and set
+            # Warm the kernel in the background: load the warm packages and set
             # GLMakie offscreen so a native plotter can't pop an OS window on a
             # machine with a display. Best-effort and cancelled on teardown.
+            #
+            # Every discovered capability's package is loaded, not just this
+            # surface's, for the same reason their Julia dependencies are: the
+            # kernel is per workspace, and a package left unloaded here would be
+            # loaded by the first tool call that needs it, at the user's expense.
+            from jutul_agent.agent.capabilities import collect_warm_packages
             from jutul_agent.simulators.warmup import start_warmup
 
-            host._warmup_task = start_warmup(julia, simulator.warm_package)
+            host._warmup_task = start_warmup(
+                julia, simulator.warm_package, collect_warm_packages(all_extensions)
+            )
         return host
 
 

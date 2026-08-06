@@ -17,6 +17,7 @@ from jutul_agent.agent.capabilities import (
     collect_skill_dirs,
     collect_subagents,
     collect_tools,
+    collect_warm_packages,
     discover_extensions,
     http_tool_capability,
     select_for_surface,
@@ -265,3 +266,18 @@ def test_build_agent_default_has_base_tools(session: Session, monkeypatch, tmp_p
     builder.build_agent(session)
     names = [t.name for t in captured["tools"]]
     assert "run_julia" in names and "plot_julia" in names
+
+
+def test_collect_warm_packages_dedupes_and_keeps_first_position() -> None:
+    # Two capabilities can depend on the same Julia package; it must be loaded once,
+    # and where the first one asked for it, so the bake order stays predictable.
+    caps = [
+        Capability(name="a", warm_packages=("Geo", "Flow")),
+        Capability(name="b", warm_packages=("Flow", "Extra")),
+        Capability(name="c"),
+    ]
+    assert collect_warm_packages(caps) == ["Geo", "Flow", "Extra"]
+
+
+def test_collect_warm_packages_ignores_blanks() -> None:
+    assert collect_warm_packages([Capability(name="a", warm_packages=("", "  "))]) == []
