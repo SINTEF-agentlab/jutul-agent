@@ -347,6 +347,27 @@ async def test_recapture_targets_window_slot(tmp_path: Path) -> None:
     assert 'key = raw"reservoir"' in call
 
 
+async def test_recapture_never_resizes_the_window_it_is_reading(tmp_path: Path) -> None:
+    """A recapture must not ask Makie for a size.
+
+    Makie resizes the scene to match whatever size a save asks for and never puts
+    it back, so on a live window that visibly resizes the thing the user arranged,
+    which is the opposite of recording it as it stands.
+    """
+
+    seen: list[str] = []
+    julia = FakeJulia(eval_handler=_make_plot_eval_handler([], seen=seen))
+    plot_session = _session(tmp_path, julia, open_windows=True)
+    from jutul_agent.agent.plot_julia import make_recapture_tool
+
+    tool = make_recapture_tool(plot_session)
+    await tool.ainvoke(
+        {"type": "tool_call", "name": "recapture_plot", "id": "c_sz", "args": {"view": False}}
+    )
+    call = next(c for c in seen if "JutulAgentPlots.recapture" in c)
+    assert "size =" not in call  # the path itself can carry the word
+
+
 async def test_close_plots(tmp_path: Path) -> None:
     seen: list[str] = []
     julia = FakeJulia(eval_handler=_make_plot_eval_handler([], seen=seen))

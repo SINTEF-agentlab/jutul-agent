@@ -74,10 +74,18 @@ function _save_kwargs(size, dpi)
 end
 
 """Save a Makie Figure to path. `Makie.save` dispatches on the active backend and
-picks the format from the extension; the tool only ever passes `.png` (GLMakie)."""
-function save_figure(fig::Makie.Figure; path::AbstractString, size = nothing, dpi = nothing)
+picks the format from the extension; the tool only ever passes `.png` (GLMakie).
+
+`update` is Makie's own keyword, forwarded so a caller can turn it off. It defaults
+to true there, and resets every axis to its automatic limits before saving, which
+is right for a figure being drawn for the first time and wrong for one already on
+screen: it discards whatever the user zoomed to."""
+function save_figure(
+        fig::Makie.Figure; path::AbstractString, size = nothing, dpi = nothing,
+        update::Bool = true,
+    )
     _ensure_parent_dir(path)
-    Makie.save(path, fig; _save_kwargs(size, dpi)...)
+    Makie.save(path, fig; update = update, _save_kwargs(size, dpi)...)
     return path
 end
 
@@ -143,10 +151,14 @@ view, not a stale frame.
 
 A user's rotate (cam3d) or recolor (a Menu) sits in GLFW's queue while the worker
 is blocked between evals, and those controllers only apply on the render tick
-after their event, so a single save renders the previous state. We flush pending
-Makie updates, then render two colorbuffer cycles: the first drains the queued
-events into the controllers, the second renders their applied state. No-op when
-key has no open screen."""
+after their event, so a single save renders the previous state. Two colorbuffer
+cycles fix that: the first drains the queued events into the controllers, the
+second renders their applied state. No-op when key has no open screen.
+
+Nothing here may update the figure's state. `update_state_before_display!` reads
+like the way to flush it, but what it does is reset every axis to its automatic
+limits, which throws away the zoom this is being called to preserve. Rotation
+survived it because a 3D camera is not held in the axis limits."""
 function _refresh_live_view(key::AbstractString, fig)
     scr = get(SCREENS, key, nothing)
     scr === nothing && return nothing
@@ -154,10 +166,6 @@ function _refresh_live_view(key::AbstractString, fig)
         Base.invokelatest(isopen, scr) || return nothing
     catch
         return nothing
-    end
-    try
-        Base.invokelatest(Makie.update_state_before_display!, fig)
-    catch
     end
     for _ in 1:2
         try
@@ -170,8 +178,12 @@ end
 
 """Re-save an open interactive window at its current camera/zoom/timestep. key
 selects the window (a plot's slot); empty means the most recently opened or
-refreshed one. Errors if there is no such open window."""
-function recapture(; key::AbstractString = "", path, size = nothing, dpi = nothing)
+refreshed one. Errors if there is no such open window.
+
+Saves the window exactly as it stands. Passing a size would resize it, since Makie
+resizes the scene to match and never puts it back, and letting the save update the
+figure would reset the axes; either one edits the view this is meant to record."""
+function recapture(; key::AbstractString = "", path)
     k = isempty(key) ? LAST_KEY[] : String(key)
     fig = get(FIGURES, k, nothing)
     fig isa Makie.Figure || error(
@@ -179,7 +191,7 @@ function recapture(; key::AbstractString = "", path, size = nothing, dpi = nothi
         " is open. Open one first with julia_plot (give it a slot to recapture it later).",
     )
     _refresh_live_view(k, fig)   # render queued interactions before saving
-    return save_figure(fig; path = path, size = size, dpi = dpi)
+    return save_figure(fig; path = path, update = false)
 end
 
 """Close the interactive window for key, or all of them when key is empty."""
