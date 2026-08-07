@@ -246,8 +246,8 @@ def _fmt_metric(value: Any) -> str:
     return f"{f:.4g}"
 
 
-def make_write_report_tool(session: Session, *, surface: str = "tui"):
-    web = surface == "web"
+def make_write_report_tool(session: Session, *, surface: str | None = None):
+    web = (surface or session.surface) == "web"
 
     @tool
     async def write_report(

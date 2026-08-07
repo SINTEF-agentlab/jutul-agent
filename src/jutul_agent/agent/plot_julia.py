@@ -284,10 +284,10 @@ def _finalize_web(
     return _reply(summary, png_abs, view and has_poster)
 
 
-def make_plot_julia_tool(session: Session, *, surface: str = "tui"):
+def make_plot_julia_tool(session: Session, *, surface: str | None = None):
     artifacts_dir = session.output_dir / "artifacts"
     adapter = session.simulator
-    web = surface == "web"
+    web = (surface or session.surface) == "web"
     backend_loaded = False  # one-shot memo: the backend loads once per session
     live_base: str | None = None  # the session's Bonito base URL once it's serving
     warned_no_live = False  # so a persistent server failure warns once, not per plot
@@ -465,9 +465,9 @@ def make_plot_julia_tool(session: Session, *, surface: str = "tui"):
     return plot_julia
 
 
-def make_recapture_tool(session: Session, *, surface: str = "tui"):
+def make_recapture_tool(session: Session, *, surface: str | None = None):
     artifacts_dir = session.output_dir / "artifacts"
-    web = surface == "web"
+    web = (surface or session.surface) == "web"
 
     @tool
     async def recapture_plot(
@@ -542,8 +542,8 @@ def make_recapture_tool(session: Session, *, surface: str = "tui"):
     return recapture_plot
 
 
-def make_close_plots_tool(session: Session, *, surface: str = "tui"):
-    web = surface == "web"
+def make_close_plots_tool(session: Session, *, surface: str | None = None):
+    web = (surface or session.surface) == "web"
 
     @tool
     async def close_plots(slot: str | None = None) -> str:
