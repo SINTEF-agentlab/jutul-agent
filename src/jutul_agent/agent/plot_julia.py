@@ -475,7 +475,6 @@ def make_recapture_tool(session: Session, *, surface: str | None = None):
         caption: str = "",
         view: bool = True,
         slot: str | None = None,
-        size: list[int] | None = None,
     ) -> str | list[dict[str, Any]]:
         """Snapshot an open plot at its CURRENT view and show it to you.
 
@@ -486,14 +485,14 @@ def make_recapture_tool(session: Session, *, surface: str | None = None):
 
         `slot` selects **which** plot: the slot you gave it in `plot_julia`. Omit
         it for the most recently opened/refreshed one. You can't drive the plot
-        (advance its timestep yourself); you only snapshot what the user currently
-        has. Errors if there's no such open plot.
+        (advance its timestep yourself) or resize it; you only snapshot what the
+        user currently has, at the size they have it. Errors if there's no such
+        open plot.
 
         Args:
             caption: Optional caption shown in the transcript.
             view: Return the image so you can see it (default true; that's the point).
             slot: Which plot to recapture (its slot); omit for the most recent.
-            size: Optional `(width, height)` in pixels (native windows only).
 
         Returns:
             A confirmation string, or, when `view`, a text+image content list.
@@ -507,11 +506,10 @@ def make_recapture_tool(session: Session, *, surface: str | None = None):
 
         if web:
             # The browser owns the current view, so the snapshot comes from the plot's
-            # connected live session, at whatever size that canvas is.
-            size = None
+            # connected live session.
             call = jl.web_recapture_call(slot=safe_slot or "", png_path=abs_path)
         else:
-            call = jl.recapture_call(key=safe_slot or "", png_path=abs_path, size=size)
+            call = jl.recapture_call(key=safe_slot or "", png_path=abs_path)
         result = await session.julia.eval(call)
         if result.error:
             return f"ERROR: {result.error}"
@@ -521,15 +519,13 @@ def make_recapture_tool(session: Session, *, surface: str | None = None):
         extra: list[str] = []
         if safe_slot:
             extra.append(f"plot={safe_slot}" if web else f"window={safe_slot}")
-        if size is not None:
-            extra.append(f"size={size[0]}x{size[1]}")
         return _finalize(
             session,
             abs_path=abs_path,
             rel_path=rel_path,
             caption=caption,
             tool_call_id=tool_call_id,
-            size=size,
+            size=None,
             dpi=None,
             slot=None,
             source_code=f"recapture_plot(slot={slot!r})" if slot else "recapture_plot()",

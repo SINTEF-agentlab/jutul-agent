@@ -465,11 +465,13 @@ def _cairo_poster_or_export(png_path: Path, html_path: Path) -> str:
     ) + DETACH_CAIRO_SCREENS
 
 
-def recapture_call(*, key: str, png_path: Path, size: list[int] | None) -> str:
+def recapture_call(*, key: str, png_path: Path) -> str:
     """Julia to re-render a stored window's figure at its current view to a PNG.
 
     Re-activates GLMakie offscreen first; the try-guard lets a session with no open
-    window report cleanly rather than throwing.
+    window report cleanly rather than throwing. No size is passed: the window is
+    saved at the size the user has it, since asking Makie for another one resizes
+    the window itself.
     """
 
     return (
@@ -478,7 +480,6 @@ def recapture_call(*, key: str, png_path: Path, size: list[int] | None) -> str:
         "    JutulAgent.JutulAgentPlots.recapture(;\n"
         f'        key = raw"{key}",\n'
         f'        path = raw"{png_path.as_posix()}",\n'
-        f"        size = {_size_tuple(size)},\n"
         "    )\n"
         "end"
     )
