@@ -207,6 +207,7 @@ async def _run_session(
     from jutul_agent.models import resolve_model
     from jutul_agent.session_host import SessionHost
     from jutul_agent.simulators.env_setup import EnvSetupError
+    from jutul_agent.sysimage import SysimageUnavailable
     from jutul_agent.user_config import load_user_config
 
     try:
@@ -262,7 +263,12 @@ async def _run_session(
             open_windows=can_open_windows(interactive_session=not headless),
             prepare_env=args.julia_project is None,
             allow_missing_credential=not headless,
+            sysimage=args.sysimage,
         )
+    except SysimageUnavailable as exc:
+        # Already a full, formatted explanation with both ways forward.
+        print(f"\n{exc}", file=sys.stderr)
+        return 1
     except EnvSetupError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

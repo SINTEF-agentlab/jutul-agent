@@ -155,6 +155,36 @@ def mark_dependency_source(env_dir: Path, dependencies: Sequence[Path] | None) -
 WARM_SOURCE_MARKER = ".jutul-agent-warm-source"
 
 
+def _update_with_package_source(digest: hashlib._Hash, root: Path) -> None:
+    """Fold a package's ``.jl`` and ``.toml`` sources into ``digest``.
+
+    Paths go in alongside contents, so a rename registers as a change. A root that
+    is not a directory contributes nothing, which is what lets a caller pass a
+    speculative path without checking it first.
+    """
+
+    if not root.is_dir():
+        return
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and path.suffix in (".jl", ".toml"):
+            digest.update(str(path.relative_to(root)).encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+
+
+def package_source_digest(root: Path) -> str:
+    """Content hash of one Julia package's sources.
+
+    The single measure of "has this package's source changed", shared by the
+    warm-source check below and the system-image stamp, which both have to notice
+    an edit to a path-tracked package that carries no version bump.
+    """
+
+    digest = hashlib.sha256()
+    _update_with_package_source(digest, root)
+    return digest.hexdigest()
+
+
 def warm_source_fingerprint(template_path: Path) -> str:
     """Content hash of the warm-package sources backing a managed env.
 
@@ -170,13 +200,7 @@ def warm_source_fingerprint(template_path: Path) -> str:
         sorted(p for p in template_path.glob("JutulAgent*") if (p / "Project.toml").exists())
     )
     for root in roots:
-        if not root.is_dir():
-            continue
-        for path in sorted(root.rglob("*")):
-            if path.is_file() and path.suffix in (".jl", ".toml"):
-                digest.update(str(path.relative_to(root)).encode("utf-8"))
-                digest.update(b"\0")
-                digest.update(path.read_bytes())
+        _update_with_package_source(digest, root)
     return digest.hexdigest()
 
 
@@ -361,6 +385,10 @@ class WorkspaceConfig:
     simulators: dict[str, SimulatorConfig] = field(default_factory=dict)
     approval_mode: str | None = None
     model: str | None = None
+    # ``[julia] sysimage``: whether this workspace runs from a custom Julia system
+    # image. ``None`` means unset, which is what lets a command-line flag and the
+    # environment fill in without a config value having to claim a default.
+    sysimage: bool | None = None
 
     def simulator_config(self, name: str) -> SimulatorConfig:
         return self.simulators.get(name) or SimulatorConfig()
@@ -378,6 +406,7 @@ def load_workspace_config(workspace: Path | None = None) -> WorkspaceConfig:
     sim_name = (data.get("workspace") or {}).get("simulator")
     approval_mode = (data.get("workspace") or {}).get("approval_mode")
     model = data.get("model")
+    sysimage = (data.get("julia") or {}).get("sysimage")
     simulators_raw = data.get("simulator") or {}
     simulators: dict[str, SimulatorConfig] = {}
     for name, body in simulators_raw.items():
@@ -393,6 +422,7 @@ def load_workspace_config(workspace: Path | None = None) -> WorkspaceConfig:
         simulators=simulators,
         approval_mode=approval_mode,
         model=model if isinstance(model, str) else None,
+        sysimage=sysimage if isinstance(sysimage, bool) else None,
     )
 
 
@@ -432,6 +462,15 @@ def write_workspace_config(
             lines.append("")
         lines.append("[workspace]")
         lines.extend(workspace_lines)
+
+    # Unset stays unwritten: only a folder that has made a choice about the system
+    # image carries the key, so rewriting this file for another reason (recording
+    # the simulator, say) can neither invent a setting nor drop an existing one.
+    if config.sysimage is not None:
+        if lines:
+            lines.append("")
+        lines.append("[julia]")
+        lines.append(f"sysimage = {str(config.sysimage).lower()}")
 
     for name, sim in sorted(config.simulators.items()):
         if sim.source_path is None:

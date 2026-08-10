@@ -378,6 +378,7 @@ class SessionHost:
         virtual_display: bool = True,
         allow_missing_credential: bool = False,
         extensions: Sequence[Capability] = (),
+        sysimage: bool | None = None,
     ) -> SessionHost:
         """Stand up a real session: prepare the env, start the kernel, build the agent.
 
@@ -392,13 +393,15 @@ class SessionHost:
         Julia warm-up. ``virtual_display=False`` skips the per-session Xvfb.
         ``allow_missing_credential=True`` lets an interactive front end come up
         with no agent when the model's provider key is missing, so the user can
-        supply it in-app and rebuild via ``reconfigure``.
+        supply it in-app and rebuild via ``reconfigure``. ``sysimage`` overrides
+        the workspace's own on/off setting for this session.
         """
 
         from contextlib import AsyncExitStack
 
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+        from jutul_agent import sysimage as sysimage_mod
         from jutul_agent.agent.builder import build_agent
         from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
         from jutul_agent.credentials import missing_credential
@@ -428,11 +431,12 @@ class SessionHost:
         # differently.
         all_extensions = [*discover_extensions(), *extensions] if discover else list(extensions)
         dependency_paths = collect_dependency_paths(all_extensions)
+        workspace_config = load_workspace_config(ws)
         # Model precedence is resolved here, once, for every front end:
         # explicit request > workspace config > user config > env > default.
         resolved_model = resolve_model(
             model,
-            workspace_model=load_workspace_config(ws).model,
+            workspace_model=workspace_config.model,
             user_model=load_user_config().model,
         )
         # A caller can supply a pre-provisioned env (and skip preparation); the
@@ -453,6 +457,25 @@ class SessionHost:
                 sim_name=simulator.name,
                 dependencies=dependency_paths,
             )
+
+        # After the env is prepared, never before: preparation is what re-copies the
+        # in-env JutulAgent runtime after an upgrade and installs anything a
+        # capability added, so asking earlier would compare the image against an
+        # environment that is about to change.
+        sysimage_decision = sysimage_mod.decide(
+            ws,
+            project,
+            enabled=sysimage_mod.resolve_enabled(
+                sysimage, workspace_enabled=workspace_config.sysimage
+            ),
+        )
+        if sysimage_decision.blocks:
+            raise sysimage_mod.SysimageUnavailable(
+                sysimage_decision,
+                command=sysimage_mod.SURFACE_COMMANDS.get(surface, "jutul-agent web"),
+            )
+        for note in sysimage_decision.notes:
+            print(f"note: {note}", file=sys.stderr)
 
         sid = session_id or default_session_id()
         sdir = session_dir(sid, state_root=state_root)
@@ -477,6 +500,7 @@ class SessionHost:
 
             kernel_config = KernelConfig(
                 julia_project=project,
+                sysimage=sysimage_decision.path,
                 stderr_file=sdir / "julia-startup.log",
                 cwd=ws,
                 env=env,

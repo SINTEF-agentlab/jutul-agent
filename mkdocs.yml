@@ -68,6 +68,7 @@ nav:
       - The web UI: web-ui.md
       - Turns: turns.md
       - The Julia kernel: julia-kernel.md
+      - The Julia system image: sysimage.md
       - Filesystem: filesystem.md
       - Memory: memory.md
       - Context handling: context.md

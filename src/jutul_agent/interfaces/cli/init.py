@@ -68,6 +68,19 @@ def build_parser(prog: str = "jutul-agent init") -> argparse.ArgumentParser:
         help="Skip the bake; bootstrap config + env only (the first session builds the rest).",
     )
     parser.set_defaults(precompile=True)
+    # Opt-in, and sticky once taken: the setting is written to the folder's
+    # config, so a later plain `init` here rebuilds the image without being asked
+    # again. That matters because it roughly triples what `init` costs, which is
+    # a bad default for the users who never wanted one.
+    parser.add_argument(
+        "--sysimage",
+        action="store_true",
+        help=(
+            "Also build a Julia system image for this folder, and start from it "
+            "from now on. Adds a long build (tens of minutes) to init, and takes "
+            "most of the package loading out of every session afterwards."
+        ),
+    )
     add_workspace_flags(parser)
     return parser
 
@@ -121,6 +134,8 @@ def run(args: argparse.Namespace) -> int:
         new_config = dc_replace(new_config, simulator=sim_name)
     if source_path is not None:
         new_config = merge_simulator_config(new_config, sim_name, source_path=source_path)
+    if args.sysimage:
+        new_config = dc_replace(new_config, sysimage=True)
     write_workspace_config(new_config, workspace=ws)
 
     print(f"Workspace ready at {ws}")
@@ -136,8 +151,50 @@ def run(args: argparse.Namespace) -> int:
     else:
         print("  precompile:    skipped (--no-precompile); the first session will build the env")
 
+    # Last, and only when this folder has opted in. The precompiled environment
+    # above is the build's input, not a duplicate of it: the image is a snapshot
+    # of the packages as they load, and they load from what precompile just baked.
+    if (args.sysimage or new_config.sysimage) and not _build_sysimage(adapter, ws, project):
+        return 1
+
     _maybe_prompt_for_provider_key(new_config)
     return 0
+
+
+def _build_sysimage(adapter, ws: Path, project: Path) -> bool:
+    """Build this folder's system image as the final step of ``init``.
+
+    A failure here is loud and fatal to ``init``, because the folder is now set
+    to start from an image it does not have, and every later launch would refuse
+    until someone noticed.
+    """
+
+    from jutul_agent import sysimage_build
+    from jutul_agent.interfaces.cli.sysimage import prepare_environment
+    from jutul_agent.simulators.env_setup import EnvSetupError
+
+    print(
+        f"\nBuilding the Julia system image (about {sysimage_build.TYPICAL_BUILD_MINUTES} "
+        "minutes; it compiles every package in the environment into one file)..."
+    )
+    try:
+        prepare_environment(adapter, workspace=ws, julia_project=project)
+        result = sysimage_build.build(workspace=ws, julia_project=project)
+    except (EnvSetupError, sysimage_build.SysimageBuildError) as exc:
+        print(f"\nerror: {exc}", file=sys.stderr)
+        print(
+            "The environment is ready, but this folder is set to start from a "
+            "system image it does not have. Retry with `jutul-agent sysimage build`, "
+            "or drop the setting with `jutul-agent sysimage clear`.",
+            file=sys.stderr,
+        )
+        return False
+    except KeyboardInterrupt:
+        print("\nBuild interrupted; nothing was installed.", file=sys.stderr)
+        return False
+
+    print(f"  sysimage:      {result.path} ({result.seconds / 60:.0f} min)")
+    return True
 
 
 def _note_headless_plotting() -> None:

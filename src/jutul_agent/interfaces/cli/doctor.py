@@ -84,6 +84,7 @@ def run(args: argparse.Namespace) -> int:
     project = _check_julia_project(report, ws)
     _check_simulator_installed(report, project, sim_name)
     _check_env_template_current(report, ws, project, sim_name)
+    _check_sysimage(report, ws, project, config)
     _check_plotting_display(report)
 
     # Confirm Julia actually boots in this env; catches a broken/half-resolved
@@ -309,6 +310,49 @@ def _check_env_template_current(
         )
     else:
         report.line(PASS, "Env template current")
+
+
+def _check_sysimage(report: _Report, ws: Path, project: Path | None, config) -> None:
+    """Report the system image, but only for workspaces that have one in play.
+
+    Silent otherwise: an image is opt-in and most workspaces never build one, so
+    a line saying it is off would be noise in every report. When it is on, this
+    is the only place that shows *why* an image is refused without having to
+    trigger the refusal by launching.
+    """
+
+    from jutul_agent import sysimage as sysimage_mod
+
+    enabled = sysimage_mod.resolve_enabled(workspace_enabled=config.sysimage)
+    if not enabled and not sysimage_mod.sysimage_path(ws).exists():
+        return
+    if not enabled:
+        report.line(
+            PASS,
+            "System image",
+            "built, but this folder is not set to use it",
+            "Turn it on with `[julia] sysimage = true` or the --sysimage flag.",
+        )
+        return
+
+    decision = sysimage_mod.decide(ws, project or ws, enabled=True)
+    if decision.blocks:
+        # Some refusals a rebuild cannot fix, and those carry their own remedy.
+        remedy = " ".join(line.strip() for line in decision.fix) if decision.fix else None
+        report.line(
+            FAIL,
+            "System image",
+            decision.summary,
+            remedy or "Rebuild it with `jutul-agent sysimage build`.",
+        )
+        return
+    detail = str(sysimage_mod.sysimage_path(ws))
+    stamp = sysimage_mod.read_stamp(ws) or {}
+    if stamp.get("built_at"):
+        detail += f" (built {stamp['built_at']})"
+    report.line(PASS, "System image", detail)
+    for note in decision.notes:
+        print(f"        note: {note}")
 
 
 def _check_plotting_display(report: _Report) -> None:

@@ -67,6 +67,38 @@ def add_session_flags(parser: argparse.ArgumentParser) -> None:
             "Use a throwaway memory directory: nothing is persisted to workspace memory on disk."
         ),
     )
+    add_sysimage_flags(parser)
+
+
+def add_sysimage_flags(parser: argparse.ArgumentParser) -> None:
+    """Add the ``--sysimage``/``--no-sysimage`` pair for one launch.
+
+    Both default to ``None`` (not "off"), so the folder's ``[julia] sysimage``
+    setting decides unless a flag is given. ``--no-sysimage`` is the escape
+    hatch a refusal points at, so it has to be able to override a folder that
+    turned the image on.
+    """
+    from jutul_agent.sysimage import SYSIMAGE_ENV_VAR
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--sysimage",
+        dest="sysimage",
+        action="store_true",
+        default=None,
+        help=(
+            "Start from this folder's Julia system image, refusing to start if it "
+            "is missing or out of date. Precedence: this flag > the folder's "
+            f"[julia] sysimage > ${SYSIMAGE_ENV_VAR} > off."
+        ),
+    )
+    group.add_argument(
+        "--no-sysimage",
+        dest="sysimage",
+        action="store_false",
+        default=None,
+        help="Ignore the system image for this run and load packages normally.",
+    )
 
 
 def resolve_add_dirs(raw_dirs: Any, ws: Path) -> list[Path]:

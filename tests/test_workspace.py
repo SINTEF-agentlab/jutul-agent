@@ -51,6 +51,26 @@ def test_workspace_config_persists_model(tmp_path: Path) -> None:
     assert loaded.simulator == "battmo"
 
 
+def test_workspace_config_persists_the_sysimage_choice(tmp_path: Path) -> None:
+    """A rewrite for any other reason must not silently drop the choice.
+
+    Turning the system image on is a folder-level decision that outlives the
+    command that made it, and several commands rewrite this file in passing.
+    """
+    write_workspace_config(WorkspaceConfig(simulator="battmo", sysimage=True), workspace=tmp_path)
+    assert load_workspace_config(tmp_path).sysimage is True
+
+    write_workspace_config(WorkspaceConfig(simulator="battmo", sysimage=False), workspace=tmp_path)
+    assert load_workspace_config(tmp_path).sysimage is False
+
+
+def test_workspace_config_without_a_sysimage_choice_omits_the_key(tmp_path: Path) -> None:
+    """Unset has to stay unset: it is what lets the flag and the env fill in."""
+    write_workspace_config(WorkspaceConfig(simulator="battmo"), workspace=tmp_path)
+    assert "sysimage" not in (tmp_path / ".jutul-agent" / "config.toml").read_text(encoding="utf-8")
+    assert load_workspace_config(tmp_path).sysimage is None
+
+
 def test_workspace_config_without_model_omits_key(tmp_path: Path) -> None:
     write_workspace_config(WorkspaceConfig(simulator="battmo"), workspace=tmp_path)
     text = (tmp_path / ".jutul-agent" / "config.toml").read_text(encoding="utf-8")

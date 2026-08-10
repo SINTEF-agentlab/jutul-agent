@@ -42,6 +42,7 @@ from jutul_agent.interfaces.server import protocol
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
 from jutul_agent.preview import TOOL_STREAM_RENDER_INTERVAL, TOOL_STREAM_TAIL_CAP
 from jutul_agent.session_host import SessionHost
+from jutul_agent.sysimage import SysimageUnavailable
 from jutul_agent.trace import schema
 
 # The web UI ships pre-built next to this module: ``web_dist`` is the Vite build of
@@ -127,6 +128,7 @@ def create_app(
     threads: str | None = None,
     add_dirs: Sequence[Path] = (),
     ephemeral_memory: bool = False,
+    sysimage: bool | None = None,
 ) -> FastAPI:
     # The launch-wide knobs (folder-fixed) ride in the default manager's host
     # factory; an injected manager (tests) brings its own. The model is a default
@@ -144,6 +146,7 @@ def create_app(
                     threads=threads,
                     add_dirs=tuple(add_dirs),
                     ephemeral_memory=ephemeral_memory,
+                    sysimage=sysimage,
                 )
             )
         )
@@ -382,6 +385,11 @@ def create_app(
             )
         except KeyError as exc:  # unknown simulator
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except SysimageUnavailable as exc:
+            # The launch check already cleared the image, so reaching here means
+            # the environment moved while the server was up (a package installed
+            # or edited). The message explains itself; pass it through as-is.
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"session_id": host.session_id}
 
     @app.get("/sessions")

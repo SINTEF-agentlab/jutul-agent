@@ -76,3 +76,55 @@ jobs:
 
       - name: Smoke test (env loads + using ${{ matrix.simulator }})
         run: uv run pytest tests/test_simulators_smoke.py -k ${{ matrix.simulator }} -ra
+
+  # One real system image, end to end. Not on PRs: a build is tens of minutes on
+  # top of the precompile, and what it guards against is upstream drift
+  # (PackageCompiler, Julia, the simulator) rather than our own changes, which
+  # the stubbed tests cover. One simulator is enough, since what could break here
+  # is the build machinery, not any particular env.
+  sysimage:
+    name: sysimage (jutuldarcy)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Install headless OpenGL (xvfb + Mesa)
+        run: sudo apt-get update && sudo apt-get install -y xvfb xorg-dev mesa-utils libgl1 libgl1-mesa-dri
+
+      # A workspace bootstrapped exactly as a user would, since the image is a
+      # snapshot of a prepared environment and inherits anything wrong with it.
+      - name: Bootstrap a workspace
+        run: uv run jutul-agent init --sim jutuldarcy --workspace "$RUNNER_TEMP/ws"
+
+      # PackageCompiler links the image with a C compiler and needs the disk for
+      # a multi-GB artifact, so a failure here is as likely to be the runner as
+      # the code; the free space is worth having in the log.
+      - name: Build the system image
+        run: |
+          df -h /
+          uv run jutul-agent sysimage build --workspace "$RUNNER_TEMP/ws"
+          uv run jutul-agent sysimage status --workspace "$RUNNER_TEMP/ws"
+
+      - name: Start a kernel from it, and check the staleness guard
+        env:
+          JUTUL_AGENT_SYSIMAGE_WORKSPACE: ${{ runner.temp }}/ws
+        run: uv run pytest tests/test_sysimage_integration.py -ra
