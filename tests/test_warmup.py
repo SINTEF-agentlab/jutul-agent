@@ -169,8 +169,9 @@ async def test_real_work_cancels_a_running_warmup() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
     assert "real work" in inner.calls
-    # The warm-up's own eval was interrupted rather than left running to completion.
-    assert inner.cancelled == 1
+    # The in-flight load is NOT interrupted: cancelling a `using` half-initialises
+    # Julia's module system and the kernel dies on the next use of it.
+    assert inner.cancelled == 0
 
 
 async def test_warmup_evals_do_not_cancel_themselves() -> None:
@@ -228,3 +229,48 @@ async def test_a_cancelled_warmup_leaves_the_session_usable() -> None:
     second = await julia.eval("still working")
     assert second.output == ""
     assert inner.calls[-1] == "still working"
+
+
+async def test_warmup_is_left_alone_while_it_is_still_loading() -> None:
+    # Loading packages and building the GL context are what cancelling cannot touch.
+    # Measured: a session that cancelled 15s in lost the kernel 13.5s into the tool
+    # call that did it. Real work waits instead -- it needed those packages anyway.
+    inner = _SlowJulia()
+    julia = YieldsToWork(inner)
+    abandonable = asyncio.Event()
+    task = start_warmup(inner, "JutulAgentJutulDarcy", abandonable=abandonable)
+    assert task is not None
+    julia.set_warmup(task, abandonable)
+    await asyncio.sleep(0)
+
+    julia.drop_warmup()
+    await asyncio.sleep(0)
+    assert not task.cancelled(), "the load must not be cancelled"
+    assert not task.done()
+
+    inner.gate.set()  # let the warm-up run to completion
+    await task
+    assert abandonable.is_set()
+
+
+async def test_warmup_is_dropped_once_the_loading_is_done() -> None:
+    # Past the load, the capability's warm_code is genuinely optional, so real work
+    # takes the kernel rather than queueing behind it.
+    inner = _SlowJulia()
+    inner.gate.set()
+    julia = YieldsToWork(inner)
+    abandonable = asyncio.Event()
+    task = start_warmup(
+        inner, "JutulAgentJutulDarcy", warm_code=["heavy()"], abandonable=abandonable
+    )
+    assert task is not None
+    julia.set_warmup(task, abandonable)
+
+    while not abandonable.is_set():
+        await asyncio.sleep(0)
+    inner.gate.clear()  # the warm_code step now blocks
+    await asyncio.sleep(0)
+
+    julia.drop_warmup()
+    await asyncio.sleep(0)
+    assert task.cancelling() or task.cancelled() or task.done()

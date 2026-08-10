@@ -37,19 +37,32 @@ class YieldsToWork:
     def __init__(self, inner: Any) -> None:
         self._inner = inner
         self._warmup: asyncio.Task[Any] | None = None
+        self._abandonable: asyncio.Event | None = None
 
-    def set_warmup(self, task: asyncio.Task[Any] | None) -> None:
+    def set_warmup(
+        self, task: asyncio.Task[Any] | None, abandonable: asyncio.Event | None = None
+    ) -> None:
         self._warmup = task
+        self._abandonable = abandonable
 
     async def eval(self, code: str, on_chunk: Any = None) -> Any:
         self.drop_warmup()
         return await self._inner.eval(code, on_chunk)
 
     def drop_warmup(self) -> None:
-        """Cancel the warm-up if one is still running. Idempotent."""
+        """Cancel the warm-up if it has reached a point where that is safe. Idempotent.
+
+        Before that point it is still loading packages and building the GL context,
+        and interrupting either takes the kernel down (see ``start_warmup``). So this
+        leaves it alone and the caller's eval simply queues behind it on the kernel
+        lock -- waiting for work it needed anyway.
+        """
         task = self._warmup
-        if task is not None and not task.done():
-            task.cancel()
+        if task is None or task.done():
+            return
+        if self._abandonable is not None and not self._abandonable.is_set():
+            return
+        task.cancel()
 
     # Everything else is the kernel's own: reset, restart, interrupt, the async
     # context manager, and whatever a backend adds.
@@ -109,6 +122,7 @@ def start_warmup(
     warm_package: str,
     capability_packages: Sequence[str] = (),
     warm_code: Sequence[str] = (),
+    abandonable: asyncio.Event | None = None,
 ) -> asyncio.Task[Any] | None:
     """Background warm-up shared by every front end: load the simulator's Julia world
     (plus any capability packages), pin HYPRE's threads, then initialise the GL context.
@@ -118,16 +132,31 @@ def start_warmup(
     front end wants its plots offscreen (the TUI shows a PNG, the web serves WGLMakie).
     Best-effort: each step is wrapped so a missing piece never breaks startup, and the
     returned task is cancelled on session teardown.
+
+    ``abandonable`` is set once the loading is done, and marks the only point from
+    which this task can be cancelled safely. Interrupting a ``using`` leaves Julia's
+    module system half-initialised, and the damage surfaces later as a dead process
+    rather than an error: measured, a session whose first tool call arrived 15s in
+    (mid-load) cancelled the warm-up and then lost the kernel 13.5s into that call,
+    with an empty stderr and a torn control socket. The GL context is treated the same
+    way, since a half-built context takes the process down on the next plot.
+
+    Nothing is lost by waiting: the load is work the first tool call needs regardless,
+    so cancelling it only moves the cost, and the caller queues on the kernel lock
+    either way. The capability's ``warm_code`` is the genuinely optional part -- extra
+    specialisation the session would be fine without -- and that is what stays
+    abandonable.
     """
     bootstrap = f"try; @eval {load_statement(warm_package, capability_packages)}; catch; end"
 
     async def _run() -> None:
-        with contextlib.suppress(Exception):
-            await julia.eval(bootstrap)
-        with contextlib.suppress(Exception):
-            await julia.eval(HYPRE_THREADS_SETUP)
-        with contextlib.suppress(Exception):
-            await julia.eval(GL_CONTEXT_WARMUP)
+        # Shielded: cancelling here is what kills the kernel, so a cancel that lands
+        # mid-load has to leave the eval running and take effect at the next step.
+        for essential in (bootstrap, HYPRE_THREADS_SETUP, GL_CONTEXT_WARMUP):
+            with contextlib.suppress(Exception):
+                await asyncio.shield(_eval(julia, essential))
+        if abandonable is not None:
+            abandonable.set()
         # Last, and only once the backends are up: a capability's snippets exist to
         # warm plot and solve paths, which need the GL context this step above built.
         for code in warm_code:
@@ -135,6 +164,10 @@ def start_warmup(
                 await julia.eval(code)
 
     return asyncio.create_task(_run(), name="julia-warmup")
+
+
+async def _eval(julia: Any, code: str) -> Any:
+    return await julia.eval(code)
 
 
 # Pin HYPRE's OpenMP thread count for this session. JutulDarcy loads HYPRE (its

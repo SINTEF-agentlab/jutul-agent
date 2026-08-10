@@ -566,13 +566,17 @@ class SessionHost:
             from jutul_agent.agent.capabilities import collect_warm_code, collect_warm_packages
             from jutul_agent.simulators.warmup import start_warmup
 
+            # Set once the warm-up is past loading; before that, cancelling it
+            # would interrupt a `using` and take the kernel down with it.
+            abandonable = asyncio.Event()
             host._warmup_task = start_warmup(
                 kernel,
                 simulator.warm_package,
                 collect_warm_packages(all_extensions),
                 collect_warm_code(all_extensions),
+                abandonable=abandonable,
             )
-            julia.set_warmup(host._warmup_task)
+            julia.set_warmup(host._warmup_task, abandonable)
         return host
 
 
