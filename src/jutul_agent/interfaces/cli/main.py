@@ -11,6 +11,7 @@ Setup and utilities:
 
 - ``jutul-agent init|setup [--sim <name>]``  bootstrap the current workspace.
 - ``jutul-agent key [<provider>]``           view or set provider API keys.
+- ``jutul-agent sysimage [build|status]``    manage the folder's Julia system image.
 - ``jutul-agent doctor``                     diagnose the workspace setup.
 - ``jutul-agent upgrade``                    update the install to the latest.
 - ``jutul-agent transcript [<id>]``         render a session trace.
@@ -61,7 +62,8 @@ INTERFACE_CHOOSER = """jutul-agent — pick an interface:
 
 Set up a folder first:  jutul-agent init --sim <name>
 Set an API key:         jutul-agent key <provider>
-More commands:           doctor, upgrade, transcript, sessions, review, eval  (add -h for options)
+More commands:           doctor, sysimage, upgrade, transcript, sessions, review, eval
+                         (add -h to any of them for options)
 """
 
 
@@ -123,6 +125,13 @@ def main(argv: list[str] | None = None) -> int:
 
         args = key_cmd.build_parser(prog=f"jutul-agent {argv[0]}").parse_args(argv[1:])
         return key_cmd.run(args)
+
+    if argv and argv[0] == "sysimage":
+        from jutul_agent.interfaces.cli import sysimage as sysimage_cmd
+
+        args = sysimage_cmd.build_parser().parse_args(argv[1:])
+        apply_workspace_flags(args)
+        return sysimage_cmd.run(args)
 
     if argv and argv[0] == "doctor":
         args = doctor_cmd.build_parser().parse_args(argv[1:])

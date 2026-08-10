@@ -72,6 +72,12 @@ interfaces, and models; to work on jutul-agent itself, clone the repo (see
   call, and artifact. Transcripts and the benchmark grade against it.
 - Models are interchangeable: OpenAI, Anthropic, Google, or local models via
   Ollama, switchable mid-session.
+- Where the packages are fixed, such as a demo or a shared machine,
+  `init --sysimage` bakes the whole Julia environment into a [system
+  image](https://sintef-agentlab.github.io/jutul-agent/sysimage/) and sessions
+  start with it already loaded. It is checked against the environment before
+  every session, so an image that has fallen behind refuses to run instead of
+  quietly using the old code.
 
 ## Documentation
 

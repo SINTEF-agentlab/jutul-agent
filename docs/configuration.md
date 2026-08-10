@@ -16,7 +16,16 @@ approval_mode = "workspace"        # optional: ask | workspace | auto
 
 [simulators.jutuldarcy]
 source_path = "/path/to/JutulDarcy.jl"  # dev-link, set by init --source-path
+
+[julia]
+sysimage = true                    # start sessions from this folder's system image
 ```
+
+The `[julia] sysimage` key is written by `jutul-agent sysimage build` and
+`clear` (and by `init --sysimage`), so it is not normally edited by hand. When
+it is on, a launch that finds the image missing or out of date refuses to
+start rather than falling back to the slow path; see
+[the system image](sysimage.md).
 
 This file is safe to commit: API keys never go here.
 
@@ -64,6 +73,7 @@ so a stale shell variable can't silently override a key you just changed.
 | `JUTUL_AGENT_HYPRE_THREADS` | OpenMP threads for HYPRE's BoomerAMG (JutulDarcy's CPR pressure preconditioner). Defaults to physical cores minus one, capped at 8 (HYPRE's solver performance degrades with many threads). Independent of the Julia compute-thread count. |
 | `JUTUL_AGENT_OLLAMA_NUM_CTX` | Memory cap for local models' context window (default 64K tokens, lower on tight hardware) |
 | `JUTUL_AGENT_NO_XVFB` | Opt out of starting a virtual display on headless Linux (plotting then errors at use) |
+| `JUTUL_AGENT_SYSIMAGE` | Start from the folder's [system image](sysimage.md) when the workspace config says nothing (`1`/`true` to enable). The `--sysimage` / `--no-sysimage` flags override it |
 | `JUTUL_AGENT_NO_OPEN` | Never open artifacts in the OS default application (CI, tests) |
 | `JUTUL_AGENT_NO_UPDATE_CHECK` | Skip the once-a-day release check at launch |
 | `JUTUL_AGENT_REVIEW` | Developer tool: set to `1` to auto-review every finished turn (see [session review](review.md)) |
@@ -79,6 +89,7 @@ In the workspace:
   .jutul-agent/
     config.toml          # workspace config (committable)
     julia-env/           # the simulator's Julia environment
+    sysimage/            # the system image, if this folder has one (several GB)
   jutul-agent-output/
     sessions/<date>-<id>/
       artifacts/         # plots and reports the agent saved

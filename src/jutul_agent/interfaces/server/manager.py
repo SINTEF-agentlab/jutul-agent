@@ -53,6 +53,7 @@ class SessionLaunchDefaults:
     threads: str | None = None
     add_dirs: tuple[Path, ...] = ()
     ephemeral_memory: bool = False
+    sysimage: bool | None = None
 
 
 def make_host_factory(defaults: SessionLaunchDefaults | None = None) -> HostFactory:
@@ -90,6 +91,7 @@ def make_host_factory(defaults: SessionLaunchDefaults | None = None) -> HostFact
             threads=launch.threads,
             add_dirs=launch.add_dirs,
             ephemeral_memory=launch.ephemeral_memory,
+            sysimage=launch.sysimage,
         )
 
     return factory

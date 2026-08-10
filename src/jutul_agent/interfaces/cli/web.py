@@ -10,8 +10,14 @@ from __future__ import annotations
 import argparse
 import contextlib
 import sys
+from typing import TYPE_CHECKING
 
 from jutul_agent.interfaces.cli._helpers import add_session_flags, add_workspace_flags
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from jutul_agent.workspace import WorkspaceConfig
 
 
 def build_parser(prog: str = "jutul-agent web") -> argparse.ArgumentParser:
@@ -98,6 +104,34 @@ def _resolve_simulator(args: argparse.Namespace) -> str | None:
     return sim
 
 
+def _sysimage_ready(args: argparse.Namespace, ws: Path, config: WorkspaceConfig) -> bool:
+    """Check the system image before binding the port, and explain if it fails.
+
+    Every session this server creates goes through the same check, so a bad
+    image would otherwise surface as a session that refuses to start once the
+    browser is already open. Checking here puts the explanation in the terminal
+    the user launched from. The check inside the session is still the
+    authoritative one: it runs after the environment is prepared, when the
+    manifest reflects what the session will really load.
+    """
+    from jutul_agent import sysimage as sysimage_mod
+    from jutul_agent.workspace import resolve_julia_project
+
+    decision = sysimage_mod.decide(
+        ws,
+        args.julia_project or resolve_julia_project(ws),
+        enabled=sysimage_mod.resolve_enabled(args.sysimage, workspace_enabled=config.sysimage),
+    )
+    if decision.blocks:
+        print(f"\n{sysimage_mod.refusal(decision, command='jutul-agent web')}", file=sys.stderr)
+        return False
+    for note in decision.notes:
+        print(f"note: {note}", file=sys.stderr)
+    if decision.usable:
+        print(f"System image: {decision.path}", file=sys.stderr)
+    return True
+
+
 def run(args: argparse.Namespace) -> int:
     try:
         import uvicorn
@@ -133,6 +167,9 @@ def run(args: argparse.Namespace) -> int:
     model = args.model or config.model
     add_dirs = resolve_add_dirs(args.add_dir, ws)
 
+    if not _sysimage_ready(args, ws, config):
+        return 1
+
     print(
         f"jutul-agent server on http://{args.host}:{args.port} (simulator: {sim}"
         + (f", model: {model}" if model else "")
@@ -151,6 +188,7 @@ def run(args: argparse.Namespace) -> int:
             threads=args.threads,
             add_dirs=add_dirs,
             ephemeral_memory=args.ephemeral_memory,
+            sysimage=args.sysimage,
         ),
         host=args.host,
         port=args.port,

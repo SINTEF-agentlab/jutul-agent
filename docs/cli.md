@@ -46,6 +46,7 @@ changed per session in the UI.
 | `--threads <N\|auto>` | Julia compute threads (default: physical cores minus one) |
 | `--add-dir <path>` | Add an extra folder the agent can read and edit (repeatable; also runtime `/add-dir`) |
 | `--ephemeral-memory` | Use a throwaway memory directory; nothing persists to workspace memory |
+| `--sysimage` / `--no-sysimage` | Start sessions from the folder's [system image](sysimage.md), or skip it, overriding the folder's setting |
 | `--host <addr>` | Address to bind (default `127.0.0.1`, localhost only) |
 | `--port <n>` | Port to bind (default `8742`) |
 
@@ -68,6 +69,7 @@ Launches the interactive terminal UI.
 | `--resume [id]` | Resume a session by id or unique prefix; with no value, pick from a list |
 | `--approval-mode ask\|workspace\|auto` | Human-in-the-loop policy |
 | `--ephemeral-memory` | Throwaway memory directory for this session |
+| `--sysimage` / `--no-sysimage` | Start from the folder's [system image](sysimage.md), or skip it, overriding the folder's setting |
 
 ### jutul-agent run
 
@@ -91,14 +93,38 @@ included, so the first session in any interface is fast.
 | `--source-path <path>` | `Pkg.develop` a local checkout of the simulator package (persisted to the workspace config) |
 | `--no-precompile` | Skip the bake — bootstrap config + env only; the first session builds the rest |
 | `--force` | Replace an existing workspace env with a fresh template copy (after upgrading jutul-agent) |
+| `--sysimage` | Also build a [system image](sysimage.md) for this folder, and start from it from now on. Adds tens of minutes to `init` |
+
+## jutul-agent sysimage
+
+Manage this folder's Julia [system image](sysimage.md): every package the
+environment uses, compiled into one file the session starts from, which takes
+most of the package loading out of every launch.
+
+```sh
+jutul-agent sysimage           # status: what it contains, and whether it still fits (default)
+jutul-agent sysimage build     # build one, and start from it from now on
+jutul-agent sysimage clear     # remove it, and stop using it
+```
+
+A successful build turns the folder's setting on and `clear` turns it off, so
+the setting and the file on disk cannot drift apart. A failed or interrupted
+build leaves the previous image in place: the new one is verified under a
+temporary name and only then moved in.
+
+| Option | Meaning |
+|---|---|
+| `--sim <name>` | Simulator to build for (default: workspace config / auto-detect) |
+| `--cpu-target <target>` | CPU the image is compiled for. The default, `native`, is fastest here and will not run on other hardware; pass `generic` for a portable image |
 
 ## jutul-agent doctor
 
 Diagnose the setup: Julia version, provider key (or Ollama reachability),
 which Julia project the workspace resolves to, whether the simulator package
 is actually in the manifest, whether the env was built from the current
-simulator template, display/xvfb for plotting, and a boot check of the env.
-Each finding comes with a fix.
+simulator template, whether a system image still matches the environment,
+display/xvfb for plotting, and a boot check of the env. Each finding comes
+with a fix.
 
 | Option | Meaning |
 |---|---|
