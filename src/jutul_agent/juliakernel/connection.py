@@ -234,6 +234,7 @@ class KernelConnection:
         self._current = None
         if pending is not None and not pending.future.done():
             pending.future.set_exception(KernelDied(message))
+            pending.future.exception()  # consumed here if nobody awaits the eval result
 
     async def _log_pump(self, reader: asyncio.StreamReader, *, is_stderr: bool) -> None:
         """Tail one of the process's own pipes into the log (no protocol here)."""

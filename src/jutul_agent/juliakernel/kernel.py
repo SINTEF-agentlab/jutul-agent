@@ -183,6 +183,13 @@ class JuliaKernel:
                 status, payload = await asyncio.shield(pending.future)
             except KernelDied as exc:
                 raise await self._explain_death(exc) from None
+            except (ConnectionError, OSError) as exc:
+                # A torn control socket mid-send or while waiting for the result frame
+                # is operationally the same as the kernel dying: callers need the
+                # supervised process context, not a bare socket error.
+                raise await self._explain_death(
+                    KernelDied(f"control connection failed ({type(exc).__name__}: {exc})")
+                ) from None
             except asyncio.CancelledError:
                 # The caller was cancelled mid-eval. Interrupt the eval and wait
                 # for its one result frame so the session stays usable, rather
