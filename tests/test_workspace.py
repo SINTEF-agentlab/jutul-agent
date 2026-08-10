@@ -592,3 +592,52 @@ def test_env_precompile_marker_tracks_the_manifest(tmp_path: Path) -> None:
 
     os.utime(env / PRECOMPILE_MARKER, (50, 50))
     assert not env_precompile_is_current(env)  # manifest changed since the bake
+
+
+# --- capability package sources gate the launch precompile -------------------
+
+
+def test_dependency_source_change_is_seen_even_though_the_manifest_is_not(tmp_path) -> None:
+    """A capability's package is path-sourced and lives outside the env, so editing it
+    leaves the Manifest untouched. Without this check launch skips the bake and the
+    session's first `using` pays it, silently, inside a tool call."""
+    from jutul_agent.workspace import (
+        dependency_source_is_current,
+        env_precompile_is_current,
+        mark_dependency_source,
+        mark_env_precompiled,
+    )
+
+    env = tmp_path / "env"
+    env.mkdir()
+    (env / "Manifest.toml").write_text("# manifest", encoding="utf-8")
+    pkg = tmp_path / "SomeCapabilityPkg"
+    (pkg / "src").mkdir(parents=True)
+    (pkg / "Project.toml").write_text('name = "SomeCapabilityPkg"', encoding="utf-8")
+    src = pkg / "src" / "SomeCapabilityPkg.jl"
+    src.write_text("module SomeCapabilityPkg end", encoding="utf-8")
+    deps = [pkg / "Project.toml"]
+
+    mark_env_precompiled(env)
+    mark_dependency_source(env, deps)
+    assert env_precompile_is_current(env)
+    assert dependency_source_is_current(env, deps)
+
+    # Edit the capability's Julia source. The manifest is untouched, so the older
+    # check still reports "current" — this is exactly the case it cannot see.
+    src.write_text("module SomeCapabilityPkg\n# workload\nend", encoding="utf-8")
+    assert env_precompile_is_current(env)
+    assert not dependency_source_is_current(env, deps)
+
+    mark_dependency_source(env, deps)
+    assert dependency_source_is_current(env, deps)
+
+
+def test_dependency_source_is_not_current_for_an_env_that_never_recorded_one(tmp_path) -> None:
+    from jutul_agent.workspace import dependency_source_is_current
+
+    env = tmp_path / "env"
+    env.mkdir()
+    assert not dependency_source_is_current(env, [tmp_path / "Nope" / "Project.toml"])
+    # No capability packages at all is a stable, satisfiable state, not a forced bake.
+    assert not dependency_source_is_current(env, [])

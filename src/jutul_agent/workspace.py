@@ -91,6 +91,63 @@ def mark_env_precompiled(env_dir: Path) -> None:
         (env_dir / PRECOMPILE_MARKER).touch()
 
 
+# Records the capability-provided package sources the env was last precompiled
+# against. They are path-sourced and live outside the env, so editing one changes
+# nothing the precompile-currency check above can see: the Manifest is untouched and
+# the marker still looks fresh. Launch would then skip the bake and the first `using`
+# inside the session would pay it — silently, with no progress, in the middle of a
+# tool call. A capability whose workload is expensive turns that into what looks
+# exactly like a hang.
+DEP_SOURCE_MARKER = ".jutul-agent-dep-source"
+
+
+def _package_root(dependency: Path) -> Path:
+    """The package directory for a dependency given as a root or its Project.toml."""
+    dependency = Path(dependency)
+    return dependency.parent if dependency.name == "Project.toml" else dependency
+
+
+def dependency_source_fingerprint(dependencies: Sequence[Path] | None) -> str:
+    """Content hash of the capability-provided Julia package sources."""
+
+    digest = hashlib.sha256()
+    for root in sorted({_package_root(d) for d in dependencies or ()}, key=str):
+        if not root.is_dir():
+            continue
+        digest.update(str(root).encode("utf-8"))
+        digest.update(b"\0")
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and path.suffix in (".jl", ".toml"):
+                digest.update(str(path.relative_to(root)).encode("utf-8"))
+                digest.update(b"\0")
+                digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def dependency_source_is_current(env_dir: Path, dependencies: Sequence[Path] | None) -> bool:
+    """Whether ``env_dir`` was precompiled against the current capability sources.
+
+    False for an env that predates this check, so the first launch after an upgrade
+    bakes once and is current thereafter.
+    """
+
+    marker = env_dir / DEP_SOURCE_MARKER
+    try:
+        return marker.read_text(encoding="utf-8").strip() == dependency_source_fingerprint(
+            dependencies
+        )
+    except OSError:
+        return False
+
+
+def mark_dependency_source(env_dir: Path, dependencies: Sequence[Path] | None) -> None:
+    """Record the capability sources ``env_dir`` has just been precompiled against."""
+    with contextlib.suppress(OSError):
+        (env_dir / DEP_SOURCE_MARKER).write_text(
+            dependency_source_fingerprint(dependencies), encoding="utf-8"
+        )
+
+
 # Records the warm-package source the env was last built from, so a jutul-agent
 # update (which changes the bundled JutulAgent runtime) is detected on launch and
 # re-copied into existing managed envs. Otherwise they keep a stale copy forever,

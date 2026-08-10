@@ -24,10 +24,12 @@ from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.workspace import (
     WorkspaceBootstrapError,
     bootstrap_julia_env,
+    dependency_source_is_current,
     ensure_env_template_stamp,
     env_declares_warm_packages,
     env_precompile_is_current,
     env_template_drifted,
+    mark_dependency_source,
     mark_env_precompiled,
     mark_warm_source,
     recopy_warm_sources,
@@ -410,7 +412,7 @@ def prepare_workspace_env(
     _sync_project_dependencies(julia_project, dependencies)
 
     _ensure_simulator_installed(adapter, workspace, julia_project, sim_name)
-    _ensure_env_warmed(workspace, julia_project, sim_name)
+    _ensure_env_warmed(workspace, julia_project, sim_name, dependencies)
     _reconcile_env_template(adapter, workspace, julia_project, sim_name)
 
 
@@ -645,7 +647,12 @@ def _reconcile_env_template(
     )
 
 
-def _ensure_env_warmed(ws: Path, julia_project: Path, sim_name: str | None) -> None:
+def _ensure_env_warmed(
+    ws: Path,
+    julia_project: Path,
+    sim_name: str | None,
+    dependencies: Sequence[Path] | None = None,
+) -> None:
     """Precompile the managed env before launch, but only when something changed.
 
     The per-simulator ``JutulAgent<Sim>`` package's precompile runs the
@@ -655,12 +662,20 @@ def _ensure_env_warmed(ws: Path, julia_project: Path, sim_name: str | None) -> N
     Julia's progress so it reads as work in progress, not a silent hang in the first
     eval. When nothing changed, a marker check skips it with no Julia process, so a
     plain launch stays fast. Best-effort: on failure the agent still starts.
+
+    A capability's own package is checked separately. It is path-sourced and lives
+    outside the env, so editing it leaves the Manifest untouched and the marker above
+    still looks current — launch would skip the bake and the session's first ``using``
+    would pay it instead, with no output, inside a tool call. That is indistinguishable
+    from a hang, and a capability that bakes a workload can spend minutes there.
     """
 
     # Only the managed env carries the warm-up packages; a user-owned env is theirs.
     if user_owns_root_project(ws) or not env_declares_warm_packages(julia_project):
         return
-    if env_precompile_is_current(julia_project):
+    if env_precompile_is_current(julia_project) and dependency_source_is_current(
+        julia_project, dependencies
+    ):
         return  # nothing changed since the last bake; skip without spawning Julia
 
     _info("Precompiling the Julia env (one-time after a change; can take a few minutes)...")
@@ -677,3 +692,4 @@ def _ensure_env_warmed(ws: Path, julia_project: Path, sim_name: str | None) -> N
         )
         return
     mark_env_precompiled(julia_project)
+    mark_dependency_source(julia_project, dependencies)
