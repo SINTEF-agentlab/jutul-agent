@@ -89,9 +89,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def _build(args: argparse.Namespace, ws: Path, project: Path, config) -> int:
-    from jutul_agent import sysimage_build
     from jutul_agent.julia.requirements import JuliaRequirementError, require_julia
-    from jutul_agent.simulators.env_setup import EnvSetupError
 
     try:
         require_julia()
@@ -115,29 +113,64 @@ def _build(args: argparse.Namespace, ws: Path, project: Path, config) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    return 0 if build_for_workspace(adapter, ws, project, config, cpu_target=args.cpu_target) else 1
+
+
+def build_for_workspace(
+    adapter,
+    ws: Path,
+    project: Path,
+    config,
+    *,
+    cpu_target: str = "native",
+    skip_current: bool = False,
+) -> bool:
+    """Prepare the env, build and install the image, and record the folder's opt-in.
+
+    The one build path, shared by the explicit ``sysimage build`` and by ``init
+    --sysimage``. ``skip_current`` is for callers like ``init`` that build as one
+    step of a larger command: an image that still matches the environment just
+    prepared is left alone rather than rebuilt identically, since a rebuild costs
+    tens of minutes and changes nothing. The explicit command never skips: asking
+    for a build gets one.
+    """
+
+    from jutul_agent import sysimage as sysimage_mod
+    from jutul_agent import sysimage_build
+    from jutul_agent.simulators.env_setup import EnvSetupError
+
+    result = None
     try:
         prepare_environment(adapter, workspace=ws, julia_project=project)
-        result = sysimage_build.build(
-            workspace=ws, julia_project=project, cpu_target=args.cpu_target
+        current = (
+            skip_current
+            and sysimage_mod.decide(ws, project, enabled=True).status == sysimage_mod.CURRENT
         )
+        if current:
+            print("\nSystem image already matches this environment; skipping the rebuild.")
+        else:
+            result = sysimage_build.build(
+                workspace=ws, julia_project=project, cpu_target=cpu_target
+            )
     except (EnvSetupError, sysimage_build.SysimageBuildError) as exc:
         print(f"\nerror: {exc}", file=sys.stderr)
-        return 1
+        return False
     except KeyboardInterrupt:
         # Nothing was installed: the image is built under a temporary name and
         # only moved into place once it has passed verification.
         print("\nBuild interrupted; the existing image (if any) is untouched.", file=sys.stderr)
-        return 130
+        return False
 
-    print(f"\nSystem image built in {result.seconds / 60:.0f} min: {result.path}")
-    print(
-        f"  contains: {result.contained} packages "
-        f"({len(result.packages)} direct dependencies and everything they load)"
-    )
+    if result is not None:
+        print(f"\nSystem image built in {result.seconds / 60:.0f} min: {result.path}")
+        print(
+            f"  contains: {result.contained} packages "
+            f"({len(result.packages)} direct dependencies and everything they load)"
+        )
     if config.sysimage is not True:
         write_workspace_config(dc_replace(config, sysimage=True), workspace=ws)
         print("  this folder now starts from it; `--no-sysimage` skips it for one run.")
-    return 0
+    return True
 
 
 def prepare_environment(adapter, *, workspace: Path, julia_project: Path) -> None:
