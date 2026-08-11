@@ -395,13 +395,15 @@ def web_render_call(
     )
 
 
-# The div Bonito serves the figure in. Viewport units, not percentages: a
-# percentage height resolves against the body's computed height, which nothing
-# sets in the served page, so ``height:100%`` collapses to the content height and
-# ``resize_to = :parent`` then tracks only the width — the squashed-canvas bug.
-# ``100vw/100vh`` is the iframe's viewport regardless of the body's own layout,
-# so the figure tracks both dimensions of whatever the client sizes the frame to.
-_WRAP_STYLE = "width:100vw; height:100vh; margin:0; overflow:hidden;"
+# The div Bonito serves the figure in. Fixed to the viewport, not sized by
+# percentages: a percentage height resolves against the body's computed height,
+# which nothing sets in the served page, so ``height:100%`` collapses to the
+# content height and ``resize_to = :parent`` then tracks only the width — the
+# squashed-canvas bug. ``position:fixed; inset:0`` is the iframe's viewport
+# regardless of the body's own layout *and* its default margin (which otherwise
+# offsets the canvas by 8px, a permanent band where widget renders land when the
+# canvas and figure sizes disagree — the out-of-frame-toggles bug).
+_WRAP_STYLE = "position:fixed; inset:0; margin:0; padding:0; overflow:hidden;"
 
 
 def web_server_start(port: int, session_id: str) -> str:
