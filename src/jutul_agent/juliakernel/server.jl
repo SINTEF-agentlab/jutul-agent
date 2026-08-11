@@ -79,6 +79,36 @@ end
 
 Base.exit_on_sigint(false)   # SIGINT -> InterruptException instead of process exit
 
+# A process started from a system image comes up with `Base.pkgorigins` empty,
+# so `pathof`, `pkgdir` and `pkgversion` answer `nothing` for every baked
+# package -- and code that locates its own scripts or resources through them
+# breaks in ways that look nothing like the cause (measured: capability
+# tools failing with `dirname(::Nothing)`). The sources are still on disk and
+# `locate_package` still finds them, so rebuild the table once at boot. A
+# normal start has origins already (the stdlibs at least) and skips this;
+# packages loaded later are registered by Julia's own loading code as usual.
+try
+    if isempty(Base.pkgorigins)
+        for (pkgid, _) in Base.loaded_modules
+            pkgid.uuid === nothing && continue
+            path = Base.locate_package(pkgid)
+            path === nothing && continue
+            origin = get!(Base.PkgOrigin, Base.pkgorigins, pkgid)
+            origin.path = path
+            try
+                project = joinpath(dirname(dirname(path)), "Project.toml")
+                if isfile(project)
+                    v = get(Base.parsed_toml(project), "version", nothing)
+                    v isa AbstractString && (origin.version = VersionNumber(v))
+                end
+            catch
+            end
+        end
+    end
+catch
+end
+
+
 "REPL-style text/plain repr; \"\" for nothing so the parent can omit it."
 function value_repr(val)
     val === nothing && return ""
