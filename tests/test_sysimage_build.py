@@ -212,6 +212,32 @@ def test_packagecompiler_never_enters_the_workspace_environment(
 # Reporting.
 
 
+def test_a_current_image_is_not_rebuilt_when_the_caller_allows_skipping(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, julia: _FakeJulia
+) -> None:
+    """``init`` re-runs the build step on every run of an opted-in folder, so an
+    image that still matches the environment must short-circuit there. The
+    explicit ``sysimage build`` never skips: asking for a build gets one."""
+    from jutul_agent.interfaces.cli import sysimage as cmd
+    from jutul_agent.workspace import WorkspaceConfig
+
+    env = write_project(workspace / ".jutul-agent" / "julia-env", {"JutulDarcy": "a"})
+    monkeypatch.setattr(cmd, "prepare_environment", lambda *a, **k: None)
+    config = WorkspaceConfig(simulator="jutuldarcy", sysimage=True)
+
+    def builds() -> int:
+        return sum("create_sysimage" in call[-1] for call in julia.calls)
+
+    assert cmd.build_for_workspace(object(), workspace, env, config, skip_current=True)
+    assert builds() == 1  # nothing to skip yet: the first init really builds
+
+    assert cmd.build_for_workspace(object(), workspace, env, config, skip_current=True)
+    assert builds() == 1  # unchanged env: the re-init skips
+
+    assert cmd.build_for_workspace(object(), workspace, env, config)
+    assert builds() == 2  # the explicit command rebuilds regardless
+
+
 def test_the_command_turns_the_folder_on_after_a_build(
     workspace: Path, monkeypatch: pytest.MonkeyPatch, julia: _FakeJulia
 ) -> None:

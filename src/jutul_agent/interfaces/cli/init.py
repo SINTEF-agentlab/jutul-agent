@@ -154,47 +154,41 @@ def run(args: argparse.Namespace) -> int:
     # Last, and only when this folder has opted in. The precompiled environment
     # above is the build's input, not a duplicate of it: the image is a snapshot
     # of the packages as they load, and they load from what precompile just baked.
-    if (args.sysimage or new_config.sysimage) and not _build_sysimage(adapter, ws, project):
+    if (args.sysimage or new_config.sysimage) and not _build_sysimage(
+        adapter, ws, project, new_config
+    ):
         return 1
 
     _maybe_prompt_for_provider_key(new_config)
     return 0
 
 
-def _build_sysimage(adapter, ws: Path, project: Path) -> bool:
+def _build_sysimage(adapter, ws: Path, project: Path, config) -> bool:
     """Build this folder's system image as the final step of ``init``.
 
-    A failure here is loud and fatal to ``init``, because the folder is now set
-    to start from an image it does not have, and every later launch would refuse
-    until someone noticed.
+    Delegates to the one shared build path, with ``skip_current``: a re-``init``
+    of a folder whose image still matches its environment gets its image left
+    alone instead of an identical twenty-minute rebuild. A failure is loud and
+    fatal to ``init``, because the folder is now set to start from an image it
+    does not have, and every later launch would refuse until someone noticed.
     """
 
     from jutul_agent import sysimage_build
-    from jutul_agent.interfaces.cli.sysimage import prepare_environment
-    from jutul_agent.simulators.env_setup import EnvSetupError
+    from jutul_agent.interfaces.cli.sysimage import build_for_workspace
 
     print(
         f"\nBuilding the Julia system image (about {sysimage_build.TYPICAL_BUILD_MINUTES} "
         "minutes; it compiles every package in the environment into one file)..."
     )
-    try:
-        prepare_environment(adapter, workspace=ws, julia_project=project)
-        result = sysimage_build.build(workspace=ws, julia_project=project)
-    except (EnvSetupError, sysimage_build.SysimageBuildError) as exc:
-        print(f"\nerror: {exc}", file=sys.stderr)
-        print(
-            "The environment is ready, but this folder is set to start from a "
-            "system image it does not have. Retry with `jutul-agent sysimage build`, "
-            "or drop the setting with `jutul-agent sysimage clear`.",
-            file=sys.stderr,
-        )
-        return False
-    except KeyboardInterrupt:
-        print("\nBuild interrupted; nothing was installed.", file=sys.stderr)
-        return False
-
-    print(f"  sysimage:      {result.path} ({result.seconds / 60:.0f} min)")
-    return True
+    if build_for_workspace(adapter, ws, project, config, skip_current=True):
+        return True
+    print(
+        "The environment is ready, but this folder is set to start from a "
+        "system image it does not have. Retry with `jutul-agent sysimage build`, "
+        "or drop the setting with `jutul-agent sysimage clear`.",
+        file=sys.stderr,
+    )
+    return False
 
 
 def _note_headless_plotting() -> None:

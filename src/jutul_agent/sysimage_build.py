@@ -156,6 +156,9 @@ def build(
         if not candidate.exists():
             raise SysimageBuildError("the build reported success but produced no image")
         if verify:
+            # Narrated because it is captured: starting Julia on a multi-GB image
+            # and rendering a figure takes long enough to read as a stall otherwise.
+            print("Verifying the new image before installing it...")
             verify_image(candidate, julia_project, packages)
         # Replace is atomic on both POSIX and Windows, so a session starting
         # during a rebuild sees either the old image or the new one. Windows
@@ -200,6 +203,7 @@ def _precompile_against(image: Path, julia_project: Path) -> None:
     note: the image is already installed and already verified.
     """
 
+    print("Refreshing precompile caches against the new image (usually instant)...")
     result = _run_julia(
         [
             "julia",
@@ -209,7 +213,6 @@ def _precompile_against(image: Path, julia_project: Path) -> None:
             "-e",
             "using Pkg; Pkg.precompile()",
         ],
-        capture=True,
     )
     if result.returncode != 0:
         print("note: could not precompile against the new image; the first session may be slower.")
