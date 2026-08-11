@@ -127,6 +127,7 @@ Messages from the server to the front end:
 | `interrupt` | A request for approval: the actions, the decisions allowed, and per action a markdown `body` with the same detail the terminal shows (the command, a content preview, or the on-disk diff) |
 | `artifact` | A file the session produced, given as a URL |
 | `viz` | An interactive view to pin in the side panel: a plot or a report, given as a URL |
+| `popout_ready` | The answer to a popout `replot`: the popup's independent live view URL, or why there is none |
 | `usage` | The token usage for the turn |
 | `turn_end` | The turn has finished |
 | `ui` | A command for the front end to apply to its interface |
@@ -137,7 +138,8 @@ Messages from the server to the front end:
 Messages from the front end to the server are a prompt to start a turn, a
 decision to answer an approval request (`approve`, `reject`, or `respond` with a
 message), a cancel to stop a running turn, a command to change a session setting
-or run a session action (`set_model`, `set_approval`, `add_dir`, `compact`), and a
+or run a session action (`set_model`, `set_approval`, `add_dir`, `compact`), a
+plot replay (`replot`, below), a popout-window close (`popout_closed`), and a
 user-interface event, described next. A setting command rebuilds the agent in
 place, so the model or approval policy can change mid-session without losing the
 conversation or the live Julia state.
@@ -213,13 +215,40 @@ Julia callbacks and update the view. A self-contained static HTML export is also
 written as the durable record and the fallback when the live server cannot start.
 
 The server announces such a view with a `viz` message. Besides its URL it carries
-a `kind` (`plot` or `report`), a stable `slot`, and an optional `poster` image
-URL. The bundled UI uses these to keep a persistent **side canvas**: each view is
-pinned there with a tab, the conversation keeps a compact chip that re-opens it,
-and reusing a `slot` refreshes a view in place rather than stacking a new one. The
+a `kind` (`plot` or `report`), a stable `slot`, an optional `poster` image URL,
+whether the URL is `live` (served by the session's figure server, so its widgets
+work), and the figure's own pixel size (`width`/`height`). When the plot's
+source code was recorded it also carries a `record` naming its trace entry. The
+bundled UI uses these to keep a persistent **side canvas**: each view is pinned
+there with a tab, the conversation keeps a compact chip that re-opens it, and
+reusing a `slot` refreshes a view in place rather than stacking a new one. The
 canvas is a true split, not an overlay (the conversation reflows beside it), and
 the user can close it (the chips and a "Views" control reopen it). A front end is
 free to present `viz` views differently; the protocol only fixes the message.
+
+Two hard facts shape how a front end should treat a live view. A live figure
+supports exactly **one** frame for its lifetime: a second window on the same URL
+shares the figure's size and camera with the first, and closing either kills the
+figure for both, so a live URL must never be embedded twice and its frame must
+never be reloaded. And the figure renders at whatever size its frame is; the
+bundled UI presents it at the figure's own recorded size, scaled to fit the
+panel (a per-view toggle reflows it to the panel instead), which keeps a wide
+dashboard's layout intact.
+
+`record` is what makes a plot replayable. The front end sends
+`{"type": "replot", "record": ...}` and the server re-runs the plot's *recorded*
+source code in the session's kernel, busy-guarded like a turn. The code is
+looked up in the trace; code a client sends is never executed. Without a
+`target` the figure re-serves on its own route and a fresh `viz` revives the
+view in place. That is the bundled UI's regenerate button, and also how a view
+comes back after a reload or a from-disk resume. With `target: "popout"` the
+figure serves as an independent copy on its own route and the server answers
+`popout_ready` with its URL, which is how a popout window shows a live view
+without violating the one-frame rule; `{"type": "popout_closed", "url": ...}`
+releases that figure when the window closes. Replaying on a still-running
+session is also how the bundled UI keeps plots alive across a sidebar session
+switch: replayed views whose frames it still holds stay live, everything else
+falls back to the poster plus the regenerate button.
 
 A written report is delivered the same way. `write_report` renders a
 self-contained HTML document into the session's artifacts and the server forwards
