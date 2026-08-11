@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { framePool } from "./canvas/framePool";
 import { createSessionStore } from "./store";
 import type { SessionStore, ThreadItem } from "./store";
 import type { StoreApi } from "zustand/vanilla";
@@ -280,5 +281,85 @@ describe("view sizing mode", () => {
     state().handle({ type: "viz", url: "/b", kind: "plot", slot: "res", width: 800, height: 600 });
     expect(state().views["slot:res"].mode).toBe("fill"); // the user's choice survives
     expect(state().views["slot:res"].url).toBe("/b");
+  });
+});
+
+describe("replayed live views and the frame pool", () => {
+  afterEach(() => framePool.clear());
+
+  const liveViz = {
+    type: "viz" as const,
+    url: "/live/s1/viz/res",
+    kind: "plot",
+    slot: "res",
+    live: true,
+    poster: "/sessions/s1/artifacts/res.png",
+    record: "artifacts/res.png",
+    width: 1600,
+    height: 900,
+  };
+
+  it("a replayed live view stays live only when its frame survives in the pool", () => {
+    state().setSession("s1", "");
+    framePool.register({
+      sessionId: "s1",
+      viewId: "slot:res",
+      url: liveViz.url,
+      title: "res",
+      nonce: 2,
+    });
+    state().replay([liveViz]);
+    const v = state().views["slot:res"];
+    expect(v.live).toBe(true);
+    expect(v.url).toBe(liveViz.url);
+    expect(v.nonce).toBe(2); // aligned with the mounted frame's reload token
+  });
+
+  it("a replayed live view without its frame falls back to the poster", () => {
+    state().setSession("s1", "");
+    state().replay([liveViz]);
+    const v = state().views["slot:res"];
+    expect(v.live).toBe(false);
+    expect(v.url).toBe(liveViz.poster);
+    expect(v.record).toBe("artifacts/res.png"); // regenerate stays available
+  });
+
+  it("a replayed live view with neither frame nor poster is marked expired", () => {
+    state().setSession("s1", "");
+    state().replay([{ ...liveViz, poster: null }]);
+    const v = state().views["slot:res"];
+    expect(v.live).toBe(false);
+    expect(v.expired).toBe(true);
+  });
+
+  it("downgradeView releases the frame and falls back to the poster", () => {
+    state().setSession("s1", "");
+    state().handle(liveViz);
+    framePool.register({
+      sessionId: "s1",
+      viewId: "slot:res",
+      url: liveViz.url,
+      title: "res",
+      nonce: 0,
+    });
+    state().downgradeView("slot:res");
+    expect(framePool.has("s1", "slot:res", liveViz.url)).toBe(false);
+    const v = state().views["slot:res"];
+    expect(v.live).toBe(false);
+    expect(v.url).toBe(liveViz.poster);
+  });
+
+  it("removing a view releases its pooled frame", () => {
+    state().setSession("s1", "");
+    state().handle(liveViz);
+    framePool.register({
+      sessionId: "s1",
+      viewId: "slot:res",
+      url: liveViz.url,
+      title: "res",
+      nonce: 0,
+    });
+    state().removeView("slot:res");
+    expect(framePool.has("s1", "slot:res", liveViz.url)).toBe(false);
   });
 });

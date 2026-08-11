@@ -7,7 +7,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useSel } from "../context";
 import type { View, ViewMode } from "../store";
+import { framePool } from "./framePool";
 
 export interface PanelProps {
   view: View;
@@ -18,7 +20,7 @@ export interface PanelProps {
   onLoaded: () => void;
 }
 
-export type Panel = (props: PanelProps) => React.ReactElement;
+export type Panel = (props: PanelProps) => React.ReactElement | null;
 
 const registry: Record<string, Panel> = {};
 
@@ -125,16 +127,45 @@ export function stageGeometry(
   };
 }
 
-export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps) {
-  // A live WebGL figure reflows once right after `load` (WGLMakie sizes to its
-  // parent only after mounting), so clearing the loader on `load` would flash a
-  // mis-sized first frame; hold briefly for plots. Reports don't reflow.
-  const hold = view.kind === "plot" ? 450 : 0;
+export interface StagedFrameProps {
+  url: string;
+  title: string;
+  /** The figure's design pixel size; without it the frame just fills. */
+  width?: number | null;
+  height?: number | null;
+  mode: ViewMode;
+  active: boolean;
+  /** Cache-busting token appended to the URL (a same-slot refresh). */
+  token: number;
+  /** Probe the URL before mounting (live routes take seconds to answer). */
+  probe: boolean;
+  /** Hold ms after `load` before reporting loaded (WebGL reflow flash). */
+  hold: number;
+  onLoaded: () => void;
+}
+
+/** One figure frame inside its stage: the sizing core shared by static plot
+ *  views and the pooled live frames. In "scale" mode the frame's inner viewport
+ *  is the figure's own design size and a CSS transform shrinks it to fit — the
+ *  served layout never reflows, so a panel resize only changes the transform.
+ *  In "fill" the figure reflows to the whole stage. */
+export function StagedFrame({
+  url,
+  title,
+  width,
+  height,
+  mode,
+  active,
+  token,
+  probe,
+  hold,
+  onLoaded,
+}: StagedFrameProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Clear a pending hold-timer if the panel unmounts first (tab/canvas closed),
   // so a stale onLoaded can't fire against a view that is already gone.
   useEffect(() => () => clearTimeout(timer.current), []);
-  const ready = useLiveReady(view.url, view.kind === "plot", reloadToken);
+  const ready = useLiveReady(url, probe, token);
 
   // The stage's own size, tracked while visible (hidden it measures 0x0, so the
   // activation re-measure is what sizes a tab the user switches to).
@@ -154,13 +185,12 @@ export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps)
   // its parent's width on mount but not always its height, and its own observer
   // only fires on a later resize — so cause one.
   const [nudge, setNudge] = useState(0);
-  const sized = view.kind === "plot" && !!view.width && !!view.height;
-  const mode: ViewMode = sized ? (view.mode ?? "scale") : "fill";
+  const sized = !!width && !!height;
 
   const handleLoad = () => {
     if (hold) timer.current = setTimeout(onLoaded, hold);
     else onLoaded();
-    if (view.kind === "plot" && mode === "fill") {
+    if (mode === "fill" && probe) {
       setNudge(1);
       setTimeout(() => setNudge(0), 80);
     }
@@ -174,7 +204,7 @@ export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps)
   if (!ready) return null; // keep the canvas's own loading spinner up while probing
   if (!active && !wasActive.current) return null;
 
-  const g = sized ? stageGeometry(mode, view.width!, view.height!, box.w, box.h) : null;
+  const g = sized ? stageGeometry(mode, width, height, box.w, box.h) : null;
   const scaled = g !== null && mode === "scale" && g.scale < 1;
   const frameStyle: React.CSSProperties =
     g && mode === "scale"
@@ -184,16 +214,16 @@ export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps)
     <div ref={stageRef} className={`canvas-stage${active ? " active" : ""}`}>
       <div className="stage-frame" style={frameStyle}>
         <iframe
-          title={view.title}
+          title={title}
           loading="lazy"
-          src={withToken(view.url, reloadToken)}
+          src={withToken(url, token)}
           onLoad={handleLoad}
           onError={onLoaded}
           style={
             scaled
               ? {
-                  width: view.width!,
-                  height: view.height!,
+                  width: width ?? undefined,
+                  height: height ?? undefined,
                   transform: `scale(${g.scale})`,
                   transformOrigin: "top left",
                 }
@@ -205,7 +235,67 @@ export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps)
   );
 }
 
+/** A live view whose figure is gone and that has no poster to fall back on. */
+export function ExpiredPanel({ view, active }: PanelProps) {
+  if (!active) return null;
+  return (
+    <div className="canvas-empty">
+      <span>
+        {view.title} is no longer live.
+        {view.record ? " Use the regenerate button above to re-run its code." : ""}
+      </span>
+    </div>
+  );
+}
+
+export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps) {
+  const sessionId = useSel((s) => s.sessionId);
+  const downgradeView = useSel((s) => s.downgradeView);
+  const live = !!view.live && view.kind === "plot";
+
+  // A live figure supports exactly one frame ever, so its frame lives in the
+  // pool (rendered by LiveFrames), which survives a session switch; this panel
+  // only registers it. A frame released to stay under the pool cap downgrades
+  // its view to the poster (when it is this session's view to downgrade).
+  useEffect(() => {
+    if (!live || !sessionId) return;
+    const released = framePool.register({
+      sessionId,
+      viewId: view.id,
+      url: view.url,
+      title: view.title,
+      width: view.width,
+      height: view.height,
+      nonce: view.nonce,
+    });
+    for (const f of released) {
+      if (f.sessionId === sessionId) downgradeView(f.viewId);
+    }
+  }, [live, sessionId, view.id, view.url, view.title, view.width, view.height, view.nonce, downgradeView]);
+
+  if (live) return null;
+  // A live WebGL figure reflows once right after `load` (WGLMakie sizes to its
+  // parent only after mounting), so clearing the loader on `load` would flash a
+  // mis-sized first frame; hold briefly for plots. Reports don't reflow.
+  const sized = view.kind === "plot" && !!view.width && !!view.height;
+  return (
+    <StagedFrame
+      url={view.url}
+      title={view.title}
+      width={view.width}
+      height={view.height}
+      mode={sized ? (view.mode ?? "scale") : "fill"}
+      active={active}
+      token={reloadToken}
+      probe={view.kind === "plot"}
+      hold={view.kind === "plot" ? 450 : 0}
+      onLoaded={onLoaded}
+    />
+  );
+}
+
 export function panelFor(view: View): Panel {
+  if (view.expired) return ExpiredPanel;
   if (isImageView(view)) return ImagePanel;
   return registry[view.kind] ?? IframePanel;
 }

@@ -6,6 +6,7 @@
 import { createStore } from "zustand/vanilla";
 
 import type { CredentialInfo, HistoryEntry, ModelInfo, SimDetails } from "./api";
+import { framePool } from "./canvas/framePool";
 import { formatTokens } from "./format";
 import type { InterruptAction, ReplayMessage, ServerMessage } from "./protocol";
 import { HISTORY_CHANGED, SIDE_OUTPUT_TYPES } from "./protocol";
@@ -161,6 +162,7 @@ export interface SessionActions {
   removeView: (id: string) => void;
   pinDoc: (url: string, title: string, slot: string) => void;
   setViewMode: (id: string, mode: ViewMode) => void;
+  downgradeView: (id: string) => void;
 }
 
 export type SessionStore = SessionState & SessionActions;
@@ -327,23 +329,44 @@ export function createSessionStore() {
         };
       });
 
-    const onViz = (msg: Extract<ServerMessage, { type: "viz" }>) => {
+    const onViz = (msg: Extract<ServerMessage, { type: "viz" }>, replayed = false) => {
       finalizeAssistant();
       const id = viewIdOf(msg);
       const kind: ViewKind = msg.kind === "report" ? "report" : "plot";
       const title = msg.title || (kind === "report" ? "Report" : "Interactive plot");
+      let live = !!msg.live;
+      let url = msg.url;
+      let expired = false;
+      let nonce = 0;
+      if (replayed && live) {
+        // A replayed live view may only stay live when its original frame still
+        // exists in the pool (an in-page session switch): a fresh frame on a
+        // once-viewed figure comes up corrupt. Adopting aligns the nonce with
+        // the mounted frame; a pool miss (a reload, a cold resume) falls back
+        // to the poster and the regenerate button.
+        const pooled = framePool.nonceOf(get().sessionId ?? "", id, msg.url);
+        if (pooled !== null) {
+          nonce = pooled;
+        } else if (msg.poster) {
+          live = false;
+          url = msg.poster;
+        } else {
+          live = false;
+          expired = true;
+        }
+      }
       upsertView(
         {
           id,
-          url: msg.url,
+          url,
           title,
           kind,
           poster: msg.poster ?? null,
-          nonce: 0,
-          live: !!msg.live,
+          nonce,
+          live,
           // A refresh replaces the view wholesale: a re-plot or a regenerate
           // revives an expired view with a fresh figure.
-          expired: false,
+          expired,
           record: msg.record ?? null,
           width: msg.width ?? null,
           height: msg.height ?? null,
@@ -467,6 +490,8 @@ export function createSessionStore() {
             return onTurnEnd();
           case "ui":
             return onUi(msg);
+          case "popout_ready":
+            return; // the controller navigates the waiting popup window
           case "notice":
             return onNotice(msg.text);
           case "error":
@@ -497,7 +522,7 @@ export function createSessionStore() {
               onTool(m);
               break;
             case "viz":
-              onViz(m);
+              onViz(m, true);
               break;
             case "artifact":
               onArtifact(m);
@@ -575,7 +600,11 @@ export function createSessionStore() {
 
       closeCanvas: () => set({ canvasOpen: false }),
 
-      removeView: (id) =>
+      removeView: (id) => {
+        // Removing the tab releases its live frame too; the figure's recorded
+        // code (the regenerate button on a re-pinned view) is how it comes back.
+        const sid = get().sessionId;
+        if (sid) framePool.release(sid, id);
         set((s) => {
           if (!s.views[id]) return {};
           const views = { ...s.views };
@@ -589,7 +618,8 @@ export function createSessionStore() {
             canvasOpen = canvasOpen && activeView !== null;
           }
           return { views, viewOrder, activeView, canvasOpen };
-        }),
+        });
+      },
 
       pinDoc: (url, title, slot) =>
         onViz({ type: "viz", url, title, kind: "report", slot, poster: null }),
@@ -598,6 +628,22 @@ export function createSessionStore() {
         set((s) =>
           s.views[id] ? { views: { ...s.views, [id]: { ...s.views[id], mode } } } : {},
         ),
+
+      downgradeView: (id) => {
+        // The view's frame is gone (released past the pool cap, or explicitly):
+        // fall back to the poster, or mark it expired when there is none. The
+        // regenerate button (its `record`) is the way back to a live figure.
+        const sid = get().sessionId;
+        if (sid) framePool.release(sid, id);
+        set((s) => {
+          const v = s.views[id];
+          if (!v) return {};
+          const next: View = v.poster
+            ? { ...v, live: false, url: v.poster }
+            : { ...v, live: false, expired: true };
+          return { views: { ...s.views, [id]: next } };
+        });
+      },
     };
   });
 }

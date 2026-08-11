@@ -5,9 +5,18 @@
 
 import { useEffect, useState } from "react";
 
+import { LiveFrames } from "../canvas/LiveFrames";
 import { isImageView, panelFor } from "../canvas/registry";
-import { useSel } from "../context";
-import { BackIcon, CloseIcon, FillIcon, FitIcon, KindIcon, PopoutIcon } from "../icons";
+import { useController, useSel } from "../context";
+import {
+  BackIcon,
+  CloseIcon,
+  FillIcon,
+  FitIcon,
+  KindIcon,
+  PopoutIcon,
+  RegenerateIcon,
+} from "../icons";
 
 // The canvas width as a viewport fraction, persisted so the split survives a
 // reload. Clamps mirror the CSS min/max so a restored value is always sane.
@@ -25,6 +34,7 @@ function restoreCanvasWidth(): void {
 }
 
 export function Canvas() {
+  const sessionId = useSel((s) => s.sessionId);
   const views = useSel((s) => s.views);
   const viewOrder = useSel((s) => s.viewOrder);
   const activeView = useSel((s) => s.activeView);
@@ -33,19 +43,22 @@ export function Canvas() {
   const removeView = useSel((s) => s.removeView);
   const closeCanvas = useSel((s) => s.closeCanvas);
   const setViewMode = useSel((s) => s.setViewMode);
+  const controller = useController();
 
-  // Per-(view, reload) "has loaded" set drives the spinner; a new reload token is
-  // automatically "not loaded" until its panel fires onLoaded.
+  // Per-(session, view, reload) "has loaded" set drives the spinner; a new
+  // reload token is automatically "not loaded" until its panel fires onLoaded.
+  // Session-scoped because this component (and the live-frame pool) outlive a
+  // session switch, and two sessions can use the same slot name.
   const [loaded, setLoaded] = useState<ReadonlySet<string>>(() => new Set());
   const [backBump, setBackBump] = useState<Record<string, number>>({});
 
   const tokenOf = (id: string) => (views[id]?.nonce ?? 0) + (backBump[id] ?? 0);
-  const loadKey = (id: string) => `${id}@${tokenOf(id)}`;
+  const loadKey = (id: string, token: number) => `${sessionId}:${id}@${token}`;
   const markLoaded = (id: string, token: number) =>
-    setLoaded((prev) => new Set(prev).add(`${id}@${token}`));
+    setLoaded((prev) => new Set(prev).add(loadKey(id, token)));
 
   const active = activeView ? views[activeView] : null;
-  const showLoading = !!active && !loaded.has(loadKey(active.id));
+  const showLoading = !!active && !active.expired && !loaded.has(loadKey(active.id, tokenOf(active.id)));
 
   useEffect(restoreCanvasWidth, []);
 
@@ -139,15 +152,28 @@ export function Canvas() {
               </button>
             )
           ) : null}
-          {active && !isImageView(active) ? (
+          {active && active.kind === "plot" && active.record ? (
+            <button
+              className="icon-btn"
+              title={
+                active.live
+                  ? "Regenerate (re-run the plot's code)"
+                  : "Regenerate this plot (re-run its recorded code)"
+              }
+              onClick={() => controller.regenerate(active.id)}
+            >
+              <RegenerateIcon />
+            </button>
+          ) : null}
+          {active && !isImageView(active) && !(active.kind === "plot" && active.live) ? (
             <button className="icon-btn" title="Back to this view" onClick={reloadActive}>
               <BackIcon />
             </button>
           ) : null}
           <button
             className="icon-btn"
-            title="Open in a new tab"
-            onClick={() => active && window.open(active.url, "_blank", "noopener")}
+            title="Open in its own window"
+            onClick={() => active && controller.popout(active.id)}
           >
             <PopoutIcon />
           </button>
@@ -157,6 +183,10 @@ export function Canvas() {
         </div>
       </div>
       <div className="canvas-body">
+        {/* Every pooled live frame, across sessions; hidden unless its session
+            and view are the active ones. Mounted here so the frames share the
+            panel's coordinate space with the ordinary panels below. */}
+        <LiveFrames onLoaded={markLoaded} />
         {viewOrder.map((id) => {
           const view = views[id];
           if (!view) return null;
