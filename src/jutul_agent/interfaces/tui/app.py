@@ -1067,7 +1067,14 @@ class TUIApp(App[None]):
             await self._note(f"already using `{model_id}`.")
             return
 
-        from jutul_agent.models import is_local
+        from jutul_agent.models import is_local, missing_provider_error
+
+        # A prefix-less free-text spec would skip every check below and fail
+        # opaquely on the next turn instead.
+        problem = missing_provider_error(model_id)
+        if problem is not None:
+            await self._note(problem)
+            return
 
         if is_local(model_id):
             await self._prepare_local_model(model_id, scope)
