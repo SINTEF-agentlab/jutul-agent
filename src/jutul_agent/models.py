@@ -268,6 +268,27 @@ def _load_profiles(dist_name: str) -> dict[str, Any]:
     return getattr(module, "_PROFILES", {}) or {}
 
 
+def missing_provider_error(model_id: str) -> str | None:
+    """Why a free-text model spec is unusable as typed, or ``None``.
+
+    Every preflight downstream keys on the ``provider:`` prefix: the API-key
+    check, the local-model checks, the per-provider model settings, the context
+    window. A bare name has none, so it passes all of them and fails much later
+    as an opaque provider error that points nowhere near the spec. Say so here
+    instead. Unknown prefixes are left alone: any ``provider:model`` string
+    ``init_chat_model`` accepts works, including providers this module has no
+    entry for.
+    """
+
+    if provider_of(model_id):
+        return None
+    known = ", ".join(f"`{name}:`" for name in PROVIDERS)
+    return (
+        f"`{model_id}` is missing a provider prefix. Use `provider:model` "
+        f"(for example `openai:{model_id}`); known providers are {known}."
+    )
+
+
 async def local_model_error(model_id: str) -> str | None:
     """Why a local (Ollama) model cannot serve this agent right now, or ``None``.
 

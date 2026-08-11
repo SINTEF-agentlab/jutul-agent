@@ -12,6 +12,7 @@ from jutul_agent.models import (
     is_local,
     is_ollama_cloud,
     key_env_var,
+    missing_provider_error,
     provider_info,
     provider_of,
 )
@@ -30,6 +31,22 @@ def test_key_env_var_and_local_flag() -> None:
     assert key_env_var("madeup:model") is None
     assert is_local("ollama:llama4") is True
     assert is_local("openai:gpt-5.5") is False
+
+
+def test_missing_provider_error_names_the_fix() -> None:
+    problem = missing_provider_error("gpt-5.6-terra")
+    assert problem is not None
+    # The message has to point at the spec itself: every downstream preflight is
+    # keyed on the prefix, so without it the failure surfaces much later.
+    assert "provider prefix" in problem
+    assert "openai:gpt-5.6-terra" in problem
+
+
+def test_missing_provider_error_accepts_any_prefixed_spec() -> None:
+    assert missing_provider_error("openai:gpt-5.4-mini") is None
+    assert missing_provider_error("ollama:qwen3:8b") is None
+    # A provider this module has no entry for still reaches init_chat_model.
+    assert missing_provider_error("madeup:model") is None
 
 
 def test_provider_info_unknown_returns_none() -> None:

@@ -1033,8 +1033,18 @@ class _StreamState:
                 # Mirror the TUI: a model whose key is missing prompts for it
                 # instead of failing the switch. The UI saves the key, then retries.
                 from jutul_agent.credentials import missing_credential
-                from jutul_agent.models import local_model_error, provider_info
+                from jutul_agent.models import (
+                    local_model_error,
+                    missing_provider_error,
+                    provider_info,
+                )
 
+                # A prefix-less free-text spec would skip every check below and
+                # fail opaquely on the next turn instead.
+                problem = missing_provider_error(arg)
+                if problem is not None:
+                    await _safe_send(self._ws, protocol.error_to_wire(problem))
+                    return
                 env_var = missing_credential(arg)
                 if env_var is not None:
                     info = provider_info(arg)
