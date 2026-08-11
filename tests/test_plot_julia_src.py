@@ -248,18 +248,20 @@ def test_screen_preference_is_reached_through_wglmakie() -> None:
     assert SCREEN_PREFERENCE_MARKER in PREFER_OPEN_SCREEN_GUARD
 
 
-def test_served_wrapper_uses_viewport_units_for_both_dimensions() -> None:
+def test_served_wrapper_is_fixed_to_the_viewport() -> None:
     # A percentage height resolves against the served page's body height, which
     # nothing sets, so it collapses to the content height and resize_to=:parent
     # then tracks only the width -- the figure keeps its own height and a wide
-    # dashboard renders crushed in a narrow panel. Viewport units are the iframe's
-    # size regardless of the body's layout, so the client controls both dimensions.
+    # dashboard renders crushed in a narrow panel. Fixed positioning is the
+    # iframe's viewport regardless of the body's layout AND its default margin,
+    # whose 8px offset otherwise leaves a permanent band where widget renders
+    # land whenever the canvas and figure sizes disagree.
     live = _live_code()
     static = web_render_call(
         user_code="lines(1:10)", png_path=Path("/tmp/p.png"), html_path=Path("/tmp/p.html")
     )
     for code in (live, static):
-        assert "width:100vw" in code and "height:100vh" in code
+        assert "position:fixed" in code and "inset:0" in code
         assert "width:100%" not in code and "height:100%" not in code
 
 
