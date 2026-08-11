@@ -44,7 +44,7 @@ class ModelInfo:
 # The agent's default model and the env var that overrides it. They live here, in a
 # light module, so the CLI (help text, version, doctor) can read them without
 # importing the agent builder, which pulls the whole LangChain/deepagents stack.
-DEFAULT_MODEL = "openai:gpt-5.4-mini"
+DEFAULT_MODEL = "openai:gpt-5.6-terra"
 MODEL_ENV_VAR = "JUTUL_AGENT_MODEL"
 
 
