@@ -338,22 +338,25 @@ export function createSessionStore() {
       let url = msg.url;
       let expired = false;
       let nonce = 0;
-      if (replayed && live) {
+      if (replayed) {
         // A replayed live view may only stay live when its original frame still
         // exists in the pool (an in-page session switch): a fresh frame on a
         // once-viewed figure comes up corrupt. Adopting aligns the nonce with
         // the mounted frame; a pool miss (a reload, a cold resume) falls back
         // to the poster and the regenerate button.
-        const pooled = framePool.nonceOf(get().sessionId ?? "", id, msg.url);
-        if (pooled !== null) {
+        const sid = get().sessionId ?? "";
+        const pooled = live ? framePool.nonceOf(sid, id, msg.url) : null;
+        if (live && pooled !== null) {
           nonce = pooled;
-        } else if (msg.poster) {
+        } else if (live) {
           live = false;
-          url = msg.poster;
-        } else {
-          live = false;
-          expired = true;
+          if (msg.poster) url = msg.poster;
+          else expired = true;
         }
+        // A non-live replay whose view still has a pooled frame: that frame
+        // belongs to a figure the server no longer serves (the kernel
+        // restarted); release it rather than adopt it later.
+        if (!live) framePool.release(sid, id);
       }
       upsertView(
         {

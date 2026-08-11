@@ -574,9 +574,11 @@ export class Controller {
   }
 
   async newChat(): Promise<void> {
+    // Detach only — the previous session's host (its kernel, its live figures)
+    // stays alive on the server, so switching back through the sidebar finds
+    // the session as it was left, live plots included. Sessions are released
+    // when the server shuts down.
     this.transport.close();
-    const { sessionId } = this.s;
-    if (sessionId) void api.deleteSession(sessionId);
     this.s.reset();
     this.store.setState({ sessionId: null });
     await this.startSession();
