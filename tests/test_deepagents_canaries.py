@@ -40,6 +40,17 @@ def test_deepagents_validate_path_still_patchable() -> None:
     )
 
 
+def test_langchain_openai_reasoning_imploder_still_patchable() -> None:
+    from langchain_openai.chat_models import _compat
+
+    assert callable(getattr(_compat, "_implode_reasoning_blocks", None)), (
+        "langchain-openai moved _implode_reasoning_blocks; the reasoning-item "
+        "grouping shim in agent/openai_responses.py silently no-ops, and a turn "
+        "with two reasoning items makes the API reject every later request. "
+        "Re-point the patch."
+    )
+
+
 def test_deepagents_harness_profile_resolver_still_exists() -> None:
     from deepagents.profiles.harness import harness_profiles
 
