@@ -45,6 +45,7 @@ from jutul_agent.agent.memory import (
     ensure_memory_dir,
     make_remember_tool,
 )
+from jutul_agent.agent.openai_responses import enable_reasoning_item_grouping
 from jutul_agent.agent.plot_julia import (
     make_close_plots_tool,
     make_plot_julia_tool,
@@ -395,6 +396,9 @@ def build_agent(
     # The file tools run on real paths; on Windows, let deepagents' path validation
     # accept real ``C:\\...`` paths instead of rejecting them as "not virtual".
     enable_windows_real_paths()
+    # Keep every reasoning item langchain-openai replays addressable, so the API
+    # never rejects a turn that emitted two of them (see agent.openai_responses).
+    enable_reasoning_item_grouping()
 
     memory_dir = ensure_memory_dir(session.memory_dir(workspace_memory=workspace_memory_dir()))
     backend = build_backend(
