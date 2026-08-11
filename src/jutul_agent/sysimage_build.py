@@ -21,10 +21,12 @@ The shape of a build:
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 import time
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -111,6 +113,91 @@ def _project_deps(julia_project: Path) -> set[str]:
     return set(deps) if isinstance(deps, dict) else set()
 
 
+# The exact text HostCPUFeatures 0.1.x ships (src/cpu_info_aarch64.jl). Matched
+# verbatim so a release that rewrites the file is left alone rather than mangled.
+_VSCALE_UNGUARDED = """\
+if Int === Int64
+    @noinline vscale() = ccall("llvm.vscale.i64", llvmcall, Int64, ())
+else
+    @noinline vscale() = ccall("llvm.vscale.i32", llvmcall, Int32, ())
+end"""
+
+_VSCALE_GUARDED = """\
+# Patched by jutul-agent before a system-image build: llvm.vscale is an SVE
+# instruction, and LLVM aborts trying to emit it for CPUs without SVE. The
+# function is never called on those CPUs, but a system-image build compiles
+# even never-called methods (JuliaLang/PackageCompiler.jl#1070).
+if _has_aarch64_sve()
+    if Int === Int64
+        @noinline vscale() = ccall("llvm.vscale.i64", llvmcall, Int64, ())
+    else
+        @noinline vscale() = ccall("llvm.vscale.i32", llvmcall, Int32, ())
+    end
+else
+    vscale() = 1
+end"""
+
+
+def _depot_paths() -> list[Path]:
+    """The depots Julia loads packages from, in `JULIA_DEPOT_PATH` order."""
+
+    default = Path.home() / ".julia"
+    raw = os.environ.get("JULIA_DEPOT_PATH", "")
+    if not raw:
+        return [default]
+    # An empty entry in JULIA_DEPOT_PATH stands for the default depot list.
+    return [Path(entry).expanduser() if entry else default for entry in raw.split(os.pathsep)]
+
+
+def _guard_vscale_llvmcall(
+    *,
+    machine: str | None = None,
+    depots: Sequence[Path] | None = None,
+) -> list[Path]:
+    """Keep HostCPUFeatures' `vscale()` out of codegen on CPUs without SVE.
+
+    `vscale()` is an unconditional `llvm.vscale` llvmcall — an SVE instruction
+    Apple Silicon cannot select. It is never *called* there, but an image build
+    compiles even never-called methods, so LLVM aborts the whole build
+    (JuliaLang/PackageCompiler.jl#1070, unfixed as of HostCPUFeatures 0.1.18).
+    Guarded behind the package's own ``_has_aarch64_sve()``, SVE hardware keeps
+    the original definition, so the patch applies to every aarch64 machine. It
+    lands in the depot — the manifest pins a registry version, so there is
+    nowhere else short of a fork — idempotently, and a copy whose text has
+    moved on from the known shape is reported and left alone.
+
+    Returns the files patched by this call.
+    """
+
+    machine = (machine or platform.machine()).lower()
+    if machine not in ("arm64", "aarch64"):
+        return []
+    patched: list[Path] = []
+    for depot in depots if depots is not None else _depot_paths():
+        for source in sorted(depot.glob("packages/HostCPUFeatures/*/src/cpu_info_aarch64.jl")):
+            try:
+                text = source.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if _VSCALE_UNGUARDED in text:
+                source.chmod(source.stat().st_mode | 0o200)
+                source.write_text(
+                    text.replace(_VSCALE_UNGUARDED, _VSCALE_GUARDED, 1), encoding="utf-8"
+                )
+                patched.append(source)
+            elif "llvm.vscale" in text and "vscale() = 1" not in text:
+                # Neither the shape this guard knows nor an already-guarded copy:
+                # a build on this machine will likely abort in LLVM, and saying
+                # where beats a silent pass followed by that abort.
+                print(
+                    f"note: {source} defines an llvm.vscale llvmcall this build "
+                    "cannot guard (the package's text is not the shape it knows); "
+                    "if the build aborts with 'LLVM ERROR: Cannot select: "
+                    "vscale', this file is why."
+                )
+    return patched
+
+
 def build(
     *,
     workspace: Path,
@@ -130,6 +217,13 @@ def build(
         raise SysimageBuildError(
             f"{julia_project} has no dependencies to build an image from. "
             "Run `jutul-agent init --sim <name>` first."
+        )
+
+    for source in _guard_vscale_llvmcall():
+        print(
+            f"note: patched {source} so the build can run on this CPU: its "
+            "vscale() llvmcall is an SVE instruction a system-image build "
+            "cannot compile here (JuliaLang/PackageCompiler.jl#1070)."
         )
 
     env = ensure_builder_env()

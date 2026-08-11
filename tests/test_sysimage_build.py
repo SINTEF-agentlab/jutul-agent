@@ -15,7 +15,10 @@ import pytest
 
 from jutul_agent import sysimage, sysimage_build
 from jutul_agent.sysimage_build import (
+    _VSCALE_GUARDED,
+    _VSCALE_UNGUARDED,
     SysimageBuildError,
+    _guard_vscale_llvmcall,
     _verify_script,
     baked_packages,
     build,
@@ -78,6 +81,19 @@ def julia(monkeypatch: pytest.MonkeyPatch) -> _FakeJulia:
     monkeypatch.setattr(sysimage_build, "_run_julia", fake)
     monkeypatch.setattr(sysimage, "julia_version", lambda: "1.12.4")
     return fake
+
+
+@pytest.fixture(autouse=True)
+def _no_real_depot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every test away from the machine's actual ~/.julia.
+
+    ``build`` guards the depot's HostCPUFeatures copy as a side effect; run
+    unstubbed on an aarch64 developer machine, the suite would edit real
+    packages. Tests of the guard itself call the imported function, which this
+    stub of the module attribute does not touch.
+    """
+
+    monkeypatch.setattr(sysimage_build, "_guard_vscale_llvmcall", lambda **kw: [])
 
 
 # ---------------------------------------------------------------------------
@@ -305,3 +321,96 @@ def test_status_names_what_moved_once_the_env_changes(tmp_path: Path, julia: _Fa
     out = describe(ws, env)
     assert "Out of date" in out
     assert "JutulDarcy 1.0.0 -> 2.0.0" in out
+
+
+# ---------------------------------------------------------------------------
+# The HostCPUFeatures vscale guard (aarch64 without SVE cannot build otherwise).
+
+
+def depot_with(tmp_path: Path, text: str) -> tuple[Path, Path]:
+    """A depot holding one installed HostCPUFeatures copy, read-only like Pkg's."""
+
+    source = tmp_path / "packages" / "HostCPUFeatures" / "ZTXz4" / "src" / "cpu_info_aarch64.jl"
+    source.parent.mkdir(parents=True)
+    source.write_text(text, encoding="utf-8")
+    source.chmod(0o444)
+    return tmp_path, source
+
+
+PRISTINE = "_has_aarch64_sve() = false\n\n" + _VSCALE_UNGUARDED + "\n\nfma_fast() = True()\n"
+
+
+def test_the_vscale_llvmcall_is_guarded_on_aarch64(tmp_path: Path) -> None:
+    depot, source = depot_with(tmp_path, PRISTINE)
+
+    patched = _guard_vscale_llvmcall(machine="arm64", depots=[depot])
+
+    assert patched == [source]
+    text = source.read_text(encoding="utf-8")
+    assert _VSCALE_GUARDED in text
+    assert _VSCALE_UNGUARDED not in text
+    # The rest of the file is not the guard's to touch.
+    assert text.startswith("_has_aarch64_sve() = false\n")
+    assert text.endswith("fma_fast() = True()\n")
+
+
+def test_the_guard_is_idempotent(tmp_path: Path) -> None:
+    depot, source = depot_with(tmp_path, PRISTINE)
+    _guard_vscale_llvmcall(machine="aarch64", depots=[depot])
+    before = source.read_text(encoding="utf-8")
+
+    assert _guard_vscale_llvmcall(machine="aarch64", depots=[depot]) == []
+    assert source.read_text(encoding="utf-8") == before
+
+
+def test_a_hand_patched_copy_is_left_alone(tmp_path: Path) -> None:
+    # The shape someone applies by hand differs in its comments; what marks it
+    # as already guarded is the stub definition.
+    hand = PRISTINE.replace(
+        _VSCALE_UNGUARDED,
+        "# guarded by hand\nif _has_aarch64_sve()\n"
+        '    @noinline vscale() = ccall("llvm.vscale.i64", llvmcall, Int64, ())\n'
+        "else\n    vscale() = 1\nend",
+    )
+    depot, source = depot_with(tmp_path, hand)
+
+    assert _guard_vscale_llvmcall(machine="arm64", depots=[depot]) == []
+    assert source.read_text(encoding="utf-8") == hand
+
+
+def test_an_unfamiliar_vscale_is_reported_not_mangled(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    unfamiliar = 'sve_width() = ccall("llvm.vscale.i64", llvmcall, Int64, ())\n'
+    depot, source = depot_with(tmp_path, unfamiliar)
+
+    assert _guard_vscale_llvmcall(machine="arm64", depots=[depot]) == []
+    assert source.read_text(encoding="utf-8") == unfamiliar
+    out = capsys.readouterr().out
+    assert str(source) in out
+    assert "Cannot select" in out
+
+
+def test_the_guard_does_nothing_off_aarch64(tmp_path: Path) -> None:
+    depot, source = depot_with(tmp_path, PRISTINE)
+
+    assert _guard_vscale_llvmcall(machine="x86_64", depots=[depot]) == []
+    assert _VSCALE_UNGUARDED in source.read_text(encoding="utf-8")
+
+
+def test_the_build_says_what_it_patched(
+    tmp_path: Path,
+    julia: _FakeJulia,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    guarded = tmp_path / "depot" / "cpu_info_aarch64.jl"
+    monkeypatch.setattr(sysimage_build, "_guard_vscale_llvmcall", lambda **kw: [guarded])
+
+    build(workspace=ws, julia_project=env)
+
+    out = capsys.readouterr().out
+    assert f"patched {guarded}" in out
+    assert "PackageCompiler.jl#1070" in out
