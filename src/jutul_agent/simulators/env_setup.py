@@ -519,10 +519,16 @@ def _sync_workspace_env(
 
 
 def _sync_project_dependencies(julia_project: Path, dependencies: Sequence[Path] | None) -> None:
-    """Add capability-provided deps to the active Julia project."""
+    """Add capability-provided deps to the active Julia project.
+
+    Also re-resolves an already-declared dependency whose own ``Project.toml``
+    gained a dep the env's ``Manifest.toml`` doesn't know about yet: see
+    :func:`~jutul_agent.workspace.sync_julia_project_with_dependencies` for why
+    a plain ``Pkg.instantiate`` can't self-heal that case.
+    """
 
     try:
-        added = sync_julia_project_with_dependencies(
+        changed = sync_julia_project_with_dependencies(
             julia_project,
             dependencies,
             warn=lambda msg: print(f"warning: {msg}", file=sys.stderr),
@@ -531,8 +537,8 @@ def _sync_project_dependencies(julia_project: Path, dependencies: Sequence[Path]
         print(f"warning: capability dependency sync failed: {exc}", file=sys.stderr)
         return
 
-    if added:
-        _info(f"Updating Julia project with {', '.join(added)} (added by capability)...")
+    if changed:
+        _info(f"Updating Julia project dependencies ({', '.join(changed)})...")
         try:
             resolve_and_instantiate(julia_project, precompile=False, capture=True)
         except EnvSetupError as exc:

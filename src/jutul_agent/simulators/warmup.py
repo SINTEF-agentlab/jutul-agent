@@ -85,7 +85,7 @@ def load_statement(warm_package: str, capability_packages: Sequence[str] = ()) -
     capability package is a sibling of the warm package rather than a dependant. It
     is built on the simulator, but knows nothing of ``JutulAgent<Sim>``, so "most
     derived" does not order the pair, and the question is only which bake survives.
-    Measured on the geoteric capability: naming it first costs 6.08s of recompilation
+    Measured on one capability package: naming it first costs 6.08s of recompilation
     at load, naming it after the warm package 1.56s. The warm package brings the
     backends and the shared runtime, so going second means arriving into a world that
     is already complete, with nothing left to invalidate it.

@@ -489,7 +489,7 @@ def refusal(decision: Decision, *, command: str = "jutul-agent web") -> str:
     A refusal is a wall, so it carries the way through it: what changed, the one
     command that fixes it, and the flag that starts without it. The component-level
     detail is the point. "Your system image is stale" is an obstacle;
-    "geoteric_agentic_demo_julia was edited" is an instruction.
+    "CapabilityPackage was edited" is an instruction.
     """
 
     parts = [

@@ -82,8 +82,8 @@ Base.exit_on_sigint(false)   # SIGINT -> InterruptException instead of process e
 # A process started from a system image comes up with `Base.pkgorigins` empty,
 # so `pathof`, `pkgdir` and `pkgversion` answer `nothing` for every baked
 # package -- and code that locates its own scripts or resources through them
-# breaks in ways that look nothing like the cause (measured: capability
-# tools failing with `dirname(::Nothing)`). The sources are still on disk and
+# breaks in ways that look nothing like the cause (measured: every tool in one
+# capability-backed stack failing with `dirname(::Nothing)`). The sources are still on disk and
 # `locate_package` still finds them, so rebuild the table once at boot. A
 # normal start has origins already (the stdlibs at least) and skips this;
 # packages loaded later are registered by Julia's own loading code as usual.

@@ -133,7 +133,7 @@ $ jutul-agent web
 This workspace is set to run from a Julia system image, but it cannot be used:
 
   edited since the image was built:
-    GeotericAgenticDemo
+    CapabilityPackage
 
 Rebuild it with:
     jutul-agent sysimage build
