@@ -122,6 +122,7 @@ export const SIDE_OUTPUT_TYPES: ReadonlySet<ServerMessageType> = new Set([
   "viz",
   "artifact",
   "ui",
+  "popout_ready",
 ]);
 
 /** A `ui` action the client consumes internally (a history-refresh signal) instead

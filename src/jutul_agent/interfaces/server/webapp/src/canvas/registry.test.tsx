@@ -1,7 +1,9 @@
-import { act, render } from "@testing-library/react";
+import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { View } from "../store";
+import { renderWithStore } from "../test/util";
+import { framePool } from "./framePool";
 import { IframePanel, stageGeometry } from "./registry";
 
 // A freshly-registered live plot's Bonito route can take a couple of seconds
@@ -25,7 +27,7 @@ describe("IframePanel live readiness", () => {
     const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError("network error")).mockResolvedValueOnce({});
     vi.stubGlobal("fetch", fetchMock);
     const onLoaded = vi.fn();
-    const { container } = render(
+    const { container } = renderWithStore(
       <IframePanel view={plotView} active reloadToken={0} onLoaded={onLoaded} />,
     );
     expect(container.querySelector("iframe")).toBeNull();
@@ -48,7 +50,7 @@ describe("IframePanel live readiness", () => {
   it("gives up after the retry budget and mounts the iframe anyway", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError("network error"));
     vi.stubGlobal("fetch", fetchMock);
-    const { container } = render(
+    const { container } = renderWithStore(
       <IframePanel view={plotView} active reloadToken={0} onLoaded={vi.fn()} />,
     );
 
@@ -71,7 +73,7 @@ describe("IframePanel live readiness", () => {
   it("re-probes when reloadToken changes", async () => {
     const fetchMock = vi.fn().mockResolvedValue({});
     vi.stubGlobal("fetch", fetchMock);
-    const { container, rerender } = render(
+    const { container, rerender } = renderWithStore(
       <IframePanel view={plotView} active reloadToken={0} onLoaded={vi.fn()} />,
     );
     await act(async () => {
@@ -93,7 +95,7 @@ describe("IframePanel live readiness", () => {
   it("skips the readiness ping for non-plot iframes (static reports)", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const { container } = render(
+    const { container } = renderWithStore(
       <IframePanel view={reportView} active reloadToken={0} onLoaded={vi.fn()} />,
     );
     expect(fetchMock).not.toHaveBeenCalled();
@@ -155,8 +157,8 @@ describe("IframePanel stage", () => {
 
   it("a sized live plot renders at its design size inside a scaled frame", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
-    const sized: View = { ...plotView, live: true, width: 1600, height: 900 };
-    const { container } = render(
+    const sized: View = { ...plotView, width: 1600, height: 900 };
+    const { container } = renderWithStore(
       <IframePanel view={sized} active reloadToken={0} onLoaded={() => {}} />,
     );
     await act(async () => {
@@ -173,7 +175,7 @@ describe("IframePanel stage", () => {
 
   it("a plot without a recorded size fills the stage", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
-    const { container } = render(
+    const { container } = renderWithStore(
       <IframePanel view={plotView} active reloadToken={0} onLoaded={() => {}} />,
     );
     await act(async () => {
@@ -185,8 +187,8 @@ describe("IframePanel stage", () => {
 
   it("never first-mounts hidden; stays mounted once shown", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
-    const sized: View = { ...plotView, live: true, width: 1600, height: 900 };
-    const { container, rerender } = render(
+    const sized: View = { ...plotView, width: 1600, height: 900 };
+    const { container, rerender } = renderWithStore(
       <IframePanel view={sized} active={false} reloadToken={0} onLoaded={() => {}} />,
     );
     await act(async () => {
@@ -200,5 +202,30 @@ describe("IframePanel stage", () => {
     expect(container.querySelector("iframe")).not.toBeNull();
     rerender(<IframePanel view={sized} active={false} reloadToken={0} onLoaded={() => {}} />);
     expect(container.querySelector("iframe")).not.toBeNull(); // shown once: stays mounted
+  });
+});
+
+describe("IframePanel live views", () => {
+  beforeEach(() => {
+    framePool.clear();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
+  });
+  afterEach(() => {
+    framePool.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("registers the frame in the pool and renders nothing itself", () => {
+    const live: View = { ...plotView, live: true, width: 1600, height: 900 };
+    const { container, store } = renderWithStore(
+      <IframePanel view={live} active reloadToken={0} onLoaded={() => {}} />,
+    );
+    // The store has no session yet: nothing to key the pool on, nothing rendered.
+    expect(container.querySelector("iframe")).toBeNull();
+    act(() => store.getState().setSession("s1", ""));
+    expect(framePool.snapshot()).toHaveLength(1);
+    expect(framePool.has("s1", live.id, live.url)).toBe(true);
+    // The pixels come from LiveFrames (the pool renderer), not this panel.
+    expect(container.querySelector("iframe")).toBeNull();
   });
 });

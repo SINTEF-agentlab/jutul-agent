@@ -71,6 +71,10 @@ export class Controller {
   // What to do once a missing API key is saved: re-run the action the key blocked
   // (start the session, or apply the model switch). Cleared when the modal closes.
   private keyRetry: (() => void) | null = null;
+  // Popup windows waiting for their `popout_ready` answer, per plot record (a
+  // popup must be opened synchronously in the click to beat popup blockers, so
+  // it exists before the server has replayed the figure).
+  private pendingPopouts = new Map<string, Window[]>();
 
   constructor(private store: StoreApi<SessionStore>) {
     this.transport = new Transport(
@@ -170,11 +174,82 @@ export class Controller {
       if (!msg.cancelled) this.notifyDone("The agent finished your turn.");
     } else if (msg.type === "ui" && msg.action === HISTORY_CHANGED) {
       this.refreshHistory();
+    } else if (msg.type === "popout_ready") {
+      this.resolvePopout(msg.record, msg.url, msg.error ?? null);
     } else if (msg.type === "credential_required") {
       // The server refused a model switch for want of a key (the UI usually catches
       // this before sending; this covers any path that slips through). Prompt for it.
       this.s.openApiKeys({ provider: msg.provider, label: msg.label, env_var: msg.env_var });
     }
+  }
+
+  // --- canvas: popout + regenerate -------------------------------------------
+
+  /** Pop a view into its own window. A live plot with recorded code gets an
+   *  independent replayed figure (a live figure supports exactly one frame, so
+   *  the popup must never load the inline view's own route); anything else
+   *  opens its URL directly. */
+  popout(viewId: string): void {
+    const view = this.s.views[viewId];
+    if (!view) return;
+    if (!(view.kind === "plot" && view.live && view.record) || !this.transport.isOpen()) {
+      window.open(view.url, "_blank", "noopener");
+      return;
+    }
+    // Size the window for the figure's own shape, capped to the screen.
+    const w = Math.min(view.width || 1200, (window.screen?.availWidth ?? 1600) - 60);
+    const h = Math.min((view.height || 800) + 30, (window.screen?.availHeight ?? 1000) - 60);
+    const popup = window.open("about:blank", "_blank", `width=${w},height=${h}`);
+    if (!popup) {
+      this.s.addSysNote("The popout window was blocked; allow popups for this site.", "warn");
+      return;
+    }
+    popup.document.write(
+      `<title>${view.title}</title><body style="margin:0;display:grid;place-items:center;` +
+        `height:100vh;font:14px system-ui;color:#556">Preparing an independent view…</body>`,
+    );
+    const queue = this.pendingPopouts.get(view.record) ?? [];
+    queue.push(popup);
+    this.pendingPopouts.set(view.record, queue);
+    this.transport.send({ type: "replot", record: view.record, target: "popout" });
+  }
+
+  /** The server's answer to a popout replay: navigate the waiting popup to its
+   *  independent live view (and release the figure when the window closes), or
+   *  say why there is none. */
+  private resolvePopout(record: string, url: string | null, error: string | null): void {
+    const queue = this.pendingPopouts.get(record);
+    const popup = queue?.shift();
+    if (queue && queue.length === 0) this.pendingPopouts.delete(record);
+    if (!popup || popup.closed) return;
+    if (!url) {
+      popup.document.body.textContent = error || "The plot could not be replayed.";
+      return;
+    }
+    popup.location.href = url;
+    // The popup carries no script of ours (it hosts the served figure page), so
+    // the opener polls for its close and tells the server to release the route.
+    const timer = setInterval(() => {
+      if (!popup.closed) return;
+      clearInterval(timer);
+      this.transport.send({ type: "popout_closed", url });
+    }, 1000);
+  }
+
+  /** Re-run a dead view's recorded code so it comes back live, in place. */
+  regenerate(viewId: string): void {
+    const view = this.s.views[viewId];
+    if (!view?.record) return;
+    if (this.s.busy) {
+      this.s.addSysNote("Finish the current turn before regenerating a plot.", "warn");
+      return;
+    }
+    if (!this.transport.isOpen()) {
+      this.s.addSysNote("Not connected; reload the page and try again.", "warn");
+      return;
+    }
+    this.transport.send({ type: "replot", record: view.record });
+    this.s.beginWorking(); // the refreshed viz + turn_end (or an error) clears it
   }
 
   // --- composing / sending --------------------------------------------------
