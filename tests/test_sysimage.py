@@ -44,7 +44,10 @@ def write_manifest(env: Path, *, versions: dict[str, str], paths: dict[str, str]
     for name, version in versions.items():
         lines += [f"[[deps.{name}]]", f'version = "{version}"', ""]
     for name, path in paths.items():
-        lines += [f"[[deps.{name}]]", f'path = "{path}"', 'version = "0.1.0"', ""]
+        # As Julia writes it: a TOML basic string, where a raw Windows backslash
+        # would be an escape sequence. Forward slashes are valid on every OS.
+        posix = path.replace("\\", "/")
+        lines += [f"[[deps.{name}]]", f'path = "{posix}"', 'version = "0.1.0"', ""]
     env.mkdir(parents=True, exist_ok=True)
     (env / "Manifest.toml").write_text("\n".join(lines), encoding="utf-8")
 
@@ -257,12 +260,13 @@ def test_a_different_platform_diverges(tmp_path: Path) -> None:
     install_image(ws)
     write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
     stamp = json.loads(sysimage.stamp_path(ws).read_text(encoding="utf-8"))
-    stamp["platform"] = "win32-AMD64"
+    # A platform no host answers to, so the test diverges on Linux and Windows alike.
+    stamp["platform"] = "plan9-mips"
     sysimage.stamp_path(ws).write_text(json.dumps(stamp), encoding="utf-8")
 
     decision = decide(ws, env, enabled=True)
     assert decision.status == DIVERGENT
-    assert "win32-AMD64" in decision.reason
+    assert "plan9-mips" in decision.reason
 
 
 def test_an_older_build_recipe_diverges(tmp_path: Path) -> None:
