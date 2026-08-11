@@ -813,6 +813,7 @@ def artifact_wire_events(
                 view_url = url
             else:
                 view_url = poster_url or url
+            size_px = payload.get("size_px") or [None, None]
             events.append(
                 protocol.viz_to_wire(
                     view_url,
@@ -820,6 +821,13 @@ def artifact_wire_events(
                     kind=str(kind or "plot"),
                     poster=poster_url,
                     slot=payload.get("slot"),
+                    live=bool(live_url),
+                    # A plot with recorded code can be replayed: name its trace
+                    # record so the front end can ask for a re-run (regenerate a
+                    # dead view, or serve an independent popout figure).
+                    record=(str(payload.get("path")) if payload.get("source_code") else None),
+                    width=size_px[0],
+                    height=size_px[1],
                 )
             )
         else:
@@ -1032,6 +1040,10 @@ class _StreamState:
         # Tool categories the user chose to "always allow" this session; future
         # matching interrupts auto-approve without asking again (like the TUI).
         self._allowlist = ToolAllowlist()
+        # This connection's popout views: live URL -> route id, so a close can
+        # only release a route this connection's own popouts created.
+        self._popouts: dict[str, str] = {}
+        self._popout_seq = 0
 
     async def handle(self, message: dict[str, Any]) -> None:
         kind = message.get("type")
@@ -1041,6 +1053,10 @@ class _StreamState:
             await self._start_decision(message)
         elif kind == "cancel":
             await self.cancel_turn()
+        elif kind == "replot":
+            await self._start_replot(message)
+        elif kind == "popout_closed":
+            await self._close_popout(str(message.get("url") or ""))
         elif kind == "ui_event":
             self._host.session.trace.append(schema.UI_EVENT, {"payload": message.get("payload")})
         elif kind == "command":
@@ -1163,6 +1179,109 @@ class _StreamState:
         self._pending = []
         runner = self._host.runner
         self._spawn(lambda: runner.resume(payload, on_message=self._on_message))
+
+    async def _start_replot(self, message: dict[str, Any]) -> None:
+        """Replay a recorded plot (the canvas regenerate and popout actions).
+
+        Runs as the turn task so it shares the busy guard and the cancel path
+        with agent turns: neither can run while the other holds the kernel.
+        """
+        record = str(message.get("record") or "")
+        target = str(message.get("target") or "revive")
+        if not record:
+            return
+        if self._busy():
+            reason = "finish the current turn before regenerating a plot"
+            if target == "popout":
+                await _safe_send(
+                    self._ws, protocol.popout_ready_to_wire(record, None, error=reason)
+                )
+            else:
+                await _safe_send(self._ws, protocol.error_to_wire(reason))
+            return
+        self._turn = asyncio.create_task(self._replot(record, target))
+
+    async def _replot(self, record: str, target: str) -> None:
+        """Re-run a recorded plot's code and deliver the resulting view.
+
+        ``record`` names the plot's artifact in the trace; the stored source code
+        is what re-runs (never code a client sent). A revive re-serves on the
+        plot's own route and re-finalizes the artifact, so the side-output flush
+        delivers a fresh ``viz`` and the browser view revives in place. A popout
+        serves an independent figure on its own route and answers with its URL.
+        The code replays in the current kernel state — variables may have changed
+        or be gone after a restart — so a failure is reported, not hidden.
+        """
+        from jutul_agent.agent.plot_julia import replot_web
+
+        popout = target == "popout"
+
+        async def fail(reason: str) -> None:
+            if popout:
+                await _safe_send(
+                    self._ws, protocol.popout_ready_to_wire(record, None, error=reason)
+                )
+            else:
+                await _safe_send(
+                    self._ws, protocol.error_to_wire(f"could not regenerate the plot: {reason}")
+                )
+                await _safe_send(self._ws, protocol.turn_end_to_wire([]))
+
+        payload: dict[str, Any] | None = None
+        for event in reversed(self._host.session.trace.iter_events()):
+            if (
+                event.kind == schema.ARTIFACT
+                and event.payload.get("path") == record
+                and event.payload.get("source_code")
+            ):
+                payload = event.payload
+                break
+        if payload is None:
+            await fail("this plot has no recorded code to re-run")
+            return
+        self._side_output_id = self._latest_event_id()
+        suffix = ""
+        if popout:
+            self._popout_seq += 1
+            suffix = f"--pop{self._popout_seq}"
+        try:
+            err, url = await replot_web(
+                self._host.session, payload, route_suffix=suffix, record=not popout
+            )
+        except asyncio.CancelledError:
+            await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
+            raise
+        except Exception as exc:  # surface the failure, keep the session alive
+            err, url = f"the Julia session is unavailable ({type(exc).__name__}: {exc})", None
+        if err is not None:
+            await fail(err)
+            return
+        if popout:
+            if url:
+                self._popouts[url] = url.rsplit("/viz/", 1)[-1]
+            await _safe_send(self._ws, protocol.popout_ready_to_wire(record, url))
+            return
+        await self._flush_side_outputs()
+        await _safe_send(self._ws, protocol.turn_end_to_wire([]))
+        # Make the regeneration part of the shared conversation, so the next turn
+        # knows the plot's code re-ran in the shared kernel. Best-effort.
+        with contextlib.suppress(Exception):
+            await self._host.runner.add_user_action(
+                "I regenerated a plot in the canvas by re-running its code:\n\n"
+                f"```julia\n{payload.get('source_code')}\n```"
+            )
+
+    async def _close_popout(self, url: str) -> None:
+        """Release the figure behind a closed popout window. Best-effort: only a
+        route this connection's own popout created, and only when the kernel is
+        free (a busy kernel just leaves it to the route cap)."""
+        route_id = self._popouts.pop(url, None)
+        if route_id is None or self._busy():
+            return
+        from jutul_agent.agent import plot_julia_src as jl
+
+        with contextlib.suppress(Exception):
+            await self._host.session.julia.eval(jl.close_web_plots_call(route_id))
 
     def _busy(self) -> bool:
         return self._turn is not None and not self._turn.done()
