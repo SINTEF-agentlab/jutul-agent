@@ -693,6 +693,10 @@ def test_artifact_wire_events_png_and_html() -> None:
         "kind": "plot",
         "poster": "/sessions/sid/artifacts/scene.png",
         "slot": "scene",
+        "live": False,
+        "record": None,
+        "width": None,
+        "height": None,
     }
     # A written report is a viz too, of kind "report" and with no poster.
     assert events[2] == {
@@ -702,6 +706,10 @@ def test_artifact_wire_events_png_and_html() -> None:
         "kind": "report",
         "poster": None,
         "slot": "report",
+        "live": False,
+        "record": None,
+        "width": None,
+        "height": None,
     }
 
 
@@ -720,6 +728,8 @@ def test_artifact_wire_events_live_plot_uses_live_url() -> None:
             "poster": "artifacts/reservoir.png",
             "slot": "reservoir",
             "live_url": "http://127.0.0.1:9123/viz/reservoir",
+            "source_code": "plot_reservoir(model, states)",
+            "size_px": [1600, 900],
         },
     ]
     (event,) = artifact_wire_events(payloads, "sid")
@@ -730,6 +740,11 @@ def test_artifact_wire_events_live_plot_uses_live_url() -> None:
         "kind": "plot",
         "poster": "/sessions/sid/artifacts/reservoir.png",
         "slot": "reservoir",
+        "live": True,
+        # Recorded code makes the plot replayable; the record names its artifact.
+        "record": "artifacts/reservoir.png",
+        "width": 1600,
+        "height": 900,
     }
 
 
@@ -746,6 +761,8 @@ def test_artifact_wire_events_replay_falls_back_to_poster() -> None:
             "poster": "artifacts/reservoir.png",
             "slot": "reservoir",
             "live_url": "http://127.0.0.1:9123/viz/reservoir",
+            "source_code": "plot_reservoir(model, states)",
+            "size_px": [1600, 900],
         },
     ]
     (event,) = artifact_wire_events(payloads, "sid", live=False)
@@ -756,7 +773,132 @@ def test_artifact_wire_events_replay_falls_back_to_poster() -> None:
         "kind": "plot",
         "poster": "/sessions/sid/artifacts/reservoir.png",
         "slot": "reservoir",
+        "live": False,
+        # The record survives the downgrade: it is what the regenerate button
+        # sends back to revive the view in a fresh kernel.
+        "record": "artifacts/reservoir.png",
+        "width": 1600,
+        "height": 900,
     }
+
+
+def _plot_eval_handler(code: str):
+    """Answers for the Julia the replot path evaluates, keyed on its markers."""
+    from jutul_agent.agent import plot_julia_src as jl
+    from jutul_agent.julia.session import EvalResult
+
+    if "Bonito.Server" in code and "__JUTUL_WEB_PORT__" in code:
+        return EvalResult(output="__JUTUL_WEB_PORT__=9123")
+    if "__JUTUL_WEB_FIGS__[" in code:
+        return EvalResult(output=f"{jl.FIG_SIZE_MARKER}=1600x900")
+    if jl.SCREEN_PREFERENCE_MARKER in code:
+        return EvalResult(output=f"{jl.SCREEN_PREFERENCE_MARKER}=ok")
+    if jl.PICK_GUARD_MARKER in code:
+        return EvalResult(output=f"{jl.PICK_GUARD_MARKER}=ok")
+    return EvalResult(output="")
+
+
+def _plot_state(tmp_path: Path):
+    """A stream state over a session whose trace holds one replayable plot."""
+    from jutul_agent.interfaces.server.app import _StreamState
+    from jutul_agent.trace import schema
+
+    session = Session.create(
+        julia=FakeJulia(eval_handler=_plot_eval_handler),
+        state_root=tmp_path,
+        simulator=make_fake_adapter(tmp_path),
+    )
+    session.trace.append(
+        schema.ARTIFACT,
+        schema.artifact_payload(
+            path="artifacts/res.png",
+            mime="image/png",
+            caption="Reservoir",
+            format="png",
+            kind="plot",
+            poster="artifacts/res.png",
+            slot="res",
+            live_url="/live/x/viz/res",
+            source_code="plot_reservoir(model, states)",
+        ),
+    )
+    # The poster the replayed CairoMakie.save would write (a fake kernel writes
+    # nothing); without it the finalize honestly records the HTML fallback.
+    poster = session.output_dir / "artifacts" / "res.png"
+    poster.parent.mkdir(parents=True, exist_ok=True)
+    poster.write_bytes(b"png")
+    host = SessionHost(session=session, agent=None)
+    ws = _FakeWS()
+    return _StreamState(ws, host), ws, session  # type: ignore[arg-type]
+
+
+async def test_replot_revive_reserves_route_and_revives_view(tmp_path: Path) -> None:
+    # The regenerate button: the recorded code re-runs on the plot's own route,
+    # the re-finalized artifact flushes as a fresh live viz, and the turn ends.
+    st, ws, session = _plot_state(tmp_path)
+    await st._replot("artifacts/res.png", "revive")
+    viz = next(m for m in ws.sent if m["type"] == "viz")
+    assert viz["live"] is True
+    assert viz["url"] == f"/live/{session.session_id}/viz/res"
+    assert viz["slot"] == "res"
+    assert viz["record"] == "artifacts/res.png"
+    assert (viz["width"], viz["height"]) == (1600, 900)
+    assert ws.sent[-1]["type"] == "turn_end"
+    # The replay served the figure and saved a fresh poster (the poster block runs).
+    assert any("__JUTUL_WEB_FIGS__[" in c and "CairoMakie.save" in c for c in session.julia.calls)
+
+
+async def test_replot_unknown_record_is_an_error(tmp_path: Path) -> None:
+    st, ws, _session = _plot_state(tmp_path)
+    await st._replot("artifacts/nope.png", "revive")
+    assert ws.sent[0]["type"] == "error"
+    assert "no recorded code" in ws.sent[0]["message"]
+
+
+async def test_replot_popout_serves_independent_route_and_close_releases_it(
+    tmp_path: Path,
+) -> None:
+    # A popout replays the code into its own route (an independent figure), skips
+    # the poster (the record already exists), and the close releases that route.
+    st, ws, session = _plot_state(tmp_path)
+    await st._replot("artifacts/res.png", "popout")
+    (ready,) = [m for m in ws.sent if m["type"] == "popout_ready"]
+    assert ready["error"] is None
+    assert ready["url"] == f"/live/{session.session_id}/viz/res--pop1"
+    assert not any(m["type"] == "viz" for m in ws.sent)  # no artifact re-recorded
+    serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
+    assert "res--pop1" in serve
+    assert "CairoMakie.save" not in serve  # poster skipped for the ephemeral view
+
+    await st._close_popout(ready["url"])
+    close = session.julia.calls[-1]
+    assert "delete_route!" in close and "res--pop1" in close
+    # A second close for the same URL is a no-op (the route is no longer ours).
+    calls = len(session.julia.calls)
+    await st._close_popout(ready["url"])
+    assert len(session.julia.calls) == calls
+
+
+async def test_replot_refused_while_busy(tmp_path: Path) -> None:
+    st, ws, _session = _plot_state(tmp_path)
+
+    async def _hang() -> None:
+        await asyncio.sleep(30)
+
+    st._turn = asyncio.create_task(_hang())
+    try:
+        await st._start_replot({"type": "replot", "record": "artifacts/res.png"})
+        assert ws.sent[-1]["type"] == "error"
+        await st._start_replot(
+            {"type": "replot", "record": "artifacts/res.png", "target": "popout"}
+        )
+        assert ws.sent[-1]["type"] == "popout_ready"
+        assert ws.sent[-1]["url"] is None
+        assert "finish the current turn" in ws.sent[-1]["error"]
+    finally:
+        st._turn.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await st._turn
 
 
 def test_command_reconfigures_session(tmp_path: Path) -> None:

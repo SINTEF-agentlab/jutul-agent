@@ -168,9 +168,21 @@ def test_viz_and_ui_wire() -> None:
         "kind": "plot",
         "poster": None,
         "slot": None,
+        "live": False,
+        "record": None,
+        "width": None,
+        "height": None,
     }
     assert protocol.viz_to_wire(
-        "http://x/r.html", title="R", kind="report", poster="http://x/p.png", slot="report"
+        "http://x/r.html",
+        title="R",
+        kind="report",
+        poster="http://x/p.png",
+        slot="report",
+        live=True,
+        record="artifacts/r.png",
+        width=1600,
+        height=900,
     ) == {
         "type": "viz",
         "url": "http://x/r.html",
@@ -178,6 +190,16 @@ def test_viz_and_ui_wire() -> None:
         "kind": "report",
         "poster": "http://x/p.png",
         "slot": "report",
+        "live": True,
+        "record": "artifacts/r.png",
+        "width": 1600,
+        "height": 900,
+    }
+    assert protocol.popout_ready_to_wire("artifacts/r.png", "/live/s/viz/r--pop1") == {
+        "type": "popout_ready",
+        "record": "artifacts/r.png",
+        "url": "/live/s/viz/r--pop1",
+        "error": None,
     }
     assert protocol.ui_command("set_param", {"p": 2}) == {
         "type": "ui",

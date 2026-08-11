@@ -35,11 +35,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from jutul_agent.agent.plot_julia_src import (
+    FIG_SIZE_MARKER,
     PICK_EMPTY_BUFFER_GUARD,
     PICK_GUARD_MARKER,
     PREFER_OPEN_SCREEN_GUARD,
     RESTORE_OPAQUE_OVERLAY_DEPTH_WRITES,
     SCREEN_PREFERENCE_MARKER,
+    WEB_LIVE_ROUTE_CAP,
     web_live_call,
     web_render_call,
     web_server_start,
@@ -244,3 +246,63 @@ def test_screen_preference_is_reached_through_wglmakie() -> None:
     # The web preamble imports WGLMakie, not Makie, so the module has to be qualified.
     assert "@eval WGLMakie.Makie" in PREFER_OPEN_SCREEN_GUARD
     assert SCREEN_PREFERENCE_MARKER in PREFER_OPEN_SCREEN_GUARD
+
+
+def test_served_wrapper_uses_viewport_units_for_both_dimensions() -> None:
+    # A percentage height resolves against the served page's body height, which
+    # nothing sets, so it collapses to the content height and resize_to=:parent
+    # then tracks only the width -- the figure keeps its own height and a wide
+    # dashboard renders crushed in a narrow panel. Viewport units are the iframe's
+    # size regardless of the body's layout, so the client controls both dimensions.
+    live = _live_code()
+    static = web_render_call(
+        user_code="lines(1:10)", png_path=Path("/tmp/p.png"), html_path=Path("/tmp/p.html")
+    )
+    for code in (live, static):
+        assert "width:100vw" in code and "height:100vh" in code
+        assert "width:100%" not in code and "height:100%" not in code
+
+
+def test_live_call_echoes_the_figure_size_and_applies_a_requested_one() -> None:
+    # The echo reports the figure's *resulting* pixel size; the client sizes the
+    # view's stage from it (the record is what keeps a dashboard's layout intact).
+    code = _live_code()
+    assert FIG_SIZE_MARKER in code
+    assert "resize!" not in code  # no size requested: the figure keeps its own
+    sized = web_live_call(
+        user_code="lines(1:10)",
+        png_path=Path("/tmp/p.png"),
+        html_path=Path("/tmp/p.html"),
+        route="/viz/x",
+        size=[900, 600],
+    )
+    assert "resize!(_fig, 900, 600)" in sized
+    # Applied before the echo, so what is echoed is what the browser will get.
+    assert sized.index("resize!") < sized.index(FIG_SIZE_MARKER)
+
+
+def test_live_call_caps_the_route_registry() -> None:
+    # The safety net: beyond the cap the oldest route is unrouted and its figure
+    # dropped, so a session plotting unseen in a loop cannot grow without bound.
+    code = _live_code()
+    assert f"length(_order) > {WEB_LIVE_ROUTE_CAP}" in code
+    assert "popfirst!(_order)" in code
+    assert "delete_route!" in code
+    # Generous by design: a working session shows its plots and never gets here.
+    assert WEB_LIVE_ROUTE_CAP >= 20
+
+
+def test_live_call_without_poster_skips_the_durable_record() -> None:
+    # A popout replay serves a second, ephemeral figure of a plot whose record
+    # already exists; re-saving the poster would cost the CairoMakie render and
+    # touch files the original owns.
+    code = web_live_call(
+        user_code="lines(1:10)",
+        png_path=Path("/tmp/p.png"),
+        html_path=Path("/tmp/p.html"),
+        route="/viz/x--pop1",
+        poster=False,
+    )
+    assert "CairoMakie.save" not in code
+    assert "export_static" not in code
+    assert "__JUTUL_WEB_FIGS__" in code  # still served live

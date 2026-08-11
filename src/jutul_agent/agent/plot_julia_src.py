@@ -102,6 +102,35 @@ PICK_EMPTY_BUFFER_GUARD = (
 )
 
 
+# Live web figures the session keeps at most. A safety net, not a working limit:
+# the browser releases views it can no longer show long before this (its own cap
+# is the WebGL context budget), so this only catches a session that plots in a
+# loop without ever showing the results.
+WEB_LIVE_ROUTE_CAP = 24
+
+# Printed after the figure is built so the tool records the figure's real pixel
+# size. The browser sizes the view's stage from it: the served page renders at
+# exactly this size and is scaled to fit, which is what keeps a wide dashboard's
+# layout intact in a narrow panel.
+FIG_SIZE_MARKER = "__JUTUL_FIG_SIZE__"
+
+
+def _fig_size_block(size: list[int] | None) -> str:
+    """Julia to apply an explicit figure size and echo the size the figure has.
+
+    The echo reports the *resulting* size (viewport widths), not the request, so
+    the recorded ``size_px`` is what the browser will actually receive."""
+
+    resize = ""
+    if size is not None:
+        resize = f"    _M.resize!(_fig, {int(size[0])}, {int(size[1])})\n"
+    return (
+        resize + "    let _vp = _fig.scene.viewport[]\n"
+        f'        println("{FIG_SIZE_MARKER}=", _vp.widths[1], "x", _vp.widths[2])\n'
+        "    end\n"
+    )
+
+
 def _size_tuple(size: list[int] | None) -> str:
     if size is None:
         return "nothing"
@@ -328,7 +357,7 @@ def _poster_block(png_path: Path, *, html_fallback: Path | None) -> str:
     export = (
         "        WGLMakie.activate!(resize_to = :parent)\n"
         f'        Bonito.export_static(raw"{html_fallback.as_posix()}", Bonito.App(() ->\n'
-        '            Bonito.DOM.div(_fig; style = "width:100%; height:100%;")))\n'
+        f'            Bonito.DOM.div(_fig; style = "{_WRAP_STYLE}")))\n'
         if html_fallback is not None
         else ""
     )
@@ -344,7 +373,9 @@ def _poster_block(png_path: Path, *, html_fallback: Path | None) -> str:
     ) + DETACH_CAIRO_SCREENS
 
 
-def web_render_call(*, user_code: str, png_path: Path, html_path: Path) -> str:
+def web_render_call(
+    *, user_code: str, png_path: Path, html_path: Path, size: list[int] | None = None
+) -> str:
     """Julia to evaluate the user code and export the figure for the browser.
 
     Bonito exports the resolved figure to a self-contained, responsive HTML file
@@ -354,13 +385,23 @@ def web_render_call(*, user_code: str, png_path: Path, html_path: Path) -> str:
     return (
         "begin\n"
         + _web_figure_block(user_code)
+        + _fig_size_block(size)
         + "    WGLMakie.activate!(resize_to = :parent)\n"
         + f'    Bonito.export_static(raw"{html_path.as_posix()}",\n'
-        '        Bonito.App(() -> Bonito.DOM.div(_fig; style = "width:100%; height:100%;")))\n'
+        f'        Bonito.App(() -> Bonito.DOM.div(_fig; style = "{_WRAP_STYLE}")))\n'
         + _poster_block(png_path, html_fallback=None)
         + '    "ok"\n'
         "end"
     )
+
+
+# The div Bonito serves the figure in. Viewport units, not percentages: a
+# percentage height resolves against the body's computed height, which nothing
+# sets in the served page, so ``height:100%`` collapses to the content height and
+# ``resize_to = :parent`` then tracks only the width — the squashed-canvas bug.
+# ``100vw/100vh`` is the iframe's viewport regardless of the body's own layout,
+# so the figure tracks both dimensions of whatever the client sizes the frame to.
+_WRAP_STYLE = "width:100vw; height:100vh; margin:0; overflow:hidden;"
 
 
 def web_server_start(port: int, session_id: str) -> str:
@@ -419,7 +460,15 @@ def web_server_start(port: int, session_id: str) -> str:
     )
 
 
-def web_live_call(*, user_code: str, png_path: Path, html_path: Path, route: str) -> str:
+def web_live_call(
+    *,
+    user_code: str,
+    png_path: Path,
+    html_path: Path,
+    route: str,
+    size: list[int] | None = None,
+    poster: bool = True,
+) -> str:
     """Julia to build the figure, keep it alive, and serve it on the live route.
 
     WGLMakie is active while the user code runs, so native plotters build WebGL
@@ -431,11 +480,16 @@ def web_live_call(*, user_code: str, png_path: Path, html_path: Path, route: str
     figure still has a durable record that resumes to a viewable plot rather than
     a dead PNG. WGLMakie is restored afterwards so client connections render with
     it.
+
+    ``poster=False`` skips the durable record entirely, for a popout replay:
+    that serves a second, ephemeral figure of a plot whose record already
+    exists (and saves the poster's CairoMakie render time).
     """
 
     return (
         "begin\n"
         + _web_figure_block(user_code)
+        + _fig_size_block(size)
         + "    WGLMakie.activate!(resize_to = :parent)\n"
         + f'    Main.__JUTUL_WEB_FIGS__[raw"{route}"] = _fig\n'
         # Move the route to the end of the recency list (a re-plot on the same slot
@@ -443,11 +497,23 @@ def web_live_call(*, user_code: str, png_path: Path, html_path: Path, route: str
         "    let _order = Main.__JUTUL_WEB_ORDER__\n"
         f'        filter!(!=(raw"{route}"), _order)\n'
         f'        push!(_order, raw"{route}")\n'
+        # The safety-net cap: release the oldest figures beyond it so a session
+        # that plots unseen in a loop cannot grow the registry without bound. The
+        # browser bounds what it *shows* far earlier and releases routes as it
+        # downgrades views, so under normal use this never fires.
+        f"        while length(_order) > {WEB_LIVE_ROUTE_CAP}\n"
+        "            local _victim = popfirst!(_order)\n"
+        "            delete!(Main.__JUTUL_WEB_FIGS__, _victim)\n"
+        "            try\n"
+        "                Main.Bonito.delete_route!(Main.__JUTUL_WEB_SERVER__, _victim)\n"
+        "            catch\n"
+        "            end\n"
+        "        end\n"
         "    end\n"
         f'    Bonito.route!(Main.__JUTUL_WEB_SERVER__, raw"{route}" => Bonito.App(() ->\n'
         f'        Bonito.DOM.div(Main.__JUTUL_WEB_FIGS__[raw"{route}"];\n'
-        '            style = "width:100%; height:100%;")))\n'
-        + _poster_block(png_path, html_fallback=html_path)
+        f'            style = "{_WRAP_STYLE}")))\n'
+        + (_poster_block(png_path, html_fallback=html_path) if poster else "")
         + '    "ok"\n'
         "end"
     )

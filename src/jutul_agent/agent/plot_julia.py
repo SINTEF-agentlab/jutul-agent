@@ -260,11 +260,12 @@ def _finalize_web(
     png_rel: str,
     html_rel: str,
     caption: str,
-    tool_call_id: str,
+    tool_call_id: str | None,
     slot: str | None,
     source_code: str,
     view: bool,
     live_url: str | None = None,
+    size_px: list[int] | None = None,
 ) -> str | list[dict[str, Any]]:
     """Record the interactive plot artifact and build the reply.
 
@@ -295,6 +296,7 @@ def _finalize_web(
             tool_call_id=tool_call_id,
             format=fmt,
             kind="plot",
+            size_px=size_px,
             poster=png_rel if has_poster else None,
             slot=slot,
             live_url=live_url,
@@ -306,6 +308,99 @@ def _finalize_web(
     if slot:
         summary += f"; slot={slot}"
     return _reply(summary, png_abs, view and has_poster)
+
+
+def _parse_fig_size(output: str | None) -> list[int] | None:
+    """The figure's real pixel size, read back from the tagged echo line."""
+    match = re.search(rf"{jl.FIG_SIZE_MARKER}=(\d+)x(\d+)", output or "")
+    if match is None:
+        return None
+    return [int(match.group(1)), int(match.group(2))]
+
+
+def _plot_id_of(payload: dict[str, Any]) -> str:
+    """A recorded plot's route identity: its slot, else its file stem.
+
+    The tool routes a slotted plot on its slot and an unslotted one on
+    ``plot-<id>`` (the artifact file stem), so replaying through the same rule
+    lands on the same route and the browser view revives in place.
+    """
+    slot = payload.get("slot")
+    if slot:
+        return str(slot)
+    rec = str(payload.get("path") or "")
+    return rec.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+
+
+async def replot_web(
+    session: Session,
+    payload: dict[str, Any],
+    *,
+    route_suffix: str = "",
+    record: bool = True,
+) -> tuple[str | None, str | None]:
+    """Re-run a recorded plot's code through the live web path; ``(error, url)``.
+
+    ``payload`` is the plot's artifact payload from the trace (the server looks
+    it up there — recorded code only, never code a client sent). With ``record``
+    the figure re-serves on its original route and the artifact is re-finalized,
+    so the side-output flush delivers a fresh ``viz`` and the browser view
+    revives in place (the regenerate button). With ``record=False`` the figure
+    serves on ``route_suffix``'s separate route and only the live URL is
+    returned — an independent, ephemeral view for a popout window.
+
+    The code replays into the current kernel state: variables it used may have
+    changed or be gone after a restart, so a failure is reported, not hidden.
+    """
+
+    code = str(payload.get("source_code") or "")
+    if not code:
+        return "this plot has no recorded code to re-run", None
+    err = await _load_web_plot_backend(session, session.simulator)
+    if err is not None:
+        return err, None
+    # Idempotent: an existing server answers with its real port, a fresh kernel
+    # gets one started. Either way the reverse proxy learns where to dial.
+    started = await session.julia.eval(jl.web_server_start(_free_port(), session.session_id))
+    match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
+    if started.error or match is None:
+        reason = _truncate(started.error or "the server did not report a port", 200)
+        return f"the session's live plot server is unavailable ({reason})", None
+    session.web_plot_port = int(match.group(1))
+
+    plot_id = _plot_id_of(payload)
+    route = jl.viz_route(f"{plot_id}{route_suffix}")
+    live_url = f"/live/{session.session_id}{route}"
+    png_rel = f"artifacts/{plot_id}.png"
+    png_abs = session.output_dir / png_rel
+    html_rel = png_rel[:-4] + ".html"
+
+    result = await session.julia.eval(
+        jl.web_live_call(
+            user_code=code,
+            png_path=png_abs,
+            html_path=session.output_dir / html_rel,
+            route=route,
+            poster=record,
+        )
+    )
+    if result.error:
+        return f"the plot code failed when re-run: {_truncate(result.error, 300)}", None
+    if record:
+        _finalize_web(
+            session,
+            png_abs=png_abs,
+            png_rel=png_rel,
+            html_rel=html_rel,
+            live_url=live_url,
+            caption=str(payload.get("caption") or ""),
+            tool_call_id=None,
+            slot=payload.get("slot"),
+            source_code=code,
+            view=False,
+            size_px=_parse_fig_size(result.output),
+        )
+    return None, live_url
 
 
 def make_plot_julia_tool(session: Session, *, surface: str | None = None):
@@ -428,11 +523,13 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
             if live_base:
                 route = jl.viz_route(plot_id)
                 call = jl.web_live_call(
-                    user_code=code, png_path=abs_path, html_path=html_abs, route=route
+                    user_code=code, png_path=abs_path, html_path=html_abs, route=route, size=size
                 )
                 live_url = f"{live_base}{route}"
             else:
-                call = jl.web_render_call(user_code=code, png_path=abs_path, html_path=html_abs)
+                call = jl.web_render_call(
+                    user_code=code, png_path=abs_path, html_path=html_abs, size=size
+                )
                 live_url = None
             result = await session.julia.eval(call)
             if result.error:
@@ -448,6 +545,7 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
                 slot=safe_slot,
                 source_code=code,
                 view=view,
+                size_px=_parse_fig_size(result.output),
             )
 
         open_window = window and session.open_windows

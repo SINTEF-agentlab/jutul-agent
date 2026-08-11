@@ -41,6 +41,7 @@ __all__ = [
     "error_to_wire",
     "interrupt_to_wire",
     "notice_to_wire",
+    "popout_ready_to_wire",
     "replay_message",
     "replay_tool_event",
     "to_wire",
@@ -201,6 +202,10 @@ def viz_to_wire(
     kind: str = "plot",
     poster: str | None = None,
     slot: str | None = None,
+    live: bool = False,
+    record: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> dict[str, Any]:
     """Serialize an interactive view to pin in the front end's canvas.
 
@@ -208,9 +213,40 @@ def viz_to_wire(
     a front end uses it only for the label/icon. ``poster`` is an optional image
     URL for a lightweight inline thumbnail, and ``slot`` is the view's stable key
     so a refreshed view replaces the previous one in place rather than stacking.
+
+    ``live`` says the URL is served by the session's live figure server (its
+    widgets work; the view is stateful and supports exactly one frame).
+    ``record`` names the plot's trace record when its source code was recorded,
+    which is what a client sends back in a ``replot`` request (regenerate a dead
+    view, or build an independent popout view). ``width``/``height`` are the
+    figure's own pixel size, so a client can present it at its designed shape.
     """
 
-    return {"type": "viz", "url": url, "title": title, "kind": kind, "poster": poster, "slot": slot}
+    return {
+        "type": "viz",
+        "url": url,
+        "title": title,
+        "kind": kind,
+        "poster": poster,
+        "slot": slot,
+        "live": live,
+        "record": record,
+        "width": width,
+        "height": height,
+    }
+
+
+def popout_ready_to_wire(
+    record: str, url: str | None, *, error: str | None = None
+) -> dict[str, Any]:
+    """Answer to a ``replot`` request with ``target="popout"``.
+
+    ``url`` is the popup's own live view (an independent figure replayed from the
+    plot's recorded code) when the replay succeeded; otherwise ``error`` says why
+    it didn't, and the client falls back (poster, or an explanation in the popup).
+    """
+
+    return {"type": "popout_ready", "record": record, "url": url, "error": error}
 
 
 def error_to_wire(message: str) -> dict[str, Any]:
