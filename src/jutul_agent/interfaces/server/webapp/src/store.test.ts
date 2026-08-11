@@ -253,3 +253,32 @@ describe("api-keys modal", () => {
     expect(state().apiKeys).toEqual({ open: false, required: null });
   });
 });
+
+describe("view sizing mode", () => {
+  it("a viz carries its live/record/size fields into the view", () => {
+    state().handle({
+      type: "viz",
+      url: "/live/s/viz/res",
+      kind: "plot",
+      slot: "res",
+      live: true,
+      record: "artifacts/res.png",
+      width: 1600,
+      height: 900,
+    });
+    const v = state().views["slot:res"];
+    expect(v.live).toBe(true);
+    expect(v.record).toBe("artifacts/res.png");
+    expect([v.width, v.height]).toEqual([1600, 900]);
+    expect(v.mode).toBeUndefined(); // unset: the stage defaults to "scale"
+  });
+
+  it("setViewMode flips the mode and a same-slot refresh keeps the choice", () => {
+    state().handle({ type: "viz", url: "/a", kind: "plot", slot: "res", width: 800, height: 600 });
+    state().setViewMode("slot:res", "fill");
+    expect(state().views["slot:res"].mode).toBe("fill");
+    state().handle({ type: "viz", url: "/b", kind: "plot", slot: "res", width: 800, height: 600 });
+    expect(state().views["slot:res"].mode).toBe("fill"); // the user's choice survives
+    expect(state().views["slot:res"].url).toBe("/b");
+  });
+});

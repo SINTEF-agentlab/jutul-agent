@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { View } from "../store";
+import type { View, ViewMode } from "../store";
 
 export interface PanelProps {
   view: View;
@@ -99,6 +99,32 @@ function useLiveReady(url: string, enabled: boolean, resetKey: number): boolean 
   return ready;
 }
 
+/** The stage rectangle for a figure of design size ``w x h`` in a ``bw x bh``
+ *  panel. "scale" fits the figure at its own layout, shrunk as needed (never
+ *  upscaled: a canvas grown by CSS blurs) and centered; "fill" hands the figure
+ *  the whole panel to reflow into. */
+export function stageGeometry(
+  mode: ViewMode,
+  w: number,
+  h: number,
+  bw: number,
+  bh: number,
+): { left: number; top: number; width: number; height: number; scale: number } {
+  if (mode === "fill" || bw <= 0 || bh <= 0 || w <= 0 || h <= 0) {
+    return { left: 0, top: 0, width: bw, height: bh, scale: 1 };
+  }
+  const scale = Math.min(bw / w, bh / h, 1);
+  const width = Math.round(w * scale);
+  const height = Math.round(h * scale);
+  return {
+    left: Math.round((bw - width) / 2),
+    top: Math.round((bh - height) / 2),
+    width,
+    height,
+    scale,
+  };
+}
+
 export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps) {
   // A live WebGL figure reflows once right after `load` (WGLMakie sizes to its
   // parent only after mounting), so clearing the loader on `load` would flash a
@@ -109,20 +135,73 @@ export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps)
   // so a stale onLoaded can't fire against a view that is already gone.
   useEffect(() => () => clearTimeout(timer.current), []);
   const ready = useLiveReady(view.url, view.kind === "plot", reloadToken);
+
+  // The stage's own size, tracked while visible (hidden it measures 0x0, so the
+  // activation re-measure is what sizes a tab the user switches to).
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const measure = () => setBox({ w: el.clientWidth, h: el.clientHeight });
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, [active, ready]);
+
+  // A one-frame height nudge after load in fill mode: the served figure applies
+  // its parent's width on mount but not always its height, and its own observer
+  // only fires on a later resize — so cause one.
+  const [nudge, setNudge] = useState(0);
+  const sized = view.kind === "plot" && !!view.width && !!view.height;
+  const mode: ViewMode = sized ? (view.mode ?? "scale") : "fill";
+
   const handleLoad = () => {
     if (hold) timer.current = setTimeout(onLoaded, hold);
     else onLoaded();
+    if (view.kind === "plot" && mode === "fill") {
+      setNudge(1);
+      setTimeout(() => setNudge(0), 80);
+    }
   };
+
+  // Never first-mount a frame hidden: the served figure measures its parent on
+  // mount, and a hidden frame measures zero. Once shown it stays mounted, so tab
+  // switches keep the frame's connection and camera.
+  const wasActive = useRef(false);
+  if (active) wasActive.current = true;
   if (!ready) return null; // keep the canvas's own loading spinner up while probing
+  if (!active && !wasActive.current) return null;
+
+  const g = sized ? stageGeometry(mode, view.width!, view.height!, box.w, box.h) : null;
+  const scaled = g !== null && mode === "scale" && g.scale < 1;
+  const frameStyle: React.CSSProperties =
+    g && mode === "scale"
+      ? { left: g.left, top: g.top, width: g.width, height: g.height }
+      : { inset: 0, height: nudge ? `calc(100% - ${nudge}px)` : undefined };
   return (
-    <iframe
-      className={active ? "active" : ""}
-      title={view.title}
-      loading="lazy"
-      src={withToken(view.url, reloadToken)}
-      onLoad={handleLoad}
-      onError={onLoaded}
-    />
+    <div ref={stageRef} className={`canvas-stage${active ? " active" : ""}`}>
+      <div className="stage-frame" style={frameStyle}>
+        <iframe
+          title={view.title}
+          loading="lazy"
+          src={withToken(view.url, reloadToken)}
+          onLoad={handleLoad}
+          onError={onLoaded}
+          style={
+            scaled
+              ? {
+                  width: view.width!,
+                  height: view.height!,
+                  transform: `scale(${g.scale})`,
+                  transformOrigin: "top left",
+                }
+              : undefined
+          }
+        />
+      </div>
+    </div>
   );
 }
 

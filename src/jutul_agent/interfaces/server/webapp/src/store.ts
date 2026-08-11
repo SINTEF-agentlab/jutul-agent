@@ -13,6 +13,12 @@ import { toolPolicy } from "./toolPolicy";
 
 export type ViewKind = "plot" | "report" | "image";
 
+/** How a live figure sits in the panel. "scale": rendered at its own design
+ *  size and scaled down to fit, so a wide dashboard's layout and text are never
+ *  crushed (the default when the figure's size is known). "fill": the figure
+ *  reflows to the panel's own shape and uses all of it. */
+export type ViewMode = "scale" | "fill";
+
 export interface View {
   id: string;
   url: string;
@@ -21,6 +27,22 @@ export interface View {
   poster?: string | null;
   /** Bumped when a same-slot view is refreshed, to force its frame to reload. */
   nonce: number;
+  /** Served by the session's live figure server. A live figure supports exactly
+   *  one frame — a second view (or a reload after the first closed) corrupts and
+   *  then kills it — so live frames stay mounted while live, and popout serves
+   *  an independent replayed figure instead of this URL. */
+  live?: boolean;
+  /** A live view whose figure was released (closed, capped, or the page was
+   *  reloaded). Its URL is dead; the panel shows the poster or an explanation,
+   *  and `record` is how it comes back. */
+  expired?: boolean;
+  /** The plot's trace record when its source code was recorded: what regenerate
+   *  and popout send back in a `replot` request. */
+  record?: string | null;
+  /** The figure's own pixel size (the scale stage's geometry). */
+  width?: number | null;
+  height?: number | null;
+  mode?: ViewMode;
 }
 
 export type ToolStatus = "running" | "done" | "error";
@@ -138,6 +160,7 @@ export interface SessionActions {
   closeCanvas: () => void;
   removeView: (id: string) => void;
   pinDoc: (url: string, title: string, slot: string) => void;
+  setViewMode: (id: string, mode: ViewMode) => void;
 }
 
 export type SessionStore = SessionState & SessionActions;
@@ -309,7 +332,27 @@ export function createSessionStore() {
       const id = viewIdOf(msg);
       const kind: ViewKind = msg.kind === "report" ? "report" : "plot";
       const title = msg.title || (kind === "report" ? "Report" : "Interactive plot");
-      upsertView({ id, url: msg.url, title, kind, poster: msg.poster ?? null, nonce: 0 }, true);
+      upsertView(
+        {
+          id,
+          url: msg.url,
+          title,
+          kind,
+          poster: msg.poster ?? null,
+          nonce: 0,
+          live: !!msg.live,
+          // A refresh replaces the view wholesale: a re-plot or a regenerate
+          // revives an expired view with a fresh figure.
+          expired: false,
+          record: msg.record ?? null,
+          width: msg.width ?? null,
+          height: msg.height ?? null,
+          // The upsert spreads the patch over the old view, so carry the mode the
+          // user chose for this slot across the refresh explicitly.
+          mode: get().views[id]?.mode,
+        },
+        true,
+      );
       set((s) => ({
         items: [...s.items, { kind: "viz-chip", id: nextId(), viewId: id, title, viewKind: kind }],
       }));
@@ -550,6 +593,11 @@ export function createSessionStore() {
 
       pinDoc: (url, title, slot) =>
         onViz({ type: "viz", url, title, kind: "report", slot, poster: null }),
+
+      setViewMode: (id, mode) =>
+        set((s) =>
+          s.views[id] ? { views: { ...s.views, [id]: { ...s.views[id], mode } } } : {},
+        ),
     };
   });
 }

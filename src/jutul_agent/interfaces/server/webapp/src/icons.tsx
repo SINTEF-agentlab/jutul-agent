@@ -120,3 +120,33 @@ export function ChevronRight() {
     </svg>
   );
 }
+
+/** A figure at its own size inside the panel (the "scale" view mode). */
+export function FitIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" {...stroke}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <rect x="8" y="9" width="8" height="6" />
+    </svg>
+  );
+}
+
+/** A figure reflowed to the whole panel (the "fill" view mode). */
+export function FillIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" {...stroke}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M8 12h8M12 8v8" />
+    </svg>
+  );
+}
+
+/** Rebuild a dead view by re-running its recorded code. */
+export function RegenerateIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" {...stroke}>
+      <path d="M21 12a9 9 0 11-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}

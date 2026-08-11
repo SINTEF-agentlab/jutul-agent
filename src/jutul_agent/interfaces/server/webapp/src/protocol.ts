@@ -59,7 +59,18 @@ export type ServerMessage =
       kind: string;
       poster?: string | null;
       slot?: string | null;
+      /** Served by the session's live figure server (widgets work; the view is
+       *  stateful and supports exactly one frame). */
+      live?: boolean;
+      /** The plot's trace record when its source code was recorded — what a
+       *  `replot` request sends back (regenerate a dead view, or a popout). */
+      record?: string | null;
+      /** The figure's own pixel size, so the canvas can present it at its
+       *  designed shape (the scale stage) instead of crushing it. */
+      width?: number | null;
+      height?: number | null;
     }
+  | { type: "popout_ready"; record: string; url: string | null; error?: string | null }
   | { type: "notice"; text: string }
   | { type: "ui"; action: string; payload: Record<string, unknown> }
   | { type: "credential_required"; provider: string; label: string; env_var: string }
@@ -73,6 +84,11 @@ export type ClientMessage =
   | { type: "decision"; decision: string; message?: string }
   | { type: "cancel" }
   | { type: "command"; command: "set_model" | "set_approval" | "add_dir" | "compact"; arg: string }
+  /** Replay a recorded plot: revive its view in place, or serve an independent
+   *  figure for a popout window (answered by `popout_ready`). */
+  | { type: "replot"; record: string; target?: "revive" | "popout" }
+  /** A popout window this client opened has closed; the server releases its route. */
+  | { type: "popout_closed"; url: string }
   | { type: "ui_event"; payload: unknown };
 
 /**
