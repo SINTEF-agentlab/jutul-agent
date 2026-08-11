@@ -55,6 +55,16 @@ def _ui_dir() -> Path | None:
     return WEB_DIST_DIR if (WEB_DIST_DIR / "index.html").is_file() else None
 
 
+# Timeouts for the live-plot proxy routes. The plot server shares Julia's
+# interactive thread with the kernel's eval loop, so a long eval (a solve, a slow
+# figure build) can leave requests unanswered for minutes while the OS still
+# accepts the TCP connection. Waiting serves those requests when the eval yields;
+# a short timeout would turn every busy spell into a 502 or a dropped socket.
+# Connects stay quick so a port nothing listens on still fails fast.
+_LIVE_WS_OPEN_TIMEOUT = 120.0
+_LIVE_HTTP_TIMEOUT = {"connect": 5.0, "read": 300.0, "write": 30.0, "pool": 30.0}
+
+
 def _register_web_mime_types() -> None:
     """Force correct MIME types for the built UI's assets before serving.
 
@@ -510,7 +520,7 @@ def create_app(
                     params=request.query_params,
                     headers=headers,
                     content=await request.body(),
-                    timeout=30.0,
+                    timeout=httpx.Timeout(**_LIVE_HTTP_TIMEOUT),
                 )
             except httpx.TransportError as exc:
                 raise HTTPException(
@@ -533,17 +543,32 @@ def create_app(
         host = manager.get(session_id)
         port = host.session.web_plot_port if host is not None else None
         if port is None:
-            await websocket.close(code=1011)
+            # Refuse before ``accept`` so the upgrade is answered with a plain HTTP
+            # error instead of a socket that opens and immediately closes. The plot
+            # client's reconnect budgets ~30s of backed-off attempts but resets that
+            # budget on every successful open, so accept-then-close would keep a
+            # dead session's leftover tab reconnecting forever.
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect, OSError):
+                await websocket.close(code=1011)
             return
 
         import websockets
-        from websockets.exceptions import ConnectionClosed
+        from websockets.exceptions import ConnectionClosed, WebSocketException
 
-        await websocket.accept(subprotocol=websocket.headers.get("sec-websocket-protocol"))
         upstream_url = f"ws://127.0.0.1:{port}/{path}"
         if websocket.url.query:
             upstream_url += f"?{websocket.url.query}"
 
+        # Dial the plot server first and accept the browser only once the upstream
+        # handshake has succeeded, for the same reason as the refusal above: an
+        # accept before a failed dial reads as progress to the client and resets
+        # its retry budget. Dialing first, a gone upstream is a refused handshake
+        # the client backs off from and gives up on, while a merely busy one holds
+        # the browser in CONNECTING (which the client treats as "wait", not
+        # "retry") until the kernel yields. The generous ``open_timeout`` covers a
+        # long eval delaying the upstream handshake; the TCP connect itself still
+        # fails fast when nothing listens.
+        #
         # No keepalive on this hop. The client library's default is to ping the
         # upstream every 20s and tear the connection down when a pong does not come
         # back in another 20s, but the peer here is the Julia process: its plot
@@ -555,8 +580,12 @@ def create_app(
         # server that actually goes away.
         try:
             async with websockets.connect(
-                upstream_url, max_size=None, ping_interval=None
+                upstream_url,
+                max_size=None,
+                ping_interval=None,
+                open_timeout=_LIVE_WS_OPEN_TIMEOUT,
             ) as upstream:
+                await websocket.accept(subprotocol=websocket.headers.get("sec-websocket-protocol"))
 
                 async def to_upstream() -> None:
                     try:
@@ -595,10 +624,17 @@ def create_app(
                 # it is collected and then prints itself as a bare, unattributed
                 # traceback, typically long after the connection it belongs to.
                 await asyncio.gather(*done, *pending, return_exceptions=True)
-        except (WebSocketDisconnect, OSError):
+        except (WebSocketDisconnect, OSError, WebSocketException):
+            # OSError: the dial failed or timed out. WebSocketException: the plot
+            # server answered the upgrade with an HTTP error (e.g. a route removed
+            # by close_plots while a tab still held it). The close below then
+            # refuses the still-unaccepted browser handshake.
             pass
         finally:
-            with contextlib.suppress(RuntimeError):
+            # Closing is best-effort on a peer that may already be gone: starlette
+            # turns uvicorn's ClientDisconnected into WebSocketDisconnect (a raw
+            # OSError before accept), and a double close raises RuntimeError.
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect, OSError):
                 await websocket.close()
 
     @app.get("/sessions/{session_id}/transcript")

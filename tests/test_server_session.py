@@ -1332,3 +1332,189 @@ def test_proxied_plot_socket_does_not_keepalive_the_plot_server(
     assert dial_kwargs[0]["ping_interval"] is None, (
         "keepalive on this hop closes a working socket whenever Julia is busy"
     )
+    # The dial must also be patient: the plot server shares Julia's interactive
+    # thread with the eval loop, so a long eval delays the upstream handshake for
+    # exactly as long as it runs. The library default (10s) drops a merely-busy
+    # server; anything under a solve's timescale reintroduces that.
+    assert dial_kwargs[0].get("open_timeout", 10) >= 60, (
+        "upstream handshake patience must cover a long eval, not a network RTT"
+    )
+
+
+def test_dead_plot_server_refuses_the_handshake(tmp_path: Path) -> None:
+    """A dial the proxy cannot complete must refuse the browser's handshake,
+    never accept-then-close.
+
+    The distinction drives the client's retry state machine: Bonito's reconnect
+    budgets ~30s of backed-off attempts and then gives up, but a successful open
+    resets that budget. Accept-then-close grants every attempt a fresh budget, so
+    a tab whose session was evicted (or whose kernel died) reconnects forever. A
+    refused handshake lets the client's own give-up logic run.
+    """
+
+    from fastapi import WebSocketDisconnect
+
+    manager = _manager(echo_agent, tmp_path)
+    client = TestClient(create_app(manager))
+    sid = client.post("/sessions", json={"sim": "demo", "model": "ollama:qwen3"}).json()[
+        "session_id"
+    ]
+    with socket.socket() as probe:  # a port nothing is listening on
+        probe.bind(("127.0.0.1", 0))
+        dead_port = probe.getsockname()[1]
+    manager.get(sid).session.web_plot_port = dead_port
+
+    with pytest.raises(WebSocketDisconnect), client.websocket_connect(f"/live/{sid}/viz/plot"):
+        raise AssertionError("handshake was accepted against a dead upstream")
+
+
+def test_upstream_handshake_error_is_a_refusal_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plot server answering the upgrade with an HTTP error must read as a
+    refused handshake, not an unhandled exception.
+
+    Bonito answers a WS upgrade for a route that no longer exists (one removed by
+    close_plots while a browser still held its tab) with a plain HTTP response;
+    the client library surfaces that as InvalidHandshake, which is not an OSError.
+    Unhandled, every such reconnect attempt prints a full ASGI traceback.
+    """
+
+    import websockets
+    from fastapi import WebSocketDisconnect
+    from websockets.exceptions import InvalidHandshake
+
+    def rejecting_dial(url: str, **kwargs: Any) -> Any:
+        raise InvalidHandshake("upgrade rejected")
+
+    monkeypatch.setattr(websockets, "connect", rejecting_dial)
+
+    manager = _manager(echo_agent, tmp_path)
+    client = TestClient(create_app(manager))
+    sid = client.post("/sessions", json={"sim": "demo", "model": "ollama:qwen3"}).json()[
+        "session_id"
+    ]
+    manager.get(sid).session.web_plot_port = 9999  # never dialled for real
+
+    with pytest.raises(WebSocketDisconnect), client.websocket_connect(f"/live/{sid}/viz/plot"):
+        raise AssertionError("handshake was accepted despite the upstream rejection")
+
+
+def test_closing_a_vanished_client_does_not_raise(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The proxy's final close must swallow a client that is already gone.
+
+    Under uvicorn, sending the close frame to a browser that disconnected abruptly
+    (tab closed, machine slept) raises ClientDisconnected, which starlette converts
+    to WebSocketDisconnect; neither is a RuntimeError, so a close guard covering
+    only that lets the exception escape and print an ASGI traceback per abandoned
+    socket. The endpoint is driven directly with uvicorn's actual exception so the
+    starlette conversion path is the thing under test.
+    """
+
+    import websockets
+    from fastapi.routing import APIWebSocketRoute
+    from starlette.websockets import WebSocket
+    from uvicorn.protocols.utils import ClientDisconnected
+
+    class _IdleUpstream:
+        async def __aenter__(self) -> Any:
+            return self
+
+        async def __aexit__(self, *exc: Any) -> bool:
+            return False
+
+        async def send(self, data: Any) -> None:
+            pass
+
+        async def close(self) -> None:
+            pass
+
+        def __aiter__(self) -> Any:
+            return self
+
+        async def __anext__(self) -> Any:
+            await asyncio.sleep(3600)
+            raise StopAsyncIteration
+
+    monkeypatch.setattr(websockets, "connect", lambda url, **kw: _IdleUpstream())
+
+    manager = _manager(echo_agent, tmp_path)
+    app = create_app(manager)
+    client = TestClient(app)
+    sid = client.post("/sessions", json={"sim": "demo", "model": "ollama:qwen3"}).json()[
+        "session_id"
+    ]
+    manager.get(sid).session.web_plot_port = 9999  # dial is monkeypatched
+
+    endpoint = next(
+        r.endpoint
+        for r in app.routes
+        if isinstance(r, APIWebSocketRoute) and r.path == "/live/{session_id}/{path:path}"
+    )
+
+    # One connect, then the client vanishes; the close frame then hits a dead
+    # transport, which is exactly when uvicorn raises ClientDisconnected.
+    inbox = [{"type": "websocket.connect"}, {"type": "websocket.disconnect", "code": 1006}]
+
+    async def receive() -> dict[str, Any]:
+        if inbox:
+            return inbox.pop(0)
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable")
+
+    async def send(message: dict[str, Any]) -> None:
+        if message["type"] == "websocket.close":
+            raise ClientDisconnected()
+
+    scope = {
+        "type": "websocket",
+        "path": f"/live/{sid}/viz/plot",
+        "raw_path": f"/live/{sid}/viz/plot".encode(),
+        "query_string": b"",
+        "headers": [],
+        "scheme": "ws",
+        "server": ("testserver", 80),
+        "client": ("testclient", 50000),
+        "subprotocols": [],
+    }
+    ws = WebSocket(scope, receive=receive, send=send)
+    # Must complete without raising WebSocketDisconnect out of the endpoint,
+    # which uvicorn would log as "Exception in ASGI application".
+    asyncio.run(endpoint(ws, sid, "viz/plot"))
+
+
+def test_live_plot_get_waits_out_a_busy_julia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The HTTP proxy's read timeout must cover a long eval, connect staying quick.
+
+    The plot server shares Julia's interactive thread with the kernel's eval loop,
+    so a mounted iframe's GET routinely sits unanswered for the length of a solve:
+    the OS accepts the TCP connection and the request queues. A short read timeout
+    turns every such busy spell into a 502 the canvas shows as a broken plot;
+    waiting renders it when the eval yields.
+    """
+
+    import httpx
+
+    captured: list[Any] = []
+
+    async def fake_request(self: Any, method: str, url: str, **kwargs: Any) -> Any:
+        captured.append(kwargs.get("timeout"))
+        return httpx.Response(200, headers={"content-type": "text/html"}, content=b"ok")
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+
+    manager = _manager(echo_agent, tmp_path)
+    client = TestClient(create_app(manager))
+    sid = client.post("/sessions", json={"sim": "demo", "model": "ollama:qwen3"}).json()[
+        "session_id"
+    ]
+    manager.get(sid).session.web_plot_port = 9999  # request is faked
+
+    assert client.get(f"/live/{sid}/viz/plot").status_code == 200
+    assert captured and isinstance(captured[0], httpx.Timeout)
+    assert (captured[0].read or 0) >= 300, "a busy Julia must queue, not 502"
+    assert (captured[0].connect or 0) <= 10, "a dead port must still fail fast"
