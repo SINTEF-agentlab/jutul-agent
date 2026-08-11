@@ -376,6 +376,95 @@ def test_sync_adds_a_dependencys_own_deps_on_a_later_run(tmp_path: Path) -> None
     )
 
 
+def test_sync_flags_a_dependency_whose_manifest_entry_is_stale(tmp_path: Path) -> None:
+    """A dev'd path package gains a dep the env's Manifest.toml doesn't know yet.
+
+    ``Pkg.instantiate`` never re-resolves an already-resolved path package's own
+    dependency graph, so its manifest entry can go stale even when the new dep
+    (here ``Bar``) is already declared elsewhere in the project and there is
+    nothing left to write to Project.toml. The package name must still come
+    back so the caller runs ``Pkg.resolve`` and heals the manifest, instead of
+    the package failing to precompile with "does not have Bar in its
+    dependencies".
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+
+    foocap_uuid = "11111111-1111-1111-1111-111111111111"
+    bar_uuid = "22222222-2222-2222-2222-222222222222"
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        f'name = "FooCap"\nuuid = "{foocap_uuid}"\n[deps]\nBar = "{bar_uuid}"\n',
+        encoding="utf-8",
+    )
+    (env / "Project.toml").write_text(
+        "[deps]\n"
+        f'FooCap = "{foocap_uuid}"\n'
+        f'Bar = "{bar_uuid}"\n'
+        "\n[sources]\n"
+        f'FooCap = {{path = "{local_pkg.as_posix()}"}}\n',
+        encoding="utf-8",
+    )
+    # Resolved before FooCap's own Project.toml declared Bar: its manifest entry
+    # still lists no deps of its own.
+    (env / "Manifest.toml").write_text(
+        'manifest_format = "2.0"\n\n'
+        "[deps]\n"
+        "[[deps.FooCap]]\n"
+        f'uuid = "{foocap_uuid}"\n'
+        f'path = "{local_pkg.as_posix()}"\n',
+        encoding="utf-8",
+    )
+
+    added = sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"])
+    assert added == ["FooCap"]
+
+    # Nothing needed changing in Project.toml — Bar was already declared there.
+    text = (env / "Project.toml").read_text(encoding="utf-8")
+    assert text.count("Bar =") == 1
+
+
+def test_sync_is_noop_when_the_dependencys_manifest_entry_already_matches(
+    tmp_path: Path,
+) -> None:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = workspace_julia_env(ws)
+    env.mkdir(parents=True)
+
+    foocap_uuid = "11111111-1111-1111-1111-111111111111"
+    bar_uuid = "22222222-2222-2222-2222-222222222222"
+
+    local_pkg = tmp_path / "FooCap"
+    local_pkg.mkdir()
+    (local_pkg / "Project.toml").write_text(
+        f'name = "FooCap"\nuuid = "{foocap_uuid}"\n[deps]\nBar = "{bar_uuid}"\n',
+        encoding="utf-8",
+    )
+    (env / "Project.toml").write_text(
+        "[deps]\n"
+        f'FooCap = "{foocap_uuid}"\n'
+        f'Bar = "{bar_uuid}"\n'
+        "\n[sources]\n"
+        f'FooCap = {{path = "{local_pkg.as_posix()}"}}\n',
+        encoding="utf-8",
+    )
+    (env / "Manifest.toml").write_text(
+        'manifest_format = "2.0"\n\n'
+        "[deps]\n"
+        "[[deps.FooCap]]\n"
+        f'uuid = "{foocap_uuid}"\n'
+        'deps = ["Bar"]\n',
+        encoding="utf-8",
+    )
+
+    assert sync_julia_project_with_dependencies(env, [local_pkg / "Project.toml"]) == []
+
+
 def test_sync_skips_a_dependencys_own_dep_that_it_path_sources(tmp_path: Path) -> None:
     """An unregistered sub-dependency cannot be declared without its own source.
 

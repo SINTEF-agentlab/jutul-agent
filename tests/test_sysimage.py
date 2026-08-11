@@ -302,9 +302,9 @@ def test_jutul_agent_version_alone_does_not_diverge(tmp_path: Path) -> None:
 
 
 def test_the_refusal_names_the_cause_and_both_ways_out() -> None:
-    decision = Decision(status=DIVERGENT, reason="  edited: GeotericAgenticDemo")
+    decision = Decision(status=DIVERGENT, reason="  edited: CapabilityPackage")
     message = refusal(decision, command="jutul-agent tui")
-    assert "GeotericAgenticDemo" in message
+    assert "CapabilityPackage" in message
     assert "jutul-agent sysimage build" in message
     assert "jutul-agent tui --no-sysimage" in message
 

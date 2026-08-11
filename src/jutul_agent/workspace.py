@@ -627,6 +627,17 @@ def sync_julia_project_with_dependencies(
 
     Existing entries are never rewritten, so a name the project already declares
     keeps its current UUID and source.
+
+    A dependency that is already declared is also checked against the env's
+    ``Manifest.toml``: if the dependency's own ``Project.toml`` now lists a dep
+    that its manifest entry doesn't (e.g. after a capability upgrade adds a new
+    Julia dependency to an already-dev'd path package), that package's name is
+    still returned even though nothing changed in ``Project.toml``. A dev'd path
+    package's manifest entry is not recomputed by ``Pkg.instantiate`` — only
+    ``Pkg.resolve`` walks its dependency graph again — so without this, the stale
+    manifest entry surfaces later as "Package X does not have Y in its
+    dependencies" at precompile/load, even though the name it's missing was never
+    itself new to the project.
     """
 
     note = warn or (lambda _msg: None)
@@ -651,10 +662,13 @@ def sync_julia_project_with_dependencies(
     except (OSError, tomllib.TOMLDecodeError):
         pref_data = {}
 
+    manifest_data = _read_manifest_toml(julia_project)
+
     target_deps = proj_data.get("deps", {})
     target_sources = proj_data.get("sources", {})
     additions: dict[str, str] = {}
     sources: dict[str, dict[str, str]] = {}
+    stale: set[str] = set()
 
     for raw_dependency in dependencies:
         dependency_root, package_name, package_uuid, dependency_data = _dependency_metadata(
@@ -678,6 +692,15 @@ def sync_julia_project_with_dependencies(
             continue
         if declared is None:
             additions[package_name] = package_uuid
+        else:
+            own_deps = {
+                name
+                for name, uid in dependency_data.get("deps", {}).items()
+                if isinstance(uid, str)
+            }
+            manifest_deps = _manifest_package_deps(manifest_data, package_name, package_uuid)
+            if manifest_deps is not None and not own_deps <= manifest_deps:
+                stale.add(package_name)
         if package_name not in target_sources:
             sources[package_name] = {"path": dependency_root.as_posix()}
 
@@ -709,19 +732,63 @@ def sync_julia_project_with_dependencies(
                 for subkey, subvalue in value.items():
                     pref_data[key].setdefault(subkey, subvalue)
 
-    if not additions and not sources:
+    if not additions and not sources and not stale:
         return []
 
-    new_text = proj.read_text(encoding="utf-8")
-    if additions:
-        new_text = _append_deps(new_text, additions)
-    if sources:
-        new_text = _append_sources(new_text, sources)
-    proj.write_text(new_text, encoding="utf-8")
+    if additions or sources:
+        new_text = proj.read_text(encoding="utf-8")
+        if additions:
+            new_text = _append_deps(new_text, additions)
+        if sources:
+            new_text = _append_sources(new_text, sources)
+        proj.write_text(new_text, encoding="utf-8")
     if pref_data:
         pref.write_text(tomli_w.dumps(pref_data), encoding="utf-8")
 
-    return sorted({*additions, *sources})
+    return sorted({*additions, *sources, *stale})
+
+
+def _read_manifest_toml(julia_project: Path) -> dict[str, Any]:
+    """Best-effort parse of a Julia project's ``Manifest.toml``; ``{}`` if absent/bad."""
+
+    manifest = julia_project / "Manifest.toml"
+    try:
+        return tomllib.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
+def _manifest_package_deps(
+    manifest_data: dict[str, Any], package_name: str, package_uuid: str
+) -> set[str] | None:
+    """Dependency names ``Manifest.toml`` records for one package's own entry.
+
+    ``None`` means the manifest has no entry for this exact ``(name, uuid)``
+    pair yet — nothing to compare against (a first install, handled elsewhere).
+    An entry's ``deps`` field is either a list of names or, when a name is
+    UUID-ambiguous elsewhere in the graph, a table mapping name -> uuid; both
+    normalize to a plain set of names here.
+    """
+
+    deps_table = manifest_data.get("deps")
+    if isinstance(deps_table, dict):  # manifest format 2.0
+        entries = deps_table.get(package_name)
+    else:  # format 1.0: package sections are top-level
+        entries = manifest_data.get(package_name)
+    if not isinstance(entries, list):
+        return None
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("uuid") != package_uuid:
+            continue
+        raw_deps = entry.get("deps")
+        if raw_deps is None:
+            return set()
+        if isinstance(raw_deps, dict):
+            return set(raw_deps.keys())
+        if isinstance(raw_deps, list):
+            return {d for d in raw_deps if isinstance(d, str)}
+        return set()
+    return None
 
 
 def _dependency_metadata(
