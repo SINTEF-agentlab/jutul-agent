@@ -137,11 +137,16 @@ def build_for_workspace(
 
     from jutul_agent import sysimage as sysimage_mod
     from jutul_agent import sysimage_build
+    from jutul_agent.agent.capabilities import collect_warm_code, discover_extensions
     from jutul_agent.simulators.env_setup import EnvSetupError
 
     result = None
     try:
-        prepare_environment(adapter, workspace=ws, julia_project=project)
+        # Discovered once, for both halves of the build: the same capabilities
+        # whose Julia dependencies the environment is prepared with also carry
+        # the warm-up code the image bakes.
+        extensions = discover_extensions()
+        prepare_environment(adapter, workspace=ws, julia_project=project, extensions=extensions)
         current = (
             skip_current
             and sysimage_mod.decide(ws, project, enabled=True).status == sysimage_mod.CURRENT
@@ -150,7 +155,10 @@ def build_for_workspace(
             print("\nSystem image already matches this environment; skipping the rebuild.")
         else:
             result = sysimage_build.build(
-                workspace=ws, julia_project=project, cpu_target=cpu_target
+                workspace=ws,
+                julia_project=project,
+                cpu_target=cpu_target,
+                warmup_code=collect_warm_code(extensions),
             )
     except (EnvSetupError, sysimage_build.SysimageBuildError) as exc:
         print(f"\nerror: {exc}", file=sys.stderr)
@@ -173,22 +181,26 @@ def build_for_workspace(
     return True
 
 
-def prepare_environment(adapter, *, workspace: Path, julia_project: Path) -> None:
+def prepare_environment(adapter, *, workspace: Path, julia_project: Path, extensions=None) -> None:
     """Bring the environment to exactly what a session would run against.
 
     Capabilities are composed here for the same reason a session composes them
     before preparing its environment: their Julia dependencies belong to the
     project, and an image built before they are installed is missing precisely
-    the packages an extended workspace exists to use.
+    the packages an extended workspace exists to use. ``extensions`` lets a
+    caller that has already discovered them (to read their warm-up code, say)
+    pass the same list rather than discover twice.
     """
 
     from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
     from jutul_agent.simulators.env_setup import prepare_workspace_env
 
+    if extensions is None:
+        extensions = discover_extensions()
     prepare_workspace_env(
         adapter,
         workspace=workspace,
         julia_project=julia_project,
         sim_name=adapter.name,
-        dependencies=collect_dependency_paths(discover_extensions()),
+        dependencies=collect_dependency_paths(extensions),
     )

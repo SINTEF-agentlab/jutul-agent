@@ -414,3 +414,78 @@ def test_the_build_says_what_it_patched(
     out = capsys.readouterr().out
     assert f"patched {guarded}" in out
     assert "PackageCompiler.jl#1070" in out
+
+
+# ---------------------------------------------------------------------------
+# The warm-up workload baked into the image.
+
+
+def test_the_warmup_workload_reaches_the_build(
+    tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    seen: dict[str, object] = {}
+
+    def capturing(argv, *, capture: bool = False):
+        script = argv[-1]
+        if "precompile_execution_file" in script:
+            path = Path(_quoted_path(script, "precompile_execution_file"))
+            seen["path"] = path
+            seen["content"] = path.read_text(encoding="utf-8")
+        return julia(argv, capture=capture)
+
+    monkeypatch.setattr(sysimage_build, "_run_julia", capturing)
+
+    build(workspace=ws, julia_project=env, warmup_code=("import Foo\nFoo.warm()", "Bar.warm()"))
+
+    content = seen["content"]
+    assert isinstance(content, str)
+    assert "import Foo\nFoo.warm()" in content
+    assert "Bar.warm()" in content
+    # Each snippet on its own fuse: a drifted workload costs coverage, not the build.
+    assert content.count("try\n") == 2
+    assert content.count("catch err") == 2
+    # The workload script is scaffolding, not part of the installed image.
+    path = seen["path"]
+    assert isinstance(path, Path)
+    assert not path.exists()
+
+
+def test_without_a_workload_the_build_asks_for_none(tmp_path: Path, julia: _FakeJulia) -> None:
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+
+    build(workspace=ws, julia_project=env)
+
+    script = next(call[-1] for call in julia.calls if "create_sysimage" in call[-1])
+    assert "precompile_execution_file" not in script
+
+
+def test_the_command_bakes_capability_warm_code(
+    tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jutul_agent.agent.capabilities import Capability
+    from jutul_agent.interfaces.cli import sysimage as cmd
+    from jutul_agent.workspace import WorkspaceConfig
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    env = write_project(ws / ".jutul-agent" / "julia-env", {"JutulDarcy": "a"})
+    monkeypatch.setattr(cmd, "prepare_environment", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "jutul_agent.agent.capabilities.discover_extensions",
+        lambda: [Capability(name="geo", warm_code=("Geo.warm()",))],
+    )
+    received: dict[str, object] = {}
+    real_build = sysimage_build.build
+
+    def recording(**kwargs):
+        received.update(kwargs)
+        return real_build(**kwargs)
+
+    monkeypatch.setattr(sysimage_build, "build", recording)
+    config = WorkspaceConfig(simulator="jutuldarcy", sysimage=True)
+
+    assert cmd.build_for_workspace(object(), ws, env, config)
+    assert received["warmup_code"] == ["Geo.warm()"]

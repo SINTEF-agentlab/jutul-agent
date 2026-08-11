@@ -198,18 +198,47 @@ def _guard_vscale_llvmcall(
     return patched
 
 
+def _warmup_script(snippets: Sequence[str]) -> str:
+    """One Julia file running every warm-up snippet, each on its own fuse.
+
+    The same ``warm_code`` a session runs in the background after start-up;
+    run during the build instead, everything it compiles is baked into the
+    image. A snippet that throws costs only its own coverage, never the build
+    or the other snippets' work: by this point the workload is an optimisation,
+    worth a warning in the build log, not a discarded image.
+    """
+
+    parts = []
+    for index, snippet in enumerate(snippets, 1):
+        parts.append(
+            f"# --- warm-up snippet {index} of {len(snippets)}\n"
+            "try\n"
+            f"{snippet.strip()}\n"
+            "catch err\n"
+            f'    @warn "warm-up snippet {index} failed; the image loses its coverage" err\n'
+            "end\n"
+        )
+    return "\n".join(parts)
+
+
 def build(
     *,
     workspace: Path,
     julia_project: Path,
     cpu_target: str = "native",
     verify: bool = True,
+    warmup_code: Sequence[str] = (),
 ) -> BuildResult:
     """Build, verify and install this workspace's system image.
 
     ``cpu_target`` defaults to ``"native"``: the fastest code for the machine
     doing the build, and unusable anywhere else. Passing a portable target trades
     some speed for an image that runs on other hardware.
+
+    ``warmup_code`` are Julia snippets (a capability's ``warm_code``, typically)
+    run once during the build so their compilation lands in the image. The stamp
+    does not describe them: a snippet that changes later affects how much the
+    next image has pre-compiled, never whether the current one is safe to use.
     """
 
     packages = baked_packages(julia_project)
@@ -233,6 +262,16 @@ def build(
     # filesystem, and so a half-built image is never at the path the guard reads.
     candidate = destination.with_name(f"candidate-{os.getpid()}{image_suffix()}")
 
+    execution_file = destination.with_name(f"warmup-{os.getpid()}.jl")
+    execution = ""
+    if warmup_code:
+        execution_file.write_text(_warmup_script(warmup_code), encoding="utf-8")
+        execution = f' precompile_execution_file = raw"{execution_file.as_posix()}",'
+        print(
+            f"Baking the warm-up workload into the image ({len(warmup_code)} "
+            "snippet(s)); what it compiles, no session pays for again..."
+        )
+
     started = time.monotonic()
     try:
         _julia(
@@ -242,7 +281,8 @@ def build(
                 f' sysimage_path = raw"{candidate.as_posix()}",'
                 f' project = raw"{julia_project.as_posix()}",'
                 f' cpu_target = "{cpu_target}",'
-                " incremental = true, filter_stdlibs = false)",
+                + execution
+                + " incremental = true, filter_stdlibs = false)",
             ],
             project=env,
             what="building the system image",
@@ -268,6 +308,7 @@ def build(
             ) from exc
     finally:
         candidate.unlink(missing_ok=True)
+        execution_file.unlink(missing_ok=True)
 
     seconds = time.monotonic() - started
     # Stamped last: the stamp is what promotes a file on disk to an image the

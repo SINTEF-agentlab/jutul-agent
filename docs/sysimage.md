@@ -137,7 +137,9 @@ same diagnosis without having to trigger it.
 ## What a build actually does
 
 1. The environment is prepared exactly as a session would prepare it,
-   capabilities included, so the image describes what sessions really load.
+   capabilities included, so the image describes what sessions really load. Any
+   warm-up code the capabilities declare runs during the build, so what it
+   compiles is baked in and the first real call finds it ready.
 2. `PackageCompiler` runs from an environment of its own under the state root,
    pointed at the workspace environment. It never becomes a dependency of the
    workspace, whose manifest is what the image is later checked against.
