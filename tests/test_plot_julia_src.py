@@ -284,10 +284,9 @@ def test_live_call_echoes_the_figure_size_and_applies_a_requested_one() -> None:
 
 
 def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
-    # With a panel fit (and no explicit size) the figure is resized to the
-    # panel: width floored at the squash-guard fraction of the authored width,
-    # height following the panel's aspect but never below the authored height
-    # at the new width. The rule lives in the generated Julia so the figure's
+    # With a panel fit (and no explicit size) the figure takes the panel's
+    # shape — aspect clamped near the authored one, scaled up only by the
+    # squash floors. The rule lives in the generated Julia so the figure's
     # *authored* size (known only after the code ran) is what it works from.
     code = web_live_call(
         user_code="lines(1:10)",
@@ -297,8 +296,8 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
         fit=[990, 1230],
     )
     assert "local _pw, _ph = 990, 1230" in code
-    assert "max(_pw, ceil(Int, _w0 * 2 / 3))" in code
-    assert "max(round(Int, _wt * _ph / _pw), round(Int, _h0 * _wt / _w0))" in code
+    assert "clamp(_pw / _ph, (_w0 / _h0) * 2 / 3, (_w0 / _h0) / (2 / 3))" in code
+    assert "clamp(max((_w0 * 2 / 3) / _w1, (_h0 * 2 / 3) / _h1), 1.0, 3.0)" in code
     # Fitting happens before the echo, so the recorded size is the truth.
     assert code.index("resize!") < code.index(FIG_SIZE_MARKER)
 

@@ -886,15 +886,16 @@ async def test_replot_popout_serves_independent_route_and_close_releases_it(
 
 
 async def test_replot_with_target_size_refits_the_figure(tmp_path: Path) -> None:
-    # A regenerate that carries the stage's measured size re-fits the replayed
-    # figure to it; junk sizes are dropped rather than resized to.
+    # A replay that carries a client-measured size (the popup window) *fits*
+    # the figure to it — the same rule as a fresh plot, squash floors included,
+    # never a raw resize that could crush a wide layout into a small window.
     st, ws, session = _plot_state(tmp_path)
     await st._start_replot(
         {"type": "replot", "record": "artifacts/res.png", "width": 900, "height": 850}
     )
     await st._turn
     serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
-    assert "resize!(_fig, 900, 850)" in serve
+    assert "local _pw, _ph = 900, 850" in serve
     # The viz reports the echoed size, not the request: the figure's own layout
     # has the last word on what a resize actually produced.
     viz = next(m for m in ws.sent if m["type"] == "viz")
@@ -928,9 +929,7 @@ async def test_refit_resizes_the_live_figure_in_place(tmp_path: Path) -> None:
     # states drop the request silently — the client's scaled presentation is
     # the always-correct fallback.
     st, ws, session = _plot_state(tmp_path)
-    await st.handle(
-        {"type": "refit", "record": "artifacts/res.png", "width": 1200, "height": 1000}
-    )
+    await st.handle({"type": "refit", "record": "artifacts/res.png", "width": 1200, "height": 1000})
     await asyncio.gather(*st._refits)
     call = session.julia.calls[-1]
     assert "resize!(_fig, 1200, 1000)" in call
@@ -944,6 +943,27 @@ async def test_refit_resizes_the_live_figure_in_place(tmp_path: Path) -> None:
     await st.handle({"type": "refit", "record": "artifacts/nope.png", "width": 900, "height": 900})
     await asyncio.gather(*st._refits)
     assert len(session.julia.calls) == calls  # junk size and unknown record: dropped
+
+
+def test_fit_target_is_the_panel_shape_scaled_only_by_the_floors() -> None:
+    # The one fit rule (the Python twin of jl._fig_size_block): aspect clamped
+    # near the authored shape (letterbox rather than distort), fitted inside
+    # the panel at full text size, scaled up only by the squash floors.
+    from jutul_agent.interfaces.server.app import _fit_target
+
+    # A panel shaped within the clamp: the target IS the panel — no bands.
+    assert _fit_target([1200, 800], [1000, 900]) == [1200, 800]
+    # A wide figure in a narrow panel: aspect clamped at 2/3 of the authored
+    # aspect, then the width floor (2/3 of 1600) scales the target up.
+    assert _fit_target([700, 901], [1600, 800]) == [1067, 800]
+    # A tall figure in a flat panel: widened only to 3/2 of its aspect —
+    # full height, mild side bands, never stretched flat.
+    assert _fit_target([1600, 900], [800, 1000]) == [1080, 900]
+    # The cap: a huge authored figure cannot demand an absurd canvas.
+    assert _fit_target([500, 400], [4000, 3000]) == [1500, 1200]
+    # No authored size recorded (or junk): the stage itself is the target.
+    assert _fit_target([800, 600], None) == [800, 600]
+    assert _fit_target([800, 600], [0, 900]) == [800, 600]
 
 
 async def test_refit_anchors_its_floor_to_the_authored_size(tmp_path: Path) -> None:
@@ -971,10 +991,43 @@ async def test_refit_anchors_its_floor_to_the_authored_size(tmp_path: Path) -> N
     await st.handle({"type": "refit", "record": "artifacts/wide.png", "width": 700, "height": 901})
     await asyncio.gather(*st._refits)
     call = session.julia.calls[-1]
-    # floor: ceil(1600 * 2/3) = 1067 > 700; height follows the panel's aspect.
-    assert "resize!(_fig, 1067, 1373)" in call
+    # The aspect clamp holds at 2/3 of the authored aspect and the width floor
+    # (2/3 of 1600, not of the last size_px) scales the target up to meet it.
+    assert "resize!(_fig, 1067, 800)" in call
     done = next(m for m in ws.sent if m["type"] == "refit_done")
-    assert (done["width"], done["height"]) == (1067, 1373)
+    assert (done["width"], done["height"]) == (1067, 800)
+
+
+async def test_refit_widens_a_tall_figure_only_to_the_distortion_bound(tmp_path: Path) -> None:
+    # A portrait-authored figure re-fitted for a wide flat panel widens only to
+    # 3/2 of its authored aspect: full height at full text size, mild side
+    # bands — never stretched flat, and never the old inflate-then-shrink
+    # (a height floored at the authored aspect made re-fits produce a bigger
+    # canvas scaled back down: smaller text, same letterbox).
+    from jutul_agent.trace import schema
+
+    st, ws, session = _plot_state(tmp_path)
+    session.trace.append(
+        schema.ARTIFACT,
+        schema.artifact_payload(
+            path="artifacts/tall.png",
+            mime="image/png",
+            caption="Tall",
+            format="png",
+            kind="plot",
+            size_px=[800, 1000],
+            authored_px=[800, 1000],
+            slot="tall",
+            live_url="/live/x/viz/tall",
+            source_code="plot_wells(model)",
+        ),
+    )
+    await st.handle({"type": "refit", "record": "artifacts/tall.png", "width": 1600, "height": 900})
+    await asyncio.gather(*st._refits)
+    call = session.julia.calls[-1]
+    assert "resize!(_fig, 1080, 900)" in call
+    done = next(m for m in ws.sent if m["type"] == "refit_done")
+    assert (done["width"], done["height"]) == (1080, 900)
 
 
 async def test_refit_queues_behind_a_running_turn_without_blocking(tmp_path: Path) -> None:

@@ -312,29 +312,20 @@ def _finalize_web(
     return _reply(summary, png_abs, view and has_poster)
 
 
-def _parse_fig_size(output: str | None) -> list[int] | None:
-    """The figure's real pixel size, read back from the tagged echo line."""
-    match = re.search(rf"{jl.FIG_SIZE_MARKER}=(\d+)x(\d+)", output or "")
-    if match is None:
-        return None
-    return [int(match.group(1)), int(match.group(2))]
-
-
-def _parse_authored_size(output: str | None) -> list[int] | None:
-    """The size the figure's code built it at, before any fit resized it."""
-    match = re.search(rf"{jl.FIG_AUTHORED_MARKER}=(\d+)x(\d+)", output or "")
+def _parse_size(output: str | None, marker: str = jl.FIG_SIZE_MARKER) -> list[int] | None:
+    """A figure pixel size read back from a tagged echo line: the resulting
+    size by default, or the authored size via ``jl.FIG_AUTHORED_MARKER``."""
+    match = re.search(rf"{marker}=(\d+)x(\d+)", output or "")
     if match is None:
         return None
     return [int(match.group(1)), int(match.group(2))]
 
 
 def _panel_fit(session: Session) -> list[int] | None:
-    """The browser canvas panel's pixel size, from the client's size hint.
-
-    ``None`` without a plausible hint (no client connected yet, or a degenerate
-    measurement), which leaves the figure's authored size untouched. The fit
-    rule itself (width floored against squash, height following the panel's
-    aspect) lives in the generated Julia — see ``jl._fig_size_block``.
+    """The browser canvas panel's size from the client's hint, or ``None``
+    without a plausible one (no client yet, or a degenerate measurement) —
+    which leaves the figure's authored size untouched. The fit rule itself
+    lives in the generated Julia; see ``jl._fig_size_block``.
     """
     hint = session.web_canvas_hint
     if not hint:
@@ -364,17 +355,15 @@ async def refit_web(
 ) -> tuple[str | None, list[int] | None]:
     """Resize a live figure's served layout in place; ``(error, echoed size)``.
 
-    The cheap sibling of ``replot_web`` for a view whose frame changed size: no
-    code re-runs and the figure's state (camera, widget values) is untouched —
-    the kernel just ``resize!``-es the routed figure and Bonito pushes the new
-    layout to every connected view. Preferred over relying on the served page's
-    own resize handling, whose browser-to-Julia event delivery is unreliable.
+    The cheap sibling of ``replot_web`` for a view whose frame changed size:
+    no code re-runs and the figure's state (camera, widget values) is kept —
+    see ``jl.resize_web_fig_call`` for why this direction is the robust one.
     """
 
     result = await session.julia.eval(jl.resize_web_fig_call(jl.viz_route(route_id), *size))
     if result.error:
         return f"the resize failed: {_truncate(result.error, 200)}", None
-    echoed = _parse_fig_size(result.output)
+    echoed = _parse_size(result.output)
     if echoed is None:
         return "no live figure on that route", None
     return None, echoed
@@ -386,7 +375,7 @@ async def replot_web(
     *,
     route_suffix: str = "",
     record: bool = True,
-    size: list[int] | None = None,
+    fit_to: list[int] | None = None,
 ) -> tuple[str | None, str | None, list[int] | None]:
     """Re-run a recorded plot's code through the live web path; ``(error, url, size)``.
 
@@ -398,12 +387,12 @@ async def replot_web(
     serves on ``route_suffix``'s separate route and only the live URL is
     returned — an independent, ephemeral view for a popout window.
 
-    ``size`` re-fits the figure to a target the client measured (the popup
-    window on a popout); without one, the replay fits to the session's panel
-    hint the way a fresh plot does — that is what makes regenerate an honest
-    "re-render for this panel" button. The returned size is the figure's
-    *echoed* real size, which can differ when its own layout refuses part of
-    the resize; presentation must trust the echo, never the request.
+    ``fit_to`` is a panel the client measured (the popup window on a popout);
+    the replay *fits* the figure to it — the same rule as a fresh plot, never
+    a raw resize that could crush a wide layout into a small window. Without
+    one, the replay fits to the session's panel hint the way a fresh plot
+    does. The returned size is the figure's *echoed* real size; presentation
+    must trust the echo, never the request.
 
     The code replays into the current kernel state: variables it used may have
     changed or be gone after a restart, so a failure is reported, not hidden.
@@ -437,14 +426,13 @@ async def replot_web(
             png_path=png_abs,
             html_path=session.output_dir / html_rel,
             route=route,
-            size=size,
-            fit=_panel_fit(session) if size is None else None,
+            fit=fit_to if fit_to is not None else _panel_fit(session),
             poster=record,
         )
     )
     if result.error:
         return f"the plot code failed when re-run: {_truncate(result.error, 300)}", None, None
-    size_px = _parse_fig_size(result.output)
+    size_px = _parse_size(result.output)
     if record:
         _finalize_web(
             session,
@@ -458,7 +446,7 @@ async def replot_web(
             source_code=code,
             view=False,
             size_px=size_px,
-            authored_px=_parse_authored_size(result.output),
+            authored_px=_parse_size(result.output, jl.FIG_AUTHORED_MARKER),
         )
     return None, live_url, size_px
 
@@ -568,13 +556,10 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
         if slot_err:
             return slot_err
 
-        if safe_slot:
-            plot_id = safe_slot
-        else:
-            # The artifact file stem, so the plot's live route and its recorded
-            # path agree — a replay derives the route from the record, and only
-            # the same route revives the browser view in place.
-            plot_id = f"plot-{uuid.uuid4().hex[:12]}"
+        # The plot id is the artifact file stem, so the plot's live route and
+        # its recorded path agree — a replay derives the route from the record,
+        # and only the same route revives the browser view in place.
+        plot_id = safe_slot or f"plot-{uuid.uuid4().hex[:12]}"
         rel_path = f"artifacts/{plot_id}.png"
 
         abs_path = session.output_dir / rel_path
@@ -619,8 +604,8 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
                 slot=safe_slot,
                 source_code=code,
                 view=view,
-                size_px=_parse_fig_size(result.output),
-                authored_px=_parse_authored_size(result.output),
+                size_px=_parse_size(result.output),
+                authored_px=_parse_size(result.output, jl.FIG_AUTHORED_MARKER),
             )
 
         open_window = window and session.open_windows
