@@ -106,7 +106,7 @@ function useLiveReady(url: string, enabled: boolean, resetKey: number): boolean 
  *  upscaled: a canvas grown by CSS blurs) and centered; "fill" hands the figure
  *  the whole panel to reflow into. A stage grown past a *live* figure is not
  *  handled here but by a kernel-side re-fit (see the refit effect below), which
- *  resizes the served figure itself — this geometry then sees matching sizes. */
+ *  resizes the served figure itself, and this geometry then sees matching sizes. */
 export function stageGeometry(
   mode: ViewMode,
   w: number,
@@ -143,9 +143,15 @@ export interface StagedFrameProps {
   probe: boolean;
   /** Hold ms after `load` before reporting loaded (WebGL reflow flash). */
   hold: number;
+  /** Put the frame on white instead of the theme colour, for a document
+   *  whose page is a centered column with transparent margins, so the frame is
+   *  the paper it sits on. Figures want the theme colour: their page is fully
+   *  transparent, so the frame is what shows while a resize clears the canvas
+   *  (see layout.css) and white there flashes on every re-fit. */
+  paper?: boolean;
   onLoaded: () => void;
-  /** Called (debounced) when the stage and the figure disagree on size — the
-   *  panel grew, shrank, or changed shape — with the stage's settled size; the
+  /** Called (debounced) when the stage and the figure disagree on size (the
+   *  panel grew, shrank, or changed shape) with the stage's settled size; the
    *  caller re-fits the live figure for it. */
   onMismatch?: (width: number, height: number) => void;
 }
@@ -165,6 +171,7 @@ export function StagedFrame({
   token,
   probe,
   hold,
+  paper,
   onLoaded,
   onMismatch,
 }: StagedFrameProps) {
@@ -181,11 +188,11 @@ export function StagedFrame({
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    // A hidden stage measures 0x0 — keep the last real size instead of
+    // A hidden stage measures 0x0, so keep the last real size instead of
     // adopting it. The frame's geometry follows this box, and collapsing a
     // hidden frame to zero is not cosmetic: the served figure tracks its
     // parent's size, so a zeroed frame resizes the live figure itself while
-    // its canvas is throttled — which is how a tab switched away during
+    // its canvas is throttled, which is how a tab switched away during
     // resizes came back torn (axes moved, plot primitives stale).
     const measure = () => {
       if (el.clientWidth > 0 && el.clientHeight > 0) {
@@ -205,12 +212,12 @@ export function StagedFrame({
   const sized = !!width && !!height;
 
   // A kernel re-fit re-lays the figure out, which lands as a second, visibly
-  // later update after the instant CSS scale — so it must earn that jump: only
+  // later update after the instant CSS scale, so it must earn that jump: only
   // when the scaled figure leaves a good share of the panel unused (a shape
   // mismatch or real growth) is a re-fit requested, after the size settles. A
   // view already covering most of its panel is left exactly as it is, and the
   // one re-fit that fires converges to the server rule's optimum in a single
-  // step (a full panel, or a gentle letterbox at the distortion bound — the
+  // step (a full panel, or a gentle letterbox at the distortion bound, the
   // stage-size dedupe in refitView keeps that from re-firing forever).
   useEffect(() => {
     if (!onMismatch || !sized || !active || mode !== "scale") return;
@@ -247,7 +254,7 @@ export function StagedFrame({
       : { inset: 0, height: nudge ? `calc(100% - ${nudge}px)` : undefined };
   return (
     <div ref={stageRef} className={`canvas-stage${active ? " active" : ""}`}>
-      <div className="stage-frame" style={frameStyle}>
+      <div className={`stage-frame${paper ? " paper" : ""}`} style={frameStyle}>
         <iframe
           title={title}
           loading="lazy"
@@ -324,6 +331,7 @@ export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps)
       token={reloadToken}
       probe={view.kind === "plot"}
       hold={view.kind === "plot" ? 450 : 0}
+      paper={view.kind !== "plot"}
       onLoaded={onLoaded}
     />
   );

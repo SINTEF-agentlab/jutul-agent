@@ -385,9 +385,23 @@
 .canvas-stage.active {
   display: block;
 }
+/* What shows *through* the frame's content, which matters more than it looks:
+   a served figure's page is fully transparent (html, body, every wrapper, and
+   the WebGL canvas itself), so this surface is what the browser composites
+   behind the canvas. A resize reallocates the drawing buffer and clears it,
+   and for that moment this colour IS the figure's background — white here
+   strobes the panel white on every re-fit, which is why the dark popout
+   wrapper never flashed and the inline canvas did. Figures therefore sit on
+   the theme colour and dim into their own panel. Documents keep white
+   (`.paper`): a report's body is a centered column with transparent margins,
+   so this is the page it is printed on. The iframe stays transparent so the
+   frame under it is what decides. */
 .canvas-stage .stage-frame {
   position: absolute;
   overflow: hidden;
+  background: var(--bg);
+}
+.canvas-stage .stage-frame.paper {
   background: #fff;
 }
 .canvas-stage iframe {
@@ -395,7 +409,7 @@
   height: 100%;
   border: 0;
   display: block;
-  background: #fff;
+  background: transparent;
 }
 /* While the grip drags, frames must not swallow the pointer. */
 body.canvas-resizing iframe {
