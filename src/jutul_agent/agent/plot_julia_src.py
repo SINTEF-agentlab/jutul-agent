@@ -30,14 +30,14 @@ IMPORT_GLMAKIE_OFFSCREEN = (
 
 # ``Makie.getscreen`` hands out closed screens: it takes the *first* screen matching the
 # active backend and, while it does ask ``isopen(screen)``, returns it either way. A
-# figure accumulates screens — WGLMakie makes a fresh one for every Bonito session that
-# displays it, and nothing takes the old ones off — so the one it picks can be a corpse.
+# figure accumulates screens. WGLMakie makes a fresh one for every Bonito session that
+# displays it, and nothing takes the old ones off, so the one it picks can be a corpse.
 # Picking then has no session to ask the browser through, gets an empty buffer, and the
 # click falls through to the camera instead of selecting.
 #
 # Every legitimate re-render pushes another screen: reconnecting to a session, popping the
 # view into its own window, closing a view and reopening it. Removing the accumulation
-# would be the better fix, but it has to key on a session that is *definitively* closed —
+# would be the better fix, but it has to key on a session that is *definitively* closed,
 # pruning on ``isopen`` also deletes screens that are merely still connecting, which was
 # measured to take the live view down. So this prefers rather than prunes, and falls back
 # to the first match when nothing is open.
@@ -74,7 +74,7 @@ PREFER_OPEN_SCREEN_GUARD = (
 #
 # A plotter that picks on click turns that throw into a dead mouse button. Jutul's 3D
 # explorer picks from an ``events(fig).mousebutton`` handler at priority 2, so the throw
-# lands *inside* the Observables notify and every listener behind it is skipped — on the
+# lands *inside* the Observables notify and every listener behind it is skipped; on the
 # web that is the whole left button: rotation, buttons, sliders, toggles and menus. The
 # right button survives because that handler only looks at the left and middle ones.
 #
@@ -159,7 +159,7 @@ def _web_figure_block(user_code: str) -> str:
     An *offscreen* backend is active while the user code runs, because a native
     plotter may call ``display(fig)`` internally and with WGLMakie active that pops
     a browser tab (the figure then also lands in the canvas a moment later, via the
-    route below). GLMakie offscreen — loaded for its native-plotter methods anyway —
+    route below). GLMakie offscreen, loaded for its native-plotter methods anyway,
     absorbs the display the way the terminal path does; CairoMakie is the fallback
     when there is no GL context. WGLMakie is activated by the caller, after the
     figure is built, only to route/export it. The Figure is backend-agnostic, so it
@@ -208,21 +208,21 @@ def _web_figure_block(user_code: str) -> str:
 # has an order-independent pass that does it. WGLMakie has none: the attribute reaches
 # three.js as nothing but ``depthWrite: false`` (``create_material`` in ThreeHelper.js),
 # so the plot writes colour and no depth, and whatever renders after it paints over.
-# Upstream calls this a bug — MakieOrg/Makie.jl#4673, open and untouched since 2024-12 —
+# Upstream calls this a bug, MakieOrg/Makie.jl#4673, open and untouched since 2024-12, so
 # so this compensates for it rather than anticipating a fix.
 # ``transparent`` is set unconditionally there, so clearing the attribute costs no alpha
-# blending — it only gives the plot its depth writes back.
+# blending; it only gives the plot its depth writes back.
 #
 # Something does render after it: ``plot_explorer`` draws its gradient backdrop last and
 # leans on already-written depth to stay behind the 3D content. JutulDarcy's
 # ``plot_well!`` draws its well-name ``text!`` with ``transparency = true``, so the
 # backdrop erased every label except where the mesh sat behind one and held the depth test
-# off it — readable over the reservoir, gone over open background, fine in the terminal.
+# off it; readable over the reservoir, gone over open background, fine in the terminal.
 #
 # Keyed on opacity, not on the plot being text: a plot with nothing to blend gains nothing
 # from ``transparency`` under either backend, and loses the depth that keeps it on screen
 # under this one. Anything not provably opaque keeps the attribute, and only the
-# annotation primitives are considered — surfaces, images and volumes are where
+# annotation primitives are considered; surfaces, images and volumes are where
 # transparency does real work, so this doesn't get a vote there.
 RESTORE_OPAQUE_OVERLAY_DEPTH_WRITES = (
     "    try\n"
@@ -267,12 +267,14 @@ RESTORE_OPAQUE_OVERLAY_DEPTH_WRITES = (
 
 # Detach the screen ``CairoMakie.save`` registers on the figure while it renders the
 # poster. Saving displays the figure to a Cairo screen, ``push_screen!`` puts it on the
-# scene and recursively on every child, and nothing takes it off again — nothing closes a
-# screen that only ever wrote a file.
+# scene and recursively on every child, and nothing takes it off again; nothing closes a
+# screen that only ever wrote a file. Only Cairo needs this: closing a GLMakie screen
+# takes it off the scene tree as well, so ``closeall`` after the GL poster leaves nothing
+# behind.
 #
 # It is not inert once left there: ``push!(scene, plot)`` inserts into *every* screen in
-# ``current_screens``, so the live figure's later plot additions — the explorer adds and
-# deletes a mesh per cell click — are replayed into a screen that will never draw them.
+# ``current_screens``, so the live figure's later plot additions, as the explorer adds and
+# deletes a mesh per cell click, are replayed into a screen that will never draw them.
 #
 # Census first, then drop: the filter mutates the very lists the walk reads. Best-effort
 # throughout, and iterative, because a self-referential local function inside the
@@ -306,24 +308,38 @@ DETACH_CAIRO_SCREENS = (
 )
 
 
-def _cairo_poster_block(png_path: Path, *, restore_wgl: bool) -> str:
-    """Julia to save the figure's CairoMakie PNG poster best-effort (2D and most 3D
-    scenes; a GL-only scene yields none). When ``restore_wgl`` the live path puts
-    WGLMakie back as the active backend so later client connections render with it.
+def _poster_block(png_path: Path, *, html_fallback: Path | None) -> str:
+    """Julia to save the figure's PNG poster best-effort, and, when ``html_fallback``
+    is given, to export a self-contained WebGL page instead if Cairo could not
+    render the scene. WGLMakie is restored as the active backend either way, so later
+    client connections to a live route render with it.
 
-    The screen the save leaves behind is detached afterwards; see
-    ``DETACH_CAIRO_SCREENS``.
+    The poster is CairoMakie's, deliberately never GLMakie's: the first backend
+    to draw a plot registers backend-shaped computations on the figure, and a
+    second backend meeting them fails (MakieOrg/Makie.jl#5228; fix unreleased
+    as of Makie 0.24.13). A GL poster is that first backend, and the failure
+    lands in the live view — WGLMakie's render dies inside Bonito's websocket
+    handler, silently, and the browser spins forever; surface plots are the
+    known trigger. Cairo registers the same computations WGLMakie uses, so the
+    live render survives its poster, at the price of a slower save with no
+    depth test.
     """
 
-    restore = (
-        "    finally\n        WGLMakie.activate!(resize_to = :parent)\n" if restore_wgl else ""
+    export = (
+        "        WGLMakie.activate!(resize_to = :parent)\n"
+        f'        Bonito.export_static(raw"{html_fallback.as_posix()}", Bonito.App(() ->\n'
+        '            Bonito.DOM.div(_fig; style = "width:100%; height:100%;")))\n'
+        if html_fallback is not None
+        else ""
     )
     return (
         "    try\n"
         "        CairoMakie.activate!()\n"
         f'        CairoMakie.save(raw"{png_path.as_posix()}", _fig)\n'
         "    catch\n"
-        f"{restore}"
+        f"{export}"
+        "    finally\n"
+        "        WGLMakie.activate!(resize_to = :parent)\n"
         "    end\n"
     ) + DETACH_CAIRO_SCREENS
 
@@ -341,7 +357,7 @@ def web_render_call(*, user_code: str, png_path: Path, html_path: Path) -> str:
         + "    WGLMakie.activate!(resize_to = :parent)\n"
         + f'    Bonito.export_static(raw"{html_path.as_posix()}",\n'
         '        Bonito.App(() -> Bonito.DOM.div(_fig; style = "width:100%; height:100%;")))\n'
-        + _cairo_poster_block(png_path, restore_wgl=False)
+        + _poster_block(png_path, html_fallback=None)
         + '    "ok"\n'
         "end"
     )
@@ -353,14 +369,14 @@ def web_server_start(port: int, session_id: str) -> str:
 
     The server lives in the Julia process for the session's lifetime and holds
     the live figures, so their in-figure widgets (a timestep slider, a field
-    selector) run their Julia callbacks over the WebSocket and update the view —
+    selector) run their Julia callbacks over the WebSocket and update the view,
     interactivity a static export cannot provide.
 
     It is created once and reused: if it already exists (e.g. the plot tool was
     rebuilt mid-session by a model switch, which resets the Python-side memo), the
     existing server stands and we return *its* port, not the freshly-requested one.
     Returning the real port is what keeps the advertised live URL pointing at the
-    server the figures are actually routed on — a mismatch here is a dead "refused
+    server the figures are actually routed on; a mismatch here is a dead "refused
     to connect" embed.
 
     ``proxy_url`` tells Bonito to write every URL it hands the browser (asset
@@ -378,7 +394,7 @@ def web_server_start(port: int, session_id: str) -> str:
     # ``__JUTUL_WEB_SERVER__.port`` rather than echoing the requested port: if the
     # requested port lost the free/rebind race (grabbed by someone else between
     # Python releasing it and Julia binding), Bonito's `start` silently retries on
-    # port+1, port+2, ... and updates `.port` to whatever it actually bound —
+    # port+1, port+2, ... and updates `.port` to whatever it actually bound;
     # echoing the request instead would advertise a dead port nothing listens on.
     return (
         "begin\n"
@@ -394,7 +410,7 @@ def web_server_start(port: int, session_id: str) -> str:
         "        global __JUTUL_WEB_PORT__ = __JUTUL_WEB_SERVER__.port\n"
         "    end\n"
         # Print the bound port on a uniquely-tagged line so the Python side reads it
-        # back unambiguously — taking "the last run of digits" from the output would
+        # back unambiguously; taking "the last run of digits" from the output would
         # pick up a wrong number if Bonito/HTTP.jl logged its address (also digits)
         # on startup.
         '    println("__JUTUL_WEB_PORT__=", __JUTUL_WEB_PORT__)\n'
@@ -407,13 +423,14 @@ def web_live_call(*, user_code: str, png_path: Path, html_path: Path, route: str
     """Julia to build the figure, keep it alive, and serve it on the live route.
 
     WGLMakie is active while the user code runs, so native plotters build WebGL
-    scenes. The figure is stored (keeping its Observables alive) and routed on the
-    session's Bonito server, so the browser gets a *live* view whose in-figure
-    widgets run their Julia callbacks. A CairoMakie PNG is saved best-effort as the
-    poster/record/``view``; if Cairo cannot render the scene (a GL-only figure),
-    a self-contained WebGL HTML is exported instead, so the figure still has a
-    durable record that resumes to a viewable plot rather than a dead PNG. WGLMakie
-    is restored afterwards so client connections render with it.
+    scenes. The figure is stored in the session's live-figure registry (keeping
+    its Observables alive) and routed on the session's Bonito server, so the
+    browser gets a *live* view whose in-figure widgets run their Julia callbacks.
+    A PNG is saved best-effort as the poster/record/``view``; if no rasteriser can
+    render the scene, a self-contained WebGL HTML is exported instead, so the
+    figure still has a durable record that resumes to a viewable plot rather than
+    a dead PNG. WGLMakie is restored afterwards so client connections render with
+    it.
     """
 
     return (
@@ -430,39 +447,10 @@ def web_live_call(*, user_code: str, png_path: Path, html_path: Path, route: str
         f'    Bonito.route!(Main.__JUTUL_WEB_SERVER__, raw"{route}" => Bonito.App(() ->\n'
         f'        Bonito.DOM.div(Main.__JUTUL_WEB_FIGS__[raw"{route}"];\n'
         '            style = "width:100%; height:100%;")))\n'
-        + _cairo_poster_or_export(png_path, html_path)
+        + _poster_block(png_path, html_fallback=html_path)
         + '    "ok"\n'
         "end"
     )
-
-
-def _cairo_poster_or_export(png_path: Path, html_path: Path) -> str:
-    """Julia for the live path's durable record: save the CairoMakie PNG poster, and
-    if Cairo can't render the scene (GL-only), fall back to exporting a self-contained
-    WebGL HTML. Either way WGLMakie is restored as the active backend so later client
-    connections to the live route render with it.
-
-    The screen the save leaves behind is detached afterwards. It matters more here than
-    on the static path: this is the *live* figure, so anything left on its scene stays
-    reachable for as long as the browser keeps the view open. See
-    ``DETACH_CAIRO_SCREENS``.
-    """
-
-    return (
-        "    try\n"
-        "        CairoMakie.activate!()\n"
-        f'        CairoMakie.save(raw"{png_path.as_posix()}", _fig)\n'
-        "    catch\n"
-        "        try\n"
-        "            WGLMakie.activate!(resize_to = :parent)\n"
-        f'            Bonito.export_static(raw"{html_path.as_posix()}", Bonito.App(() ->\n'
-        '                Bonito.DOM.div(_fig; style = "width:100%; height:100%;")))\n'
-        "        catch\n"
-        "        end\n"
-        "    finally\n"
-        "        WGLMakie.activate!(resize_to = :parent)\n"
-        "    end\n"
-    ) + DETACH_CAIRO_SCREENS
 
 
 def recapture_call(*, key: str, png_path: Path) -> str:

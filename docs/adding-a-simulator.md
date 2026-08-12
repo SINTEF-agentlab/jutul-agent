@@ -82,8 +82,8 @@ precompilation. Start from an existing simulator's and adapt the workload:
   sibling, which is what lets a session load it by loading this one.
 - A `_warm()` function running the smallest representative solve and the
   plotters your skills teach, each figure saved through GLMakie *and*
-  CairoMakie (the plot tool builds with one and writes its durable record with
-  the other, and neither is warm from the other).
+  CairoMakie (GLMakie writes the durable record and CairoMakie is its fallback,
+  and neither rasterisation is warm from the other).
 - A `@compile_workload` whose whole body is `try _warm() catch end`.
 
 This is what makes the difference between a first solve in seconds and one in

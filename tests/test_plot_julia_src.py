@@ -18,9 +18,10 @@
 ``web_render_call`` and ``web_live_call`` share three more, each a way for a figure to
 reach the browser looking or behaving wrong rather than failing outright:
 
-- ``CairoMakie.save`` registers a screen on the figure's scene and every child scene to
-  render the poster, and nothing removes it -- so the live figure keeps replaying its
-  plot additions into a render target that will never draw them.
+- ``CairoMakie.save``, the poster's fallback rasteriser, registers a screen on the
+  figure's scene and every child scene to render it, and nothing removes it -- so the
+  live figure keeps replaying its plot additions into a render target that will never
+  draw them.
 - ``PICK_EMPTY_BUFFER_GUARD``: WGLMakie's ``pick`` throws on an empty buffer, and a
   plotter that picks on click turns that throw into a dead mouse button for every
   listener behind it.
@@ -65,7 +66,26 @@ def _live_code() -> str:
     )
 
 
-def test_live_call_detaches_the_screen_the_poster_save_leaves_behind() -> None:
+def test_live_call_never_lets_glmakie_draw_the_figure() -> None:
+    # The first backend to draw a figure claims it (MakieOrg/Makie.jl#5228): a
+    # GLMakie poster saves fine and the live WGLMakie render then dies inside
+    # the websocket handler, silently, so the browser spins forever — surface
+    # plots are the trigger. The poster is Cairo's, whose computations WGLMakie
+    # shares.
+    code = _live_code()
+    assert "GLMakie.save" not in code
+    assert "CairoMakie.save" in code
+
+
+def test_live_call_still_closes_the_absorption_screens() -> None:
+    # The user code runs under offscreen GLMakie so an internal display() cannot
+    # pop a window; the screens that absorption opens are still closed once the
+    # figure is in hand — an invisible screen is a live GL context whose render
+    # loop would otherwise run for the rest of the session.
+    assert "GLMakie.closeall" in _live_code()
+
+
+def test_live_call_detaches_the_screen_the_cairo_fallback_leaves_behind() -> None:
     code = _live_code()
     assert "CairoMakie.Screen" in code
     assert "current_screens" in code
