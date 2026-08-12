@@ -110,7 +110,7 @@ def baked_packages(julia_project: Path) -> tuple[str, ...]:
 
     Every direct dependency of the project -- ``create_sysimage``'s own default
     -- except, on Windows, the :data:`WINDOWS_UNBAKED` leaves the image sheds to
-    stay under the 2 GiB DLL limit.
+    stay under the OS's image size limit (:data:`WINDOWS_IMAGE_LIMIT`).
     """
 
     deps = _project_deps(julia_project)
@@ -347,30 +347,70 @@ def build(
     )
 
 
-# Windows cannot load a DLL of 2 GiB or more, a hard OS limit PackageCompiler
-# cannot lift (LoadLibrary fails with the unhelpful "%1 is not a valid Win32
-# application"). A full simulator environment builds to right around that line.
-WINDOWS_IMAGE_LIMIT = 2**31
+# Windows refuses to map a DLL whose in-memory span -- the PE header's
+# SizeOfImage, not the file's size on disk -- exceeds this. LoadLibrary fails
+# with the unhelpful "%1 is not a valid Win32 application" (error 193), a hard
+# OS limit PackageCompiler cannot lift. The value was bisected empirically on
+# Windows 11 with synthetic DLLs: 0x77000000 itself loads, one page more is
+# refused, and the boundary is identical whether the bytes are file-backed or
+# virtual-only. A full simulator environment builds to right around this line.
+WINDOWS_IMAGE_LIMIT = 0x77000000
 
 
 def _check_loadable_size(candidate: Path) -> None:
     """Refuse an image Windows will not load, with the reason spelled out.
+
+    Refuse, not repair: stripping the DWARF sections would fit easily (~170 MiB
+    of a full build) and the image still runs, but every stack frame of
+    image-compiled code then resolves to nothing -- errors lose their traces,
+    and real init code that indexes ``stacktrace()`` (FreeTypeAbstraction, via
+    the leaf-package precompiles) dies on the empty array. An image that
+    cannot exist beats one that fails like that at a distance.
 
     Without this the failure arrives from verification as "%1 is not a valid
     Win32 application", which explains nothing and looks like a broken build
     rather than a hard OS limit.
     """
 
-    size = candidate.stat().st_size
-    if not on_windows() or size < WINDOWS_IMAGE_LIMIT:
+    if not on_windows():
+        return
+    size = _loader_size(candidate)
+    if size <= WINDOWS_IMAGE_LIMIT:
         return
     raise SysimageBuildError(
-        f"the built image is {size / 2**30:.2f} GiB, and Windows cannot load a "
-        "DLL of 2 GiB or more, so it can never be used. The environment simply "
-        "has too much to bake on this platform: trim its dependencies (capability "
-        "packages included), or run without a system image until Julia ships "
+        f"the built image spans {size / 2**30:.2f} GiB in memory, and Windows "
+        f"refuses to load a DLL over {WINDOWS_IMAGE_LIMIT / 2**30:.2f} GiB, so "
+        f"it can never be used (it is {(size - WINDOWS_IMAGE_LIMIT) / 2**20:.0f} "
+        "MiB over). The environment has too much to bake on this platform: trim "
+        "its dependencies or precompile workloads (capability packages "
+        "included), or run without a system image until Julia ships "
         "compressed images (planned for 1.13)."
     )
+
+
+def _loader_size(candidate: Path) -> int:
+    """The size the Windows loader judges: SizeOfImage, file size as fallback.
+
+    SizeOfImage is the image's mapped span, and it is what the loader checks:
+    the file on disk is tens of MiB bigger (debug sections and symbol table
+    counted differently), which is how a build once passed a file-size check
+    and was refused anyway. When the header cannot be read, the file size errs
+    toward refusing, never toward shipping an unloadable image.
+    """
+
+    import struct
+
+    try:
+        with candidate.open("rb") as f:
+            head = f.read(1024)
+        if len(head) >= 0x40 and head[:2] == b"MZ":
+            (pe_off,) = struct.unpack_from("<I", head, 0x3C)
+            if head[pe_off : pe_off + 4] == b"PE\0\0":
+                (size_of_image,) = struct.unpack_from("<I", head, pe_off + 24 + 56)
+                return size_of_image
+    except (OSError, struct.error):
+        pass
+    return candidate.stat().st_size
 
 
 def _precompile_against(image: Path, julia_project: Path) -> None:
@@ -429,9 +469,19 @@ def verify_image(image: Path, julia_project: Path, packages: tuple[str, ...]) ->
     )
     if result.returncode != 0 or "sysimage-verify: ok" not in (result.stdout or ""):
         tail = "\n".join(((result.stdout or "") + (result.stderr or "")).strip().splitlines()[-15:])
+        # The loader-size check runs before verification, so this only fires if
+        # the OS limit drifts from the measured constant; better a translated
+        # error than the loader's, an hour of build time in.
+        hint = (
+            "\nThat error is the Windows loader refusing the DLL for its size, "
+            "not a broken build; WINDOWS_IMAGE_LIMIT is calibrated too high for "
+            "this machine."
+            if "not a valid Win32 application" in tail
+            else ""
+        )
         raise SysimageBuildError(
             "the system image was built but failed verification, so it was "
-            f"discarded and the previous one (if any) is untouched.\nJulia said:\n{tail}"
+            f"discarded and the previous one (if any) is untouched.\nJulia said:\n{tail}{hint}"
         )
 
 
