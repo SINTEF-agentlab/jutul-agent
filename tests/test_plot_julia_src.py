@@ -315,6 +315,24 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
     assert "_pw" not in sized
 
 
+def test_size_block_echoes_the_authored_size_before_any_fit() -> None:
+    # Both echoes ship: the authored size (before any resize — what a later
+    # re-fit anchors its floors to) and the resulting size (what the browser
+    # stages). The authored echo must come before the fit touches the figure.
+    from jutul_agent.agent.plot_julia_src import FIG_AUTHORED_MARKER
+
+    code = web_live_call(
+        user_code="lines(1:10)",
+        png_path=Path("/tmp/p.png"),
+        html_path=Path("/tmp/p.html"),
+        route="/viz/x",
+        fit=[990, 1230],
+    )
+    assert FIG_AUTHORED_MARKER in code and FIG_SIZE_MARKER in code
+    assert code.index(FIG_AUTHORED_MARKER) < code.index("resize!")
+    assert code.index("resize!") < code.index(FIG_SIZE_MARKER)
+
+
 def test_resize_call_resizes_the_routed_figure_and_echoes() -> None:
     # The refit path: an in-place resize! of a routed live figure, echoing the
     # resulting size; a route without a figure answers without touching anything.

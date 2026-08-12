@@ -266,6 +266,7 @@ def _finalize_web(
     view: bool,
     live_url: str | None = None,
     size_px: list[int] | None = None,
+    authored_px: list[int] | None = None,
 ) -> str | list[dict[str, Any]]:
     """Record the interactive plot artifact and build the reply.
 
@@ -297,6 +298,7 @@ def _finalize_web(
             format=fmt,
             kind="plot",
             size_px=size_px,
+            authored_px=authored_px,
             poster=png_rel if has_poster else None,
             slot=slot,
             live_url=live_url,
@@ -313,6 +315,14 @@ def _finalize_web(
 def _parse_fig_size(output: str | None) -> list[int] | None:
     """The figure's real pixel size, read back from the tagged echo line."""
     match = re.search(rf"{jl.FIG_SIZE_MARKER}=(\d+)x(\d+)", output or "")
+    if match is None:
+        return None
+    return [int(match.group(1)), int(match.group(2))]
+
+
+def _parse_authored_size(output: str | None) -> list[int] | None:
+    """The size the figure's code built it at, before any fit resized it."""
+    match = re.search(rf"{jl.FIG_AUTHORED_MARKER}=(\d+)x(\d+)", output or "")
     if match is None:
         return None
     return [int(match.group(1)), int(match.group(2))]
@@ -448,6 +458,7 @@ async def replot_web(
             source_code=code,
             view=False,
             size_px=size_px,
+            authored_px=_parse_authored_size(result.output),
         )
     return None, live_url, size_px
 
@@ -609,6 +620,7 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
                 source_code=code,
                 view=view,
                 size_px=_parse_fig_size(result.output),
+                authored_px=_parse_authored_size(result.output),
             )
 
         open_window = window and session.open_windows

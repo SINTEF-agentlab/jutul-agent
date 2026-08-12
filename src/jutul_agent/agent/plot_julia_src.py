@@ -114,6 +114,11 @@ WEB_LIVE_ROUTE_CAP = 24
 # layout intact in a narrow panel.
 FIG_SIZE_MARKER = "__JUTUL_FIG_SIZE__"
 
+# Printed before any fit or resize touches the figure: the size its code built
+# it at. A later re-fit (the panel changed shape under a live view) anchors its
+# squash floor to this, so refitting is idempotent — floors never ratchet.
+FIG_AUTHORED_MARKER = "__JUTUL_FIG_AUTHORED__"
+
 
 # How much of its authored width a figure may lose when fitted to a narrower
 # panel. The floor is the squash guard: a wide dashboard's layout was designed
@@ -157,7 +162,11 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
             "    end\n"
         )
     return (
-        resize + "    let _vp = _fig.scene.viewport[]\n"
+        "    let _vp = _fig.scene.viewport[]\n"
+        f'        println("{FIG_AUTHORED_MARKER}=", _vp.widths[1], "x", _vp.widths[2])\n'
+        "    end\n"
+        + resize
+        + "    let _vp = _fig.scene.viewport[]\n"
         f'        println("{FIG_SIZE_MARKER}=", _vp.widths[1], "x", _vp.widths[2])\n'
         "    end\n"
     )
@@ -703,7 +712,11 @@ def resize_web_fig_call(route: str, width: int, height: int) -> str:
         "    if _fig === nothing\n"
         '        "missing"\n'
         "    else\n"
-        f"        WGLMakie.Makie.resize!(_fig, {int(width)}, {int(height)})\n"
+        "        let _vp = _fig.scene.viewport[]\n"
+        f"            (round(Int, _vp.widths[1]) != {int(width)} ||"
+        f" round(Int, _vp.widths[2]) != {int(height)}) &&\n"
+        f"                WGLMakie.Makie.resize!(_fig, {int(width)}, {int(height)})\n"
+        "        end\n"
         "        let _vp = _fig.scene.viewport[]\n"
         f'            println("{FIG_SIZE_MARKER}=", _vp.widths[1], "x", _vp.widths[2])\n'
         "        end\n"

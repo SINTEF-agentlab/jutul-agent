@@ -62,7 +62,7 @@ export type ServerMessage =
       /** Served by the session's live figure server (widgets work; the view is
        *  stateful and supports exactly one frame). */
       live?: boolean;
-      /** The plot's trace record when its source code was recorded — what a
+      /** The plot's trace record when its source code was recorded, which a
        *  `replot` request sends back (regenerate a dead view, or a popout). */
       record?: string | null;
       /** The figure's own pixel size, so the canvas can present it at its
@@ -71,6 +71,9 @@ export type ServerMessage =
       height?: number | null;
     }
   | { type: "popout_ready"; record: string; url: string | null; error?: string | null }
+  /** A `refit` landed: the figure's real size now (the squash floor may have
+   *  held the width, so this is the echo to stage, not the client's request). */
+  | { type: "refit_done"; record: string; width: number; height: number }
   | { type: "notice"; text: string }
   | { type: "ui"; action: string; payload: Record<string, unknown> }
   | { type: "credential_required"; provider: string; label: string; env_var: string }
@@ -90,7 +93,7 @@ export type ClientMessage =
    *  the server re-fits the replayed figure to that rectangle. */
   | { type: "replot"; record: string; target?: "revive" | "popout"; width?: number; height?: number }
   /** Resize a live figure to its frame's grown size, in place: the kernel
-   *  `resize!`-es the routed figure and Bonito pushes the layout to the frame —
+   *  `resize!`-es the routed figure and Bonito pushes the layout to the frame,
    *  no code re-run, camera and widget state kept. Best-effort (skipped busy). */
   | { type: "refit"; record: string; width: number; height: number }
   /** A popout window this client opened has closed; the server releases its route. */
@@ -133,6 +136,7 @@ export const SIDE_OUTPUT_TYPES: ReadonlySet<ServerMessageType> = new Set([
   "artifact",
   "ui",
   "popout_ready",
+  "refit_done",
 ]);
 
 /** A `ui` action the client consumes internally (a history-refresh signal) instead
