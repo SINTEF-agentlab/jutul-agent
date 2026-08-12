@@ -6,7 +6,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import { useSel } from "../context";
+import { useController, useSel } from "../context";
 import { StagedFrame } from "./registry";
 import { framePool } from "./framePool";
 
@@ -20,6 +20,7 @@ export function LiveFrames({
   const activeView = useSel((s) => s.activeView);
   const canvasOpen = useSel((s) => s.canvasOpen);
   const views = useSel((s) => s.views);
+  const controller = useController();
   return (
     <>
       {frames.map((f) => {
@@ -40,6 +41,8 @@ export function LiveFrames({
             probe
             hold={450}
             onLoaded={() => onLoaded(f.viewId, f.nonce)}
+            // A stage grown past the live figure asks the kernel to re-fit it.
+            onGrown={(w, h) => controller.refitView(f.viewId, w, h)}
           />
         );
       })}

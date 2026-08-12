@@ -918,6 +918,25 @@ async def test_replot_without_size_fits_the_session_panel_hint(tmp_path: Path) -
     assert "local _pw, _ph = 900, 1100" in serve
 
 
+async def test_refit_resizes_the_live_figure_in_place(tmp_path: Path) -> None:
+    # The canvas's grown-stage message: the kernel resize!-es the routed figure
+    # (no code re-run), and junk or busy states drop the request silently — the
+    # client's scaled presentation is the always-correct fallback.
+    st, ws, session = _plot_state(tmp_path)
+    await st.handle(
+        {"type": "refit", "record": "artifacts/res.png", "width": 1200, "height": 1000}
+    )
+    call = session.julia.calls[-1]
+    assert "resize!(_fig, 1200, 1000)" in call
+    assert 'raw"/viz/res"' in call
+    assert not any(m["type"] == "viz" for m in ws.sent)  # in place: no re-pin
+
+    calls = len(session.julia.calls)
+    await st.handle({"type": "refit", "record": "artifacts/res.png", "width": 9, "height": 9})
+    await st.handle({"type": "refit", "record": "artifacts/nope.png", "width": 900, "height": 900})
+    assert len(session.julia.calls) == calls  # junk size and unknown record: dropped
+
+
 async def test_canvas_size_hint_lands_on_the_session(tmp_path: Path) -> None:
     # The ui_event hint doubles as live session state for plot_julia; junk
     # measurements never overwrite a good hint.
