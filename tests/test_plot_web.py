@@ -99,7 +99,7 @@ async def test_web_plot_without_size_fits_the_panel_hint(tmp_path: Path) -> None
     await _call(tool, {"code": "lines(1:3)", "slot": "a"})
     routed = next(c for c in seen if "Bonito.route!" in c)
     assert "local _pw, _ph = 800, 920" in routed
-    assert "max(_pw, ceil(Int, _w0 * 2 / 3))" in routed
+    assert "clamp(_pw / _ph, (_w0 / _h0) * 2 / 3, (_w0 / _h0) / (2 / 3))" in routed
 
     seen.clear()
     await _call(tool, {"code": "lines(1:3)", "slot": "b", "size": [640, 480]})

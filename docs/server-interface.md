@@ -315,10 +315,15 @@ The client can also volunteer the panel's size ahead of time with
 `{"type": "ui_event", "payload": {"kind": "canvas_size", "width": ..., "height": ...}}`
 (the bundled UI sends it with every prompt, before a regenerate, after a window
 resize settles, and after a split drag). A figure plotted — or replayed — with
-no explicit size is then fitted to the panel: at the panel's own size it shows
-at scale 1 with full-size text, and a figure authored wider only narrows to a
-floor (two thirds of its authored width) so its layout is never crushed — past
-the floor it keeps the panel's aspect and scales down mildly instead.
+no explicit size is then fitted to the panel by one rule, used everywhere a fit
+happens (serve, regenerate, refit, popout): the target aspect is the panel's,
+clamped to within 2/3–3/2 of the figure's authored aspect (reshape toward the
+panel, never distort past that — a tall figure letterboxes in a wide panel at
+full size instead of stretching flat); that shape is fitted inside the panel at
+scale 1 — full-size text; and it is scaled up (capped at 3x) only until neither
+dimension compresses below two thirds of its authored pixels, with the client
+scaling the overshoot back down. For a panel shaped within the clamp — the
+common case — the figure *is* the panel: no bands, no distortion, no scaling.
 
 When a live view's panel no longer suits its figure — it grew past it, or
 changed shape enough that scaling leaves a large share of the panel unused —
@@ -330,9 +335,12 @@ resizes the routed figure in place (no code re-run; camera and widget state
 kept), and the answer is a `refit_done` carrying the figure's *resulting* size
 for the front end to stage. During a running turn the resize queues behind the
 kernel's current eval and lands when it frees. The bundled UI only asks when
-the re-layout earns its visible jump (under ~75% panel coverage); a view that
-already covers its panel well is left alone. The popout wrapper does the same
-over `POST /popout/{session}/refit`.
+the re-layout earns its visible jump (under ~75% panel coverage, after the
+size settles for a second); a view that already covers its panel well is left
+alone, and the one re-fit that fires converges to the rule's optimum in a
+single step. The popout wrapper does the same over
+`POST /popout/{session}/refit`, which answers the echoed size as JSON (204
+when there is nothing to re-fit).
 
 A written report is delivered the same way. `write_report` renders a
 self-contained HTML document into the session's artifacts and the server forwards
