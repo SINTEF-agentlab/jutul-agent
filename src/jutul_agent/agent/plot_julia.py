@@ -324,7 +324,7 @@ def _parse_size(output: str | None, marker: str = jl.FIG_SIZE_MARKER) -> list[in
 
 def _panel_fit(session: Session) -> list[int] | None:
     """The browser canvas panel's size from the client's hint, or ``None``
-    without a plausible one (no client yet, or a degenerate measurement) —
+    without a plausible one (no client yet, or a degenerate measurement),
     which leaves the figure's authored size untouched. The fit rule itself
     lives in the generated Julia; see ``jl._fig_size_block``.
     """
@@ -351,30 +351,28 @@ def _plot_id_of(payload: dict[str, Any]) -> str:
     return rec.rsplit("/", 1)[-1].rsplit(".", 1)[0]
 
 
-# How long a re-fit may hold the kernel. Kernel evals serialize on one lock and
-# have no deadline of their own, which is right for work the user asked for — a
-# simulation may run for an hour — but wrong for this. A re-fit is cosmetic and
-# nobody is waiting on its result, so an eval that wedges here (a resize pushing
-# to a browser session that has gone away, a figure whose layout solver spins)
-# would hold the lock and every later turn would sit silent behind it. The
-# deadline turns that into a view that stays scaled, which is the fallback the
-# client already renders. Cancelling interrupts the eval in Julia and frees the
-# lock — see ``JuliaKernel.eval``'s cancellation path.
+# How long a re-fit may hold the kernel. Evals serialize on one lock and have no
+# deadline of their own, which is right for work the user asked for (a simulation
+# may run for an hour) and wrong for this. A re-fit is cosmetic and nobody waits
+# on its result, so an eval that wedges here would hold the lock and every later
+# turn would sit silent behind it. With a deadline the view simply stays scaled,
+# which is the fallback the client already renders; cancelling interrupts the
+# eval in Julia and frees the lock.
 REFIT_TIMEOUT_S = 20.0
 
 
 async def refit_web(
-    session: Session, route_id: str, size: list[int]
+    session: Session, route_id: str, size: list[int], authored: list[int] | None = None
 ) -> tuple[str | None, list[int] | None]:
     """Resize a live figure's served layout in place; ``(error, echoed size)``.
 
     The cheap sibling of ``replot_web`` for a view whose frame changed size:
-    no code re-runs and the figure's state (camera, widget values) is kept —
-    see ``jl.resize_web_fig_call`` for why this direction is the robust one.
+    no code re-runs and the figure's state (camera, widget values) is kept.
+    See ``jl.resize_web_fig_call`` for why this direction is the robust one.
     Bounded by ``REFIT_TIMEOUT_S``: cosmetic work must never wedge a session.
     """
 
-    call = jl.resize_web_fig_call(jl.viz_route(route_id), *size)
+    call = jl.resize_web_fig_call(jl.viz_route(route_id), *size, authored=authored)
     try:
         result = await asyncio.wait_for(session.julia.eval(call), REFIT_TIMEOUT_S)
     except TimeoutError:
@@ -406,7 +404,7 @@ async def replot_web(
     returned — an independent, ephemeral view for a popout window.
 
     ``fit_to`` is a panel the client measured (the popup window on a popout);
-    the replay *fits* the figure to it — the same rule as a fresh plot, never
+    the replay fits the figure to it by the same rule as a fresh plot, never
     a raw resize that could crush a wide layout into a small window. Without
     one, the replay fits to the session's panel hint the way a fresh plot
     does. The returned size is the figure's *echoed* real size; presentation
@@ -490,7 +488,7 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
         if backend_loaded:
             # The memos outlive the kernel: a reset (`reset_julia`) silently
             # clears the backend and the Bonito server while the Python session
-            # keeps both flags — probe, and redo whatever the kernel lost.
+            # keeps both flags, so probe and redo whatever the kernel lost.
             probe = await session.julia.eval(jl.plot_state_probe(web))
             flags = re.search(rf"{jl.PLOT_STATE_MARKER}=(\w+),(\w+)", probe.output or "")
             if flags is None or flags.group(1) != "true":
@@ -586,7 +584,7 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
             return slot_err
 
         # The plot id is the artifact file stem, so the plot's live route and
-        # its recorded path agree — a replay derives the route from the record,
+        # its recorded path agree: a replay derives the route from the record,
         # and only the same route revives the browser view in place.
         plot_id = safe_slot or f"plot-{uuid.uuid4().hex[:12]}"
         rel_path = f"artifacts/{plot_id}.png"
