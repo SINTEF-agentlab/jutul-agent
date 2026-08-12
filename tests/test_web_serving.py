@@ -39,3 +39,26 @@ def test_no_ui_mount_when_disabled() -> None:
         # API routes still work; the SPA is just not mounted at "/".
         assert client.get("/models").status_code == 200
         assert client.get("/").status_code == 404
+
+
+def test_popout_wrapper_stages_the_live_route() -> None:
+    # The popup's wrapper page embeds the live route at the figure's real size
+    # and scales it to the window; it never echoes an arbitrary route string.
+    with TestClient(create_app(ui=False)) as client:
+        resp = client.get("/popout/sid-1", params={"route": "res--pop2", "w": 1600, "h": 900})
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/html")
+        assert 'src="/live/sid-1/viz/res--pop2"' in resp.text
+        assert "const W = 1600, H = 900;" in resp.text
+
+        # A route id that is not a plot route (path tricks, markup) 404s.
+        for bad in ("../../etc", "a/b", "<script>", "x" * 80):
+            assert (
+                client.get("/popout/sid-1", params={"route": bad, "w": 800, "h": 600}).status_code
+                == 404
+            )
+        # As does an implausible size.
+        assert (
+            client.get("/popout/sid-1", params={"route": "res", "w": 9, "h": 600}).status_code
+            == 404
+        )

@@ -80,6 +80,48 @@ async def test_web_surface_serves_plot_live(tmp_path: Path) -> None:
         log.close()
 
 
+async def test_web_plot_without_size_extends_toward_the_panel_hint(tmp_path: Path) -> None:
+    # With a canvas-size hint on the session and no explicit size, the figure
+    # keeps its authored width and grows its height toward the panel's aspect;
+    # an explicit size from the model still wins outright.
+    seen: list[str] = []
+
+    async def fake_eval(code: str) -> EvalResult:
+        seen.append(code)
+        if "Bonito.Server" in code:
+            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+        return EvalResult(output="")
+
+    session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
+    session.web_canvas_hint = (800, 920)  # aspect 1.15
+    tool = make_plot_julia_tool(session, surface="web")
+
+    await _call(tool, {"code": "lines(1:3)", "slot": "a"})
+    routed = next(c for c in seen if "Bonito.route!" in c)
+    assert "_vp.widths[1] * 1.1500" in routed
+    assert "_t > _vp.widths[2] && _M.resize!" in routed
+
+    seen.clear()
+    await _call(tool, {"code": "lines(1:3)", "slot": "b", "size": [640, 480]})
+    routed = next(c for c in seen if "Bonito.route!" in c)
+    assert "resize!(_fig, 640, 480)" in routed
+    assert "1.1500" not in routed
+
+
+async def test_web_plot_ignores_a_degenerate_panel_hint(tmp_path: Path) -> None:
+    async def fake_eval(code: str) -> EvalResult:
+        if "Bonito.Server" in code:
+            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+        return EvalResult(output="")
+
+    session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
+    session.web_canvas_hint = (40, 8000)  # nonsense measurement
+    tool = make_plot_julia_tool(session, surface="web")
+    await _call(tool, {"code": "lines(1:3)", "slot": "a"})
+    routed = next(c for c in session.julia.calls if "Bonito.route!" in c)
+    assert "resize!" not in routed
+
+
 async def test_web_surface_live_gl_only_records_html_export(tmp_path: Path) -> None:
     # A GL-only scene Cairo can't render yields no poster PNG on the live path; the
     # durable record must then be the static HTML export, not a dead PNG path that

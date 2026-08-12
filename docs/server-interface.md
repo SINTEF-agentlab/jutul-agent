@@ -293,17 +293,30 @@ dashboard's layout intact.
 `record` is what makes a plot replayable. The front end sends
 `{"type": "replot", "record": ...}` and the server re-runs the plot's *recorded*
 source code in the session's kernel, busy-guarded like a turn. The code is
-looked up in the trace; code a client sends is never executed. Without a
+looked up in the trace; code a client sends is never executed. Optional
+`width`/`height` give a target rectangle the client measured (the stage on a
+regenerate, the popup window on a popout): the replayed figure is re-fitted to
+it, and the `viz` reports the figure's *resulting* size — a figure whose own
+layout refuses part of the resize is still presented truthfully. Without a
 `target` the figure re-serves on its own route and a fresh `viz` revives the
 view in place. That is the bundled UI's regenerate button, and also how a view
 comes back after a reload or a from-disk resume. With `target: "popout"` the
 figure serves as an independent copy on its own route and the server answers
-`popout_ready` with its URL, which is how a popout window shows a live view
-without violating the one-frame rule; `{"type": "popout_closed", "url": ...}`
+`popout_ready` with the URL of a wrapper page (`/popout/{session}?route=...`)
+that stages the figure at its real size and scales it to the window — the same
+presentation contract as the inline canvas, so resizing or fullscreening the
+popup letterboxes instead of mis-drawing; `{"type": "popout_closed", "url": ...}`
 releases that figure when the window closes. Replaying on a still-running
 session is also how the bundled UI keeps plots alive across a sidebar session
 switch: replayed views whose frames it still holds stay live, everything else
 falls back to the poster plus the regenerate button.
+
+The client can also volunteer the panel's size ahead of time with
+`{"type": "ui_event", "payload": {"kind": "canvas_size", "width": ..., "height": ...}}`
+(the bundled UI sends it with every prompt and after a window resize settles).
+A figure plotted with no explicit size then keeps its authored width but grows
+its height toward the panel's shape, so plots fill the panel instead of
+letterboxing.
 
 A written report is delivered the same way. `write_report` renders a
 self-contained HTML document into the session's artifacts and the server forwards

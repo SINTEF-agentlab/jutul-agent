@@ -283,6 +283,35 @@ def test_live_call_echoes_the_figure_size_and_applies_a_requested_one() -> None:
     assert sized.index("resize!") < sized.index(FIG_SIZE_MARKER)
 
 
+def test_live_call_aspect_extends_height_and_never_squashes() -> None:
+    # With a panel aspect (and no explicit size) the figure keeps its authored
+    # width and only *grows* its height toward the panel's shape — a figure
+    # already taller than the panel is left alone, never squashed into it.
+    code = web_live_call(
+        user_code="lines(1:10)",
+        png_path=Path("/tmp/p.png"),
+        html_path=Path("/tmp/p.html"),
+        route="/viz/x",
+        aspect=0.98,
+    )
+    assert "_vp.widths[1] * 0.9800" in code
+    assert "_t > _vp.widths[2] && _M.resize!" in code
+    # Extension happens before the echo, so the recorded size is the truth.
+    assert code.index("resize!") < code.index(FIG_SIZE_MARKER)
+
+    # An explicit size wins over the aspect hint.
+    sized = web_live_call(
+        user_code="lines(1:10)",
+        png_path=Path("/tmp/p.png"),
+        html_path=Path("/tmp/p.html"),
+        route="/viz/x",
+        size=[900, 600],
+        aspect=0.98,
+    )
+    assert "resize!(_fig, 900, 600)" in sized
+    assert "0.9800" not in sized
+
+
 def test_live_call_caps_the_route_registry() -> None:
     # The safety net: beyond the cap the oldest route is unrouted and its figure
     # dropped, so a session plotting unseen in a loop cannot grow without bound.
