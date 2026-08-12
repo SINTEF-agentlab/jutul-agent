@@ -309,7 +309,9 @@ export class Controller {
    *  that (a busy kernel skips it, and the scaled view is always correct). */
   refitView(viewId: string, width: number, height: number): void {
     const view = this.s.views[viewId];
-    if (!view?.record || !view.live || this.s.busy) return;
+    if (!view?.record || !view.live) return;
+    // Sent even mid-turn: the server queues the resize behind the kernel's
+    // current eval (a running simulation), and it lands the moment it frees.
     if (!this.transport.send({ type: "refit", record: view.record, width, height })) return;
     this.s.setViewSize(viewId, width, height);
   }
