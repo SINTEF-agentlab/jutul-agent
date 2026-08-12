@@ -531,11 +531,13 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
             return slot_err
 
         if safe_slot:
-            rel_path = f"artifacts/{safe_slot}.png"
             plot_id = safe_slot
         else:
-            plot_id = uuid.uuid4().hex[:12]
-            rel_path = f"artifacts/plot-{plot_id}.png"
+            # The artifact file stem, so the plot's live route and its recorded
+            # path agree — a replay derives the route from the record, and only
+            # the same route revives the browser view in place.
+            plot_id = f"plot-{uuid.uuid4().hex[:12]}"
+        rel_path = f"artifacts/{plot_id}.png"
 
         abs_path = session.output_dir / rel_path
         artifacts_dir.mkdir(parents=True, exist_ok=True)
