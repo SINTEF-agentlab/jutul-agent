@@ -1297,6 +1297,8 @@ class _StreamState:
         # deferred ``None`` (the host cleared its selection) is distinguishable
         # from "nothing is waiting". Applied when the turn settles.
         self._deferred_host_context: tuple[dict[str, Any] | None] | None = None
+        # In-flight refit evals (see ``_refit``): held so they aren't collected.
+        self._refits: set[asyncio.Task[None]] = set()
 
     async def handle(self, message: dict[str, Any]) -> None:
         kind = message.get("type")
@@ -1618,13 +1620,16 @@ class _StreamState:
         The canvas sends this when its stage outgrows a live view: the kernel
         ``resize!``-es the routed figure and Bonito pushes the new layout to
         the connected frame — camera and widget state untouched, no code
-        re-run. Best-effort: skipped while a turn holds the kernel (the client
-        keeps its scaled presentation, which is always correct) and silent on
-        failure, because the fallback is merely the status quo.
+        re-run. The eval is spawned, not awaited: kernel evals serialize on
+        their own lock, so during a running turn (a simulation, a long solve)
+        the resize simply queues and lands the moment the kernel frees — and
+        the WebSocket receive loop stays responsive for cancels and decisions
+        meanwhile. Silent on failure: the client's scaled presentation is the
+        always-correct fallback.
         """
         record = str(message.get("record") or "")
         size = _sane_size(message.get("width"), message.get("height"))
-        if not record or size is None or self._busy():
+        if not record or size is None:
             return
         from jutul_agent.agent.plot_julia import _plot_id_of, refit_web
 
@@ -1638,8 +1643,15 @@ class _StreamState:
         )
         if payload is None:
             return
-        with contextlib.suppress(Exception):
-            await refit_web(self._host.session, _plot_id_of(payload), size)
+
+        async def run() -> None:
+            with contextlib.suppress(Exception):
+                await refit_web(self._host.session, _plot_id_of(payload), size)
+
+        task = asyncio.create_task(run())
+        # Keep a reference so the task isn't garbage-collected mid-flight.
+        self._refits.add(task)
+        task.add_done_callback(self._refits.discard)
 
     async def _close_popout(self, url: str) -> None:
         """Release the figure behind a closed popout window. Best-effort: only a
