@@ -684,6 +684,35 @@ def close_windows_call(key: str) -> str:
     return f'JutulAgent.JutulAgentPlots.close_windows(raw"{key}")'
 
 
+def resize_web_fig_call(route: str, width: int, height: int) -> str:
+    """Julia to resize a live figure to the frame it is shown in, in place.
+
+    The robust direction for following a growing panel or popout window: a
+    browser-side resize relies on the served page noticing and telling Julia,
+    which is measurably unreliable, while a Julia-side ``resize!`` propagates to
+    every connected view through Bonito's own observable traffic — the same
+    channel widget updates ride, which always works. The figure's state (camera,
+    toggles, sliders) is untouched; only the layout re-solves. Echoes the
+    resulting size; answers ``missing`` for a route not serving a figure.
+    """
+
+    return (
+        "begin\n"
+        "    local _fig = isdefined(Main, :__JUTUL_WEB_FIGS__) ?\n"
+        f'        get(Main.__JUTUL_WEB_FIGS__, raw"{route}", nothing) : nothing\n'
+        "    if _fig === nothing\n"
+        '        "missing"\n'
+        "    else\n"
+        f"        WGLMakie.Makie.resize!(_fig, {int(width)}, {int(height)})\n"
+        "        let _vp = _fig.scene.viewport[]\n"
+        f'            println("{FIG_SIZE_MARKER}=", _vp.widths[1], "x", _vp.widths[2])\n'
+        "        end\n"
+        '        "ok"\n'
+        "    end\n"
+        "end"
+    )
+
+
 def close_web_plots_call(slot: str) -> str:
     """Julia to release live web figures: one slot's route, or all when empty.
 

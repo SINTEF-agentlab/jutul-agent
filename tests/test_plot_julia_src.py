@@ -315,6 +315,18 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
     assert "_pw" not in sized
 
 
+def test_resize_call_resizes_the_routed_figure_and_echoes() -> None:
+    # The refit path: an in-place resize! of a routed live figure, echoing the
+    # resulting size; a route without a figure answers without touching anything.
+    from jutul_agent.agent.plot_julia_src import resize_web_fig_call
+
+    code = resize_web_fig_call("/viz/res", 1200, 1000)
+    assert 'get(Main.__JUTUL_WEB_FIGS__, raw"/viz/res", nothing)' in code
+    assert "resize!(_fig, 1200, 1000)" in code
+    assert FIG_SIZE_MARKER in code
+    assert '"missing"' in code
+
+
 def test_live_call_caps_the_route_registry() -> None:
     # The safety net: beyond the cap the oldest route is unrouted and its figure
     # dropped, so a session plotting unseen in a loop cannot grow without bound.

@@ -94,10 +94,12 @@ def _sane_size(width: Any, height: Any) -> list[int] | None:
 
 # The popout wrapper page (see ``popout_wrapper``). Placeholders instead of an
 # f-string so the JS braces stay readable. A window *smaller* than the figure
-# scales it down to fit (never CSS-upscaled: a canvas grown by CSS blurs); a
-# window *bigger* than the figure hands the frame the whole window and the
-# served figure reflows larger — growth is the safe direction, so text keeps
-# its size and the extra room becomes plot area instead of letterbox.
+# scales it down to fit (never CSS-upscaled: a canvas grown by CSS blurs). A
+# window *grown past* the figure asks the server to re-fit the live figure to
+# the window (a kernel-side resize! pushed back through Bonito — the reliable
+# direction; the served page noticing its own resize is not), then stages the
+# figure at its new size; until the refit lands, the 1:1 centered presentation
+# is the always-correct fallback.
 _POPOUT_WRAPPER_HTML = """<!doctype html>
 <html>
 <head>
@@ -112,27 +114,34 @@ _POPOUT_WRAPPER_HTML = """<!doctype html>
 <body>
 <div id="stage"><iframe id="frame" src="__SRC__" allow="fullscreen"></iframe></div>
 <script>
-  const W = __W__, H = __H__;
+  let W = __W__, H = __H__;
+  const REFIT = "__REFIT__";
   function fit() {
-    const s = Math.min(innerWidth / W, innerHeight / H);
+    const s = Math.min(innerWidth / W, innerHeight / H, 1);
     const stage = document.getElementById("stage");
     const frame = document.getElementById("frame");
-    if (s >= 1) {
-      // Grown past the figure: reflow it to the window.
-      frame.style.width = innerWidth + "px";
-      frame.style.height = innerHeight + "px";
-      stage.style.transform = "none";
-      stage.style.left = "0px";
-      stage.style.top = "0px";
-    } else {
-      frame.style.width = W + "px";
-      frame.style.height = H + "px";
-      stage.style.transform = "scale(" + s + ")";
-      stage.style.left = Math.max(0, (innerWidth - W * s) / 2) + "px";
-      stage.style.top = Math.max(0, (innerHeight - H * s) / 2) + "px";
-    }
+    frame.style.width = W + "px";
+    frame.style.height = H + "px";
+    stage.style.transform = s < 1 ? "scale(" + s + ")" : "none";
+    stage.style.left = Math.max(0, (innerWidth - W * s) / 2) + "px";
+    stage.style.top = Math.max(0, (innerHeight - H * s) / 2) + "px";
   }
-  addEventListener("resize", fit);
+  let timer;
+  addEventListener("resize", () => {
+    fit();
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      // Grown past the figure in both dimensions: have the kernel re-fit the
+      // live figure to the window, then stage it at its new size.
+      if (innerWidth >= W && innerHeight >= H && (innerWidth > W || innerHeight > H)) {
+        const w = innerWidth, h = innerHeight;
+        try {
+          const resp = await fetch(REFIT + "&w=" + w + "&h=" + h, { method: "POST" });
+          if (resp.ok) { W = w; H = h; fit(); }
+        } catch (e) { /* best-effort: the scaled presentation stands */ }
+      }
+    }, 500);
+  });
   fit();
 </script>
 </body>
@@ -682,11 +691,33 @@ def create_app(
         if not (100 <= w <= 8192 and 100 <= h <= 8192):
             raise HTTPException(status_code=404, detail="implausible figure size")
         src = f"/live/{quote(session_id)}/viz/{quote(route)}"
+        refit = f"/popout/{quote(session_id)}/refit?route={quote(route)}"
         return HTMLResponse(
             _POPOUT_WRAPPER_HTML.replace("__SRC__", src)
+            .replace("__REFIT__", refit)
             .replace("__W__", str(w))
             .replace("__H__", str(h))
         )
+
+    @app.post("/popout/{session_id}/refit")
+    async def popout_refit(session_id: str, route: str, w: int, h: int) -> Response:
+        """Resize a popout's live figure to its window, in place (see ``_refit``).
+
+        The wrapper page calls this when its window settles at a new size: the
+        kernel ``resize!``-es the routed figure and Bonito pushes the layout to
+        the window's frame. Best-effort by design — a missing session or route
+        answers 204 all the same, because the wrapper's scaled presentation is
+        the always-correct fallback.
+        """
+        from jutul_agent.agent.plot_julia import refit_web
+
+        if _ROUTE_ID_RE.fullmatch(route) is None or _sane_size(w, h) is None:
+            raise HTTPException(status_code=404, detail="no such plot route")
+        host = manager.get(session_id)
+        if host is not None:
+            with contextlib.suppress(Exception):
+                await refit_web(host.session, route, [w, h])
+        return Response(status_code=204)
 
     @app.api_route("/live/{session_id}/{path:path}", methods=["GET", "HEAD"])
     async def live_plot_proxy(session_id: str, path: str, request: Request) -> Response:
@@ -1283,6 +1314,8 @@ class _StreamState:
             await self.cancel_turn()
         elif kind == "replot":
             await self._start_replot(message)
+        elif kind == "refit":
+            await self._refit(message)
         elif kind == "popout_closed":
             await self._close_popout(str(message.get("url") or ""))
         elif kind == "ui_event":
@@ -1578,6 +1611,35 @@ class _StreamState:
                 "I regenerated a plot in the canvas by re-running its code:\n\n"
                 f"```julia\n{payload.get('source_code')}\n```"
             )
+
+    async def _refit(self, message: dict[str, Any]) -> None:
+        """Resize a live figure to its frame's new size, in place.
+
+        The canvas sends this when its stage outgrows a live view: the kernel
+        ``resize!``-es the routed figure and Bonito pushes the new layout to
+        the connected frame — camera and widget state untouched, no code
+        re-run. Best-effort: skipped while a turn holds the kernel (the client
+        keeps its scaled presentation, which is always correct) and silent on
+        failure, because the fallback is merely the status quo.
+        """
+        record = str(message.get("record") or "")
+        size = _sane_size(message.get("width"), message.get("height"))
+        if not record or size is None or self._busy():
+            return
+        from jutul_agent.agent.plot_julia import _plot_id_of, refit_web
+
+        payload = next(
+            (
+                event.payload
+                for event in reversed(self._host.session.trace.iter_events())
+                if event.kind == schema.ARTIFACT and event.payload.get("path") == record
+            ),
+            None,
+        )
+        if payload is None:
+            return
+        with contextlib.suppress(Exception):
+            await refit_web(self._host.session, _plot_id_of(payload), size)
 
     async def _close_popout(self, url: str) -> None:
         """Release the figure behind a closed popout window. Best-effort: only a

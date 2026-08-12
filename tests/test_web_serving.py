@@ -49,9 +49,26 @@ def test_popout_wrapper_stages_the_live_route() -> None:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/html")
         assert 'src="/live/sid-1/viz/res--pop2"' in resp.text
-        assert "const W = 1600, H = 900;" in resp.text
-        # Both fit branches ship: reflow into a grown window, scale into a small one.
-        assert "s >= 1" in resp.text and "scale(" in resp.text
+        assert "let W = 1600, H = 900;" in resp.text
+        # The wrapper scales down into a small window and asks the kernel to
+        # re-fit the figure when the window grows past it.
+        assert "scale(" in resp.text
+        assert "/popout/sid-1/refit?route=res--pop2" in resp.text
+
+        # The refit endpoint validates like the wrapper and is 204 best-effort
+        # (no session here — the fallback presentation stands).
+        assert (
+            client.post(
+                "/popout/sid-1/refit", params={"route": "res--pop2", "w": 1200, "h": 900}
+            ).status_code
+            == 204
+        )
+        assert (
+            client.post(
+                "/popout/sid-1/refit", params={"route": "../x", "w": 1200, "h": 900}
+            ).status_code
+            == 404
+        )
 
         # A route id that is not a plot route (path tricks, markup) 404s.
         for bad in ("../../etc", "a/b", "<script>", "x" * 80):

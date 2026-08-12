@@ -320,6 +320,15 @@ at scale 1 with full-size text, and a figure authored wider only narrows to a
 floor (two thirds of its authored width) so its layout is never crushed — past
 the floor it keeps the panel's aspect and scales down mildly instead.
 
+When a live view's frame *grows past* its figure, the front end should send
+`{"type": "refit", "record": ..., "width": ..., "height": ...}`: the kernel
+resizes the routed figure in place (no code re-run; camera and widget state
+kept) and the new layout reaches the frame through the figure's own live
+connection — the reliable direction, since a served page noticing its own
+frame grow is not dependable. Best-effort: a busy kernel drops it, and the
+front end's scaled presentation remains correct either way. The popout wrapper
+does the same over `POST /popout/{session}/refit`.
+
 A written report is delivered the same way. `write_report` renders a
 self-contained HTML document into the session's artifacts and the server forwards
 it as a `viz` of kind `report`, so it lands in the same canvas next to the plots

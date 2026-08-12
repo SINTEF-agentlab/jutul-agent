@@ -89,6 +89,10 @@ export type ClientMessage =
    *  are an optional target the client measured (the stage, the popup window):
    *  the server re-fits the replayed figure to that rectangle. */
   | { type: "replot"; record: string; target?: "revive" | "popout"; width?: number; height?: number }
+  /** Resize a live figure to its frame's grown size, in place: the kernel
+   *  `resize!`-es the routed figure and Bonito pushes the layout to the frame —
+   *  no code re-run, camera and widget state kept. Best-effort (skipped busy). */
+  | { type: "refit"; record: string; width: number; height: number }
   /** A popout window this client opened has closed; the server releases its route. */
   | { type: "popout_closed"; url: string }
   | { type: "ui_event"; payload: unknown }
