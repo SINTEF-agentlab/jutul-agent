@@ -302,6 +302,11 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
     # exceed the compressed width grows back until nothing hangs outside.
     assert "computedbbox" in code
     assert code.index("_wt") < code.index("computedbbox") < code.index(FIG_SIZE_MARKER)
+    # Bounded against the size the fit chose, not the previous pass, so a
+    # layout that can never be satisfied costs half again its width once
+    # instead of compounding; a pass that cannot move stops the loop.
+    assert "1.5 * _w00" in code and "1.5 * _h00" in code
+    assert "_gh == round(Int, _gvp.widths[2])) && break" in code
     # Fitting happens before the echo, so the recorded size is the truth.
     assert code.index("resize!") < code.index(FIG_SIZE_MARKER)
 
