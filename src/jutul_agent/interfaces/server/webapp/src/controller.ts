@@ -8,7 +8,7 @@ import type { StoreApi } from "zustand/vanilla";
 import { ApiError, api } from "./api";
 import { stageSize } from "./canvas/stageSize";
 import { hostApiUrl, hostContext } from "./hostContext";
-import { HISTORY_CHANGED, type ClientMessage, type ServerMessage } from "./protocol";
+import { HISTORY_CHANGED, type ServerMessage } from "./protocol";
 import type { CredentialPrompt, SessionStore } from "./store";
 import { Transport } from "./transport";
 

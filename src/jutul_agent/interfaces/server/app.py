@@ -135,9 +135,19 @@ _POPOUT_WRAPPER_HTML = """<!doctype html>
 <meta charset="utf-8">
 <title>jutul-agent plot</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #101114; }
-  #stage { position: absolute; transform-origin: top left; }
-  iframe { display: block; border: 0; }
+  /* `color-scheme` is what stops the white flash on a window resize, and no
+     background declaration can substitute for it: while the window grows, the
+     browser fills the newly exposed area with the *window's* base canvas —
+     painted before any CSS applies — and that base is white until the page
+     declares which schemes it supports. Declaring both, and painting the page
+     in the matching system colour, makes base and page the same colour in
+     either scheme, so there is nothing left to flash. */
+  html { color-scheme: light dark; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: Canvas; }
+  /* Transparent, so the figure (whose page is transparent all the way down)
+     composites onto the page colour above rather than onto white. */
+  #stage { position: absolute; transform-origin: top left; background: transparent; }
+  iframe { display: block; border: 0; background: transparent; }
 </style>
 </head>
 <body>

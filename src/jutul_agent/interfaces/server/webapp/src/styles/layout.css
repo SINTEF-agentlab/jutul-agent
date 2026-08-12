@@ -342,11 +342,15 @@
   gap: 0.15rem;
   flex: none;
 }
+/* Theme-colored: this is the panel a stage is laid over, and during a resize
+   the stage repaints a beat behind the panel's new size — on white that beat
+   shows as a white rim around the figure. Documents bring their own paper (see
+   `.stage-frame.paper`), so nothing needs white here. */
 .canvas-body {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #fff;
+  background: var(--bg);
 }
 /* Direct children only: a plot's iframe lives inside its stage (below), which
    does its own sizing; these rules are for bare panels (images, custom kinds). */
