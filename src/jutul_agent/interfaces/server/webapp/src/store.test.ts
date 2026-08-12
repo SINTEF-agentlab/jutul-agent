@@ -363,3 +363,76 @@ describe("replayed live views and the frame pool", () => {
     expect(framePool.has("s1", "slot:res", liveViz.url)).toBe(false);
   });
 });
+
+describe("closed views and the thread chip", () => {
+  const liveViz = {
+    type: "viz" as const,
+    url: "/live/s1/viz/res",
+    kind: "plot",
+    slot: "res",
+    live: true,
+    poster: "/sessions/s1/artifacts/res.png",
+    record: "artifacts/res.png",
+    width: 1600,
+    height: 900,
+  };
+
+  it("a closed view keeps its record and the chip reopens it downgraded", () => {
+    state().setSession("s1", "");
+    state().handle(liveViz);
+    state().removeView("slot:res");
+    expect(state().canvasOpen).toBe(false);
+    const kept = state().views["slot:res"];
+    expect(kept.closed).toBe(true);
+    expect(kept.live).toBe(false); // its frame is gone; a fresh one would corrupt
+    expect(kept.url).toBe(liveViz.poster);
+    expect(kept.record).toBe("artifacts/res.png"); // regenerate stays available
+
+    // The chip in the thread calls openView: the tab re-pins and shows again.
+    state().openView("slot:res");
+    expect(state().canvasOpen).toBe(true);
+    expect(state().activeView).toBe("slot:res");
+    expect(state().viewOrder).toEqual(["slot:res"]);
+    expect(state().views["slot:res"].closed).toBe(false);
+  });
+
+  it("a fresh viz on a closed slot re-pins its tab", () => {
+    state().setSession("s1", "");
+    state().handle(liveViz);
+    state().removeView("slot:res");
+    expect(state().viewOrder).toEqual([]);
+    state().handle({ ...liveViz, url: "/live/s1/viz/res" });
+    expect(state().viewOrder).toEqual(["slot:res"]);
+    expect(state().views["slot:res"].closed).toBe(false);
+    expect(state().views["slot:res"].live).toBe(true);
+  });
+});
+
+describe("failed tool replies", () => {
+  const finished = (name: string, content: string) => {
+    state().handle({ type: "tool", event: "requested", name, tool_call_id: "c1", args: {} });
+    state().handle({ type: "tool", event: "finished", name, tool_call_id: "c1", content });
+  };
+
+  it("a plot call replying ERROR shows as failed with the reply surfaced", () => {
+    finished("plot_julia", "ERROR: the code did not produce a Makie figure.");
+    const [card] = byKind("tool");
+    expect(card.status).toBe("error");
+    // plot_julia hides successful output (the figure is the result); a failure
+    // must surface anyway or the card reads done while no plot appeared.
+    expect(card.output).toContain("did not produce a Makie figure");
+  });
+
+  it("a successful plot call still reads done with its output hidden", () => {
+    finished("plot_julia", "served a live interactive plot (artifacts/res.png)");
+    const [card] = byKind("tool");
+    expect(card.status).toBe("done");
+    expect(card.output).toBe("");
+  });
+
+  it("tools without the convention are not re-labeled by ERROR-looking text", () => {
+    finished("grep", "ERROR_CODES = {1: 'bad'}");
+    const [card] = byKind("tool");
+    expect(card.status).toBe("done");
+  });
+});

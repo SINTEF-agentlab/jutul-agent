@@ -44,6 +44,9 @@ export interface View {
   width?: number | null;
   height?: number | null;
   mode?: ViewMode;
+  /** Tab closed, record kept: the thread's chip reopens it (a closed live view
+   *  comes back as its poster plus the regenerate button). */
+  closed?: boolean;
 }
 
 export type ToolStatus = "running" | "done" | "error";
@@ -299,9 +302,16 @@ export function createSessionStore() {
             items = update({ output: msg.content });
           }
         } else if (msg.event === "finished") {
-          const patch: Partial<Extract<ThreadItem, { kind: "tool" }>> = { status: "done" };
-          if (policy.note && msg.content) patch.note = policy.note(msg.content);
-          if (msg.content && policy.rawOutput !== false) patch.output = msg.content;
+          // A tool that reports failure in its reply (an "ERROR: ..." string
+          // the model reads) still "finishes" at the protocol level; the policy
+          // predicate is what keeps the card honest, and the reply is surfaced
+          // even for tools whose successful output is hidden.
+          const failed = !!(msg.content && policy.failed?.(msg.content));
+          const patch: Partial<Extract<ThreadItem, { kind: "tool" }>> = {
+            status: failed ? "error" : "done",
+          };
+          if (!failed && policy.note && msg.content) patch.note = policy.note(msg.content);
+          if (msg.content && (failed || policy.rawOutput !== false)) patch.output = msg.content;
           items = update(patch);
         } else if (msg.event === "error") {
           const patch: Partial<Extract<ThreadItem, { kind: "tool" }>> = { status: "error" };
@@ -320,12 +330,14 @@ export function createSessionStore() {
     const upsertView = (view: View, replace: boolean) =>
       set((s) => {
         const existing = s.views[view.id];
+        // A fresh viz for a closed view re-pins its tab (a re-plot or a
+        // regenerate on a slot the user had closed).
         const next: View = existing
-          ? { ...existing, ...view, nonce: replace ? existing.nonce + 1 : existing.nonce }
+          ? { ...existing, ...view, closed: false, nonce: replace ? existing.nonce + 1 : existing.nonce }
           : view;
         return {
           views: { ...s.views, [view.id]: next },
-          viewOrder: existing ? s.viewOrder : [...s.viewOrder, view.id],
+          viewOrder: s.viewOrder.includes(view.id) ? s.viewOrder : [...s.viewOrder, view.id],
         };
       });
 
@@ -593,7 +605,15 @@ export function createSessionStore() {
         set((s) => ({ items: [...s.items, { kind: "context", id: nextId(), markdown }] })),
 
       openView: (id) =>
-        set((s) => (s.views[id] ? { activeView: id, canvasOpen: true } : {})),
+        set((s) => {
+          const v = s.views[id];
+          if (!v) return {};
+          // The thread's chip is the way back after a tab was closed: reopening
+          // re-pins it (downgraded already if it was live; regenerate revives it).
+          const views = v.closed ? { ...s.views, [id]: { ...v, closed: false } } : s.views;
+          const viewOrder = s.viewOrder.includes(id) ? s.viewOrder : [...s.viewOrder, id];
+          return { views, viewOrder, activeView: id, canvasOpen: true };
+        }),
 
       openImage: (url, title) => {
         const id = viewIdOf({ url });
@@ -609,9 +629,18 @@ export function createSessionStore() {
         const sid = get().sessionId;
         if (sid) framePool.release(sid, id);
         set((s) => {
-          if (!s.views[id]) return {};
-          const views = { ...s.views };
-          delete views[id];
+          const v = s.views[id];
+          if (!v) return {};
+          // Keep the record, marked closed, so the thread's chip can reopen it.
+          // A live view downgrades on close: its frame is gone, and a fresh one
+          // on the same figure would come up corrupt, so the reopened tab shows
+          // the poster (or an expired note) and regenerate brings it back live.
+          const downgraded: View = !v.live
+            ? v
+            : v.poster
+              ? { ...v, live: false, url: v.poster }
+              : { ...v, live: false, expired: true };
+          const views = { ...s.views, [id]: { ...downgraded, closed: true } };
           const viewOrder = s.viewOrder.filter((x) => x !== id);
           let { activeView, canvasOpen } = s;
           if (activeView === id) {
