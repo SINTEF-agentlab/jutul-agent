@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import (
     FastAPI,
@@ -69,6 +69,60 @@ def _ui_dir() -> Path | None:
 # Connects stay quick so a port nothing listens on still fails fast.
 _LIVE_WS_OPEN_TIMEOUT = 120.0
 _LIVE_HTTP_TIMEOUT = {"connect": 5.0, "read": 300.0, "write": 30.0, "pool": 30.0}
+
+# A live plot's route id: a slot or ``plot-<hex>`` stem, optionally with the
+# popout suffix a replay appended. What ``popout_wrapper`` accepts — anything
+# else 404s rather than being echoed into a page.
+_ROUTE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:--pop\d+)?")
+
+
+def _sane_size(width: Any, height: Any) -> list[int] | None:
+    """A client-supplied pixel size as ``[w, h]``, or ``None`` if implausible.
+
+    Guards every place the browser reports a measurement (the canvas hint, a
+    replot target): a missing field, a junk type, or a degenerate rectangle
+    yields ``None`` — callers then fall back to not resizing at all.
+    """
+    try:
+        w, h = int(width), int(height)
+    except (TypeError, ValueError):
+        return None
+    if not (100 <= w <= 8192 and 100 <= h <= 8192):
+        return None
+    return [w, h]
+
+
+# The popout wrapper page (see ``popout_wrapper``). Placeholders instead of an
+# f-string so the JS braces stay readable; the scale never exceeds 1 because a
+# canvas grown by CSS blurs — growth letterboxes on the dark backdrop instead.
+_POPOUT_WRAPPER_HTML = """<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>jutul-agent plot</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #101114; }
+  #stage { position: absolute; transform-origin: top left; }
+  iframe { display: block; border: 0; width: __W__px; height: __H__px; }
+</style>
+</head>
+<body>
+<div id="stage"><iframe src="__SRC__" allow="fullscreen"></iframe></div>
+<script>
+  const W = __W__, H = __H__;
+  function fit() {
+    const s = Math.min(innerWidth / W, innerHeight / H, 1);
+    const stage = document.getElementById("stage");
+    stage.style.transform = "scale(" + s + ")";
+    stage.style.left = Math.max(0, (innerWidth - W * s) / 2) + "px";
+    stage.style.top = Math.max(0, (innerHeight - H * s) / 2) + "px";
+  }
+  addEventListener("resize", fit);
+  fit();
+</script>
+</body>
+</html>
+"""
 
 
 def _register_web_mime_types() -> None:
@@ -596,6 +650,28 @@ def create_app(
         if target is None:
             raise HTTPException(status_code=404, detail="no such artifact")
         return FileResponse(target)
+
+    @app.get("/popout/{session_id}")
+    def popout_wrapper(session_id: str, route: str, w: int, h: int) -> HTMLResponse:
+        """The page a popout window hosts: the live figure, staged and scaled.
+
+        The figure is embedded at its real (echoed) pixel size ``w x h`` and a
+        CSS transform scales it to the window — the same presentation contract
+        as the inline canvas stage. That makes the popup's look independent of
+        whether the figure's own layout can follow a resize: growing the window
+        (or fullscreen) letterboxes on the dark backdrop instead of leaving the
+        scene painted at its old size with widgets floating outside it.
+        """
+        if _ROUTE_ID_RE.fullmatch(route) is None:
+            raise HTTPException(status_code=404, detail="no such plot route")
+        if not (100 <= w <= 8192 and 100 <= h <= 8192):
+            raise HTTPException(status_code=404, detail="implausible figure size")
+        src = f"/live/{quote(session_id)}/viz/{quote(route)}"
+        return HTMLResponse(
+            _POPOUT_WRAPPER_HTML.replace("__SRC__", src)
+            .replace("__W__", str(w))
+            .replace("__H__", str(h))
+        )
 
     @app.api_route("/live/{session_id}/{path:path}", methods=["GET", "HEAD"])
     async def live_plot_proxy(session_id: str, path: str, request: Request) -> Response:
@@ -1195,7 +1271,14 @@ class _StreamState:
         elif kind == "popout_closed":
             await self._close_popout(str(message.get("url") or ""))
         elif kind == "ui_event":
-            self._host.session.trace.append(schema.UI_EVENT, {"payload": message.get("payload")})
+            payload = message.get("payload")
+            # The canvas-size hint doubles as live session state: plot_julia
+            # shapes a new figure toward the panel it will land in.
+            if isinstance(payload, dict) and payload.get("kind") == "canvas_size":
+                size = _sane_size(payload.get("width"), payload.get("height"))
+                if size is not None:
+                    self._host.session.web_canvas_hint = (size[0], size[1])
+            self._host.session.trace.append(schema.UI_EVENT, {"payload": payload})
         elif kind == "host_context":
             await self._set_host_context(message.get("context"))
         elif kind == "command":
@@ -1391,16 +1474,20 @@ class _StreamState:
             else:
                 await _safe_send(self._ws, protocol.error_to_wire(reason))
             return
-        self._turn = asyncio.create_task(self._replot(record, target))
+        # An optional target size the client measured (the stage on a regenerate,
+        # the popup window on a popout): the replay re-fits the figure to it.
+        size = _sane_size(message.get("width"), message.get("height"))
+        self._turn = asyncio.create_task(self._replot(record, target, size))
 
-    async def _replot(self, record: str, target: str) -> None:
+    async def _replot(self, record: str, target: str, size: list[int] | None = None) -> None:
         """Re-run a recorded plot's code and deliver the resulting view.
 
         ``record`` names the plot's artifact in the trace; the stored source code
         is what re-runs (never code a client sent). A revive re-serves on the
         plot's own route and re-finalizes the artifact, so the side-output flush
         delivers a fresh ``viz`` and the browser view revives in place. A popout
-        serves an independent figure on its own route and answers with its URL.
+        serves an independent figure on its own route and answers with the URL of
+        a scale-to-fit wrapper page hosting it, sized from the figure's echo.
         The code replays in the current kernel state — variables may have changed
         or be gone after a restart — so a failure is reported, not hidden.
         """
@@ -1437,20 +1524,34 @@ class _StreamState:
             self._popout_seq += 1
             suffix = f"--pop{self._popout_seq}"
         try:
-            err, url = await replot_web(
-                self._host.session, payload, route_suffix=suffix, record=not popout
+            err, url, size_px = await replot_web(
+                self._host.session, payload, route_suffix=suffix, record=not popout, size=size
             )
         except asyncio.CancelledError:
             await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
             raise
         except Exception as exc:  # surface the failure, keep the session alive
-            err, url = f"the Julia session is unavailable ({type(exc).__name__}: {exc})", None
+            err, url, size_px = (
+                f"the Julia session is unavailable ({type(exc).__name__}: {exc})",
+                None,
+                None,
+            )
         if err is not None:
             await fail(err)
             return
         if popout:
             if url:
-                self._popouts[url] = url.rsplit("/viz/", 1)[-1]
+                # The popup gets a wrapper that stages the figure at its echoed
+                # size and scales it to the window — the same guarantee as the
+                # inline canvas, so a later resize or fullscreen letterboxes
+                # instead of leaving the figure's layout behind the window's.
+                route_id = url.rsplit("/viz/", 1)[-1]
+                w, h = size_px or size or [1200, 800]
+                url = (
+                    f"/popout/{self._host.session.session_id}"
+                    f"?route={quote(route_id)}&w={int(w)}&h={int(h)}"
+                )
+                self._popouts[url] = route_id
             await _safe_send(self._ws, protocol.popout_ready_to_wire(record, url))
             return
         await self._flush_side_outputs()

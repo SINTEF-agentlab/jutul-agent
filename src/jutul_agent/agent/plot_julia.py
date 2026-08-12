@@ -318,6 +318,22 @@ def _parse_fig_size(output: str | None) -> list[int] | None:
     return [int(match.group(1)), int(match.group(2))]
 
 
+def _panel_aspect(session: Session) -> float | None:
+    """The browser canvas panel's height/width, from the client's size hint.
+
+    ``None`` without a plausible hint (no client connected yet, or a degenerate
+    measurement), which leaves the figure's authored size untouched. Clamped so
+    a freak measurement can never author an absurdly tall or flat figure.
+    """
+    hint = session.web_canvas_hint
+    if not hint:
+        return None
+    w, h = hint
+    if w < 100 or h < 100:
+        return None
+    return max(0.3, min(h / w, 3.0))
+
+
 def _plot_id_of(payload: dict[str, Any]) -> str:
     """A recorded plot's route identity: its slot, else its file stem.
 
@@ -338,8 +354,9 @@ async def replot_web(
     *,
     route_suffix: str = "",
     record: bool = True,
-) -> tuple[str | None, str | None]:
-    """Re-run a recorded plot's code through the live web path; ``(error, url)``.
+    size: list[int] | None = None,
+) -> tuple[str | None, str | None, list[int] | None]:
+    """Re-run a recorded plot's code through the live web path; ``(error, url, size)``.
 
     ``payload`` is the plot's artifact payload from the trace (the server looks
     it up there — recorded code only, never code a client sent). With ``record``
@@ -349,23 +366,29 @@ async def replot_web(
     serves on ``route_suffix``'s separate route and only the live URL is
     returned — an independent, ephemeral view for a popout window.
 
+    ``size`` re-fits the figure to a target the client measured — the canvas
+    stage on a regenerate, the popup window on a popout — so the replay is laid
+    out for the rectangle it will actually land in. The returned size is the
+    figure's *echoed* real size, which can differ when its own layout refuses
+    part of the resize; presentation must trust the echo, never the request.
+
     The code replays into the current kernel state: variables it used may have
     changed or be gone after a restart, so a failure is reported, not hidden.
     """
 
     code = str(payload.get("source_code") or "")
     if not code:
-        return "this plot has no recorded code to re-run", None
+        return "this plot has no recorded code to re-run", None, None
     err = await _load_web_plot_backend(session, session.simulator)
     if err is not None:
-        return err, None
+        return err, None, None
     # Idempotent: an existing server answers with its real port, a fresh kernel
     # gets one started. Either way the reverse proxy learns where to dial.
     started = await session.julia.eval(jl.web_server_start(_free_port(), session.session_id))
     match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
     if started.error or match is None:
         reason = _truncate(started.error or "the server did not report a port", 200)
-        return f"the session's live plot server is unavailable ({reason})", None
+        return f"the session's live plot server is unavailable ({reason})", None, None
     session.web_plot_port = int(match.group(1))
 
     plot_id = _plot_id_of(payload)
@@ -381,11 +404,13 @@ async def replot_web(
             png_path=png_abs,
             html_path=session.output_dir / html_rel,
             route=route,
+            size=size,
             poster=record,
         )
     )
     if result.error:
-        return f"the plot code failed when re-run: {_truncate(result.error, 300)}", None
+        return f"the plot code failed when re-run: {_truncate(result.error, 300)}", None, None
+    size_px = _parse_fig_size(result.output)
     if record:
         _finalize_web(
             session,
@@ -398,9 +423,9 @@ async def replot_web(
             slot=payload.get("slot"),
             source_code=code,
             view=False,
-            size_px=_parse_fig_size(result.output),
+            size_px=size_px,
         )
-    return None, live_url
+    return None, live_url, size_px
 
 
 def make_plot_julia_tool(session: Session, *, surface: str | None = None):
@@ -518,17 +543,27 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
         if web:
             html_rel = rel_path[:-4] + ".html"
             html_abs = session.output_dir / html_rel
+            # Without an explicit size, extend the figure's height toward the
+            # browser panel's shape (the client keeps the session's hint fresh):
+            # the authored width — what the layout was designed for — is kept,
+            # so the panel fills vertically instead of letterboxing a wide figure.
+            aspect = _panel_aspect(session) if size is None else None
             # Serve live (in-figure widgets work) when the session's Bonito server
             # is up; otherwise fall back to a self-contained static export.
             if live_base:
                 route = jl.viz_route(plot_id)
                 call = jl.web_live_call(
-                    user_code=code, png_path=abs_path, html_path=html_abs, route=route, size=size
+                    user_code=code,
+                    png_path=abs_path,
+                    html_path=html_abs,
+                    route=route,
+                    size=size,
+                    aspect=aspect,
                 )
                 live_url = f"{live_base}{route}"
             else:
                 call = jl.web_render_call(
-                    user_code=code, png_path=abs_path, html_path=html_abs, size=size
+                    user_code=code, png_path=abs_path, html_path=html_abs, size=size, aspect=aspect
                 )
                 live_url = None
             result = await session.julia.eval(call)

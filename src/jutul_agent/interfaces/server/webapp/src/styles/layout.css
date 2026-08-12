@@ -363,17 +363,24 @@
 .canvas-body > img {
   object-fit: contain;
   padding: 1rem;
+  /* Image views (posters, snapshots) sit on the theme backdrop like staged
+     figures do; the image itself carries whatever background it was drawn on. */
+  background: var(--bg);
 }
 .canvas-body > iframe.active,
 .canvas-body > img.active {
   display: block;
 }
 /* The stage: where a figure sits in the panel. In "scale" mode the frame is the
-   figure's own (shrunk) rectangle, centered; in "fill" it is the whole panel. */
+   figure's own (shrunk) rectangle, centered; in "fill" it is the whole panel.
+   The stage itself is theme-colored: it is the letterbox around a scaled figure,
+   and a dark app must not frame a dark plot in white bands. (The body stays
+   white for report documents, which fill their panel and read as paper.) */
 .canvas-stage {
   position: absolute;
   inset: 0;
   display: none;
+  background: var(--bg);
 }
 .canvas-stage.active {
   display: block;

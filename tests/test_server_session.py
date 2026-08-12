@@ -864,7 +864,9 @@ async def test_replot_popout_serves_independent_route_and_close_releases_it(
     await st._replot("artifacts/res.png", "popout")
     (ready,) = [m for m in ws.sent if m["type"] == "popout_ready"]
     assert ready["error"] is None
-    assert ready["url"] == f"/live/{session.session_id}/viz/res--pop1"
+    # The popup gets the scale-to-fit wrapper, sized from the figure's echo
+    # (1600x900 from the fake kernel), hosting the independent live route.
+    assert ready["url"] == f"/popout/{session.session_id}?route=res--pop1&w=1600&h=900"
     assert not any(m["type"] == "viz" for m in ws.sent)  # no artifact re-recorded
     serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
     assert "res--pop1" in serve
@@ -877,6 +879,46 @@ async def test_replot_popout_serves_independent_route_and_close_releases_it(
     calls = len(session.julia.calls)
     await st._close_popout(ready["url"])
     assert len(session.julia.calls) == calls
+
+
+async def test_replot_with_target_size_refits_the_figure(tmp_path: Path) -> None:
+    # A regenerate that carries the stage's measured size re-fits the replayed
+    # figure to it; junk sizes are dropped rather than resized to.
+    st, ws, session = _plot_state(tmp_path)
+    await st._start_replot(
+        {"type": "replot", "record": "artifacts/res.png", "width": 900, "height": 850}
+    )
+    await st._turn
+    serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
+    assert "resize!(_fig, 900, 850)" in serve
+    # The viz reports the echoed size, not the request: the figure's own layout
+    # has the last word on what a resize actually produced.
+    viz = next(m for m in ws.sent if m["type"] == "viz")
+    assert (viz["width"], viz["height"]) == (1600, 900)
+
+
+async def test_replot_with_junk_size_replays_unresized(tmp_path: Path) -> None:
+    st, _ws, session = _plot_state(tmp_path)
+    await st._start_replot(
+        {"type": "replot", "record": "artifacts/res.png", "width": "huge", "height": -3}
+    )
+    await st._turn
+    serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
+    assert "resize!(_fig" not in serve
+
+
+async def test_canvas_size_hint_lands_on_the_session(tmp_path: Path) -> None:
+    # The ui_event hint doubles as live session state for plot_julia; junk
+    # measurements never overwrite a good hint.
+    st, _ws, session = _plot_state(tmp_path)
+    await st.handle(
+        {"type": "ui_event", "payload": {"kind": "canvas_size", "width": 810, "height": 930}}
+    )
+    assert session.web_canvas_hint == (810, 930)
+    await st.handle({"type": "ui_event", "payload": {"kind": "canvas_size", "width": 5}})
+    assert session.web_canvas_hint == (810, 930)
+    await st.handle({"type": "ui_event", "payload": "not a dict"})
+    assert session.web_canvas_hint == (810, 930)
 
 
 async def test_replot_refused_while_busy(tmp_path: Path) -> None:
