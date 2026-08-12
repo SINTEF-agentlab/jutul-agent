@@ -50,6 +50,10 @@ def test_popout_wrapper_stages_the_live_route() -> None:
         assert resp.headers["content-type"].startswith("text/html")
         assert 'src="/live/sid-1/viz/res--pop2"' in resp.text
         assert "let W = 1600, H = 900;" in resp.text
+        # The window's base canvas is painted before any CSS applies and is
+        # white until the page declares its schemes; without this a resize
+        # flashes white whatever the page's own background says.
+        assert "color-scheme: light dark" in resp.text
         # The wrapper scales down into a small window; when the scaled figure
         # covers the window poorly it asks the kernel to re-fit and stages the
         # size the server *echoes*, never the size it asked for.
@@ -59,7 +63,7 @@ def test_popout_wrapper_stages_the_live_route() -> None:
         assert "/popout/sid-1/refit?route=res--pop2" in resp.text
 
         # The refit endpoint validates like the wrapper and is 204 best-effort
-        # (no session here — the fallback presentation stands).
+        # (no session here, so the fallback presentation stands).
         assert (
             client.post(
                 "/popout/sid-1/refit", params={"route": "res--pop2", "w": 1200, "h": 900}

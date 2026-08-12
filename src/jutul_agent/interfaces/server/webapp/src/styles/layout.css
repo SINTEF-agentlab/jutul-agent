@@ -342,11 +342,15 @@
   gap: 0.15rem;
   flex: none;
 }
+/* Theme-colored: this is the panel a stage is laid over, and during a resize
+   the stage repaints a beat behind the panel's new size, and on white that beat
+   shows as a white rim around the figure. Documents bring their own paper (see
+   `.stage-frame.paper`), so nothing needs white here. */
 .canvas-body {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #fff;
+  background: var(--bg);
 }
 /* Direct children only: a plot's iframe lives inside its stage (below), which
    does its own sizing; these rules are for bare panels (images, custom kinds). */
@@ -389,7 +393,7 @@
    a served figure's page is fully transparent (html, body, every wrapper, and
    the WebGL canvas itself), so this surface is what the browser composites
    behind the canvas. A resize reallocates the drawing buffer and clears it,
-   and for that moment this colour IS the figure's background — white here
+   and for that moment this colour IS the figure's background: white here
    strobes the panel white on every re-fit, which is why the dark popout
    wrapper never flashed and the inline canvas did. Figures therefore sit on
    the theme colour and dim into their own panel. Documents keep white
