@@ -77,16 +77,18 @@ jobs:
       - name: Smoke test (env loads + using ${{ matrix.simulator }})
         run: uv run pytest tests/test_simulators_smoke.py -k ${{ matrix.simulator }} -ra
 
-  # One real system image, end to end. Not on PRs: a build is tens of minutes on
-  # top of the precompile, and what it guards against is upstream drift
-  # (PackageCompiler, Julia, the simulator) rather than our own changes, which
-  # the stubbed tests cover. One simulator is enough, since what could break here
-  # is the build machinery, not any particular env.
+  # One real system image, end to end. Weekly and on demand only: the build is
+  # over an hour of runner time, and what it guards against is upstream drift
+  # (PackageCompiler, Julia, the simulator) rather than our own changes, which the
+  # stubbed tests cover. One simulator is enough, since what could break here is
+  # the build machinery, not any particular env. Use `workflow_dispatch` on a
+  # branch when that machinery is what changed.
   sysimage:
     name: sysimage (jutuldarcy)
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    # A cold-cache build runs well over an hour before it has done anything wrong.
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
 
@@ -112,19 +114,39 @@ jobs:
 
       # A workspace bootstrapped exactly as a user would, since the image is a
       # snapshot of a prepared environment and inherits anything wrong with it.
+      # Under xvfb, like the lane above: the env's GLMakie wants a display to
+      # precompile, bake and verify.
       - name: Bootstrap a workspace
-        run: uv run jutul-agent init --sim jutuldarcy --workspace "$RUNNER_TEMP/ws"
+        run: xvfb-run -a uv run jutul-agent init --sim jutuldarcy --workspace "$RUNNER_TEMP/ws"
 
-      # PackageCompiler links the image with a C compiler and needs the disk for
-      # a multi-GB artifact, so a failure here is as likely to be the runner as
-      # the code; the free space is worth having in the log.
+      # PackageCompiler links a multi-GB image in one process, and 16 GB is not
+      # reliably enough: out of memory, the runner dies rather than the step, and
+      # the job ends as "The operation was canceled" with nothing to go on.
+      - name: Add swap
+        run: |
+          sudo fallocate -l 16G /swapfile-ci
+          sudo chmod 600 /swapfile-ci
+          sudo mkswap /swapfile-ci
+          sudo swapon /swapfile-ci
+          free -h
+
+      # `time -v` reports peak RSS across the process tree, so the log says how
+      # close the build came; the free disk is worth having for the same reason.
       - name: Build the system image
         run: |
           df -h /
-          uv run jutul-agent sysimage build --workspace "$RUNNER_TEMP/ws"
+          /usr/bin/time -v xvfb-run -a uv run jutul-agent sysimage build --workspace "$RUNNER_TEMP/ws"
           uv run jutul-agent sysimage status --workspace "$RUNNER_TEMP/ws"
+
+      # The kernel is the only place an out-of-memory kill is recorded.
+      - name: What the machine says, if the build died
+        if: failure()
+        run: |
+          free -h
+          df -h /
+          sudo dmesg | tail -50
 
       - name: Start a kernel from it, and check the staleness guard
         env:
           JUTUL_AGENT_SYSIMAGE_WORKSPACE: ${{ runner.temp }}/ws
-        run: uv run pytest tests/test_sysimage_integration.py -ra
+        run: xvfb-run -a uv run pytest tests/test_sysimage_integration.py -ra
