@@ -115,15 +115,27 @@ WEB_LIVE_ROUTE_CAP = 24
 FIG_SIZE_MARKER = "__JUTUL_FIG_SIZE__"
 
 
-def _fig_size_block(size: list[int] | None, aspect: float | None = None) -> str:
+# How much of its authored width a figure may lose when fitted to a narrower
+# panel. The floor is the squash guard: a wide dashboard's layout was designed
+# for its width, and past this much compression its controls start colliding
+# (measured with the reservoir explorer: fine at ~2/3, crowded at ~2/5). When
+# the floor binds, the figure stays wider than the panel and is scaled down —
+# still matching the panel's aspect, so the panel is filled either way.
+FIT_MIN_WIDTH_FRACTION = "2 / 3"
+
+
+def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str:
     """Julia to apply an explicit figure size and echo the size the figure has.
 
-    An explicit ``size`` wins. Otherwise ``aspect`` (height/width of the panel
-    the figure will land in) *extends* the figure: its authored width is kept —
-    that is the width its layout was designed for — and only its height grows to
-    match the panel's shape, so a wide dashboard fills the panel instead of
-    floating between letterbox bands. Extension only: a figure already taller
-    than the panel's shape is left alone rather than squashed.
+    An explicit ``size`` wins. Otherwise ``fit`` — the panel's pixel size — fits
+    the figure to the panel it will land in: the width becomes the panel's
+    (floored at ``FIT_MIN_WIDTH_FRACTION`` of the authored width, so a wide
+    layout is never crushed), and the height follows the panel's aspect but
+    never drops below the authored height at the new width (the layout only
+    ever gains relative room, it is never squashed). At the panel's own size
+    the figure shows at scale 1 — full-size text — and when the width floor
+    binds it still matches the panel's aspect, so the panel is filled without
+    bands at a mild scale instead.
 
     The echo reports the *resulting* size (viewport widths), not the request, so
     the recorded ``size_px`` is what the browser will actually receive — even
@@ -132,11 +144,16 @@ def _fig_size_block(size: list[int] | None, aspect: float | None = None) -> str:
     resize = ""
     if size is not None:
         resize = f"    _M.resize!(_fig, {int(size[0])}, {int(size[1])})\n"
-    elif aspect is not None:
+    elif fit is not None:
         resize = (
             "    let _vp = _fig.scene.viewport[]\n"
-            f"        local _t = round(Int, _vp.widths[1] * {float(aspect):.4f})\n"
-            "        _t > _vp.widths[2] && _M.resize!(_fig, round(Int, _vp.widths[1]), _t)\n"
+            f"        local _pw, _ph = {int(fit[0])}, {int(fit[1])}\n"
+            "        local _w0 = _vp.widths[1]\n"
+            "        local _h0 = _vp.widths[2]\n"
+            f"        local _wt = max(_pw, ceil(Int, _w0 * {FIT_MIN_WIDTH_FRACTION}))\n"
+            "        local _ht = max(round(Int, _wt * _ph / _pw), round(Int, _h0 * _wt / _w0))\n"
+            "        (_wt != round(Int, _w0) || _ht != round(Int, _h0)) &&\n"
+            "            _M.resize!(_fig, _wt, _ht)\n"
             "    end\n"
         )
     return (
@@ -394,7 +411,7 @@ def web_render_call(
     png_path: Path,
     html_path: Path,
     size: list[int] | None = None,
-    aspect: float | None = None,
+    fit: list[int] | None = None,
 ) -> str:
     """Julia to evaluate the user code and export the figure for the browser.
 
@@ -405,7 +422,7 @@ def web_render_call(
     return (
         "begin\n"
         + _web_figure_block(user_code)
-        + _fig_size_block(size, aspect)
+        + _fig_size_block(size, fit)
         + "    WGLMakie.activate!(resize_to = :parent)\n"
         + f'    Bonito.export_static(raw"{html_path.as_posix()}",\n'
         f'        Bonito.App(() -> Bonito.DOM.div(_fig; style = "{_WRAP_STYLE}")))\n'
@@ -489,7 +506,7 @@ def web_live_call(
     html_path: Path,
     route: str,
     size: list[int] | None = None,
-    aspect: float | None = None,
+    fit: list[int] | None = None,
     poster: bool = True,
 ) -> str:
     """Julia to build the figure, keep it alive, and serve it on the live route.
@@ -512,7 +529,7 @@ def web_live_call(
     return (
         "begin\n"
         + _web_figure_block(user_code)
-        + _fig_size_block(size, aspect)
+        + _fig_size_block(size, fit)
         + "    WGLMakie.activate!(resize_to = :parent)\n"
         + f'    Main.__JUTUL_WEB_FIGS__[raw"{route}"] = _fig\n'
         # Move the route to the end of the recency list (a re-plot on the same slot
