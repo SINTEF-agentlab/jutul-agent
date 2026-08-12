@@ -51,13 +51,15 @@ class _FakeJulia:
         self.verify_ok = verify_ok
         self.build_ok = build_ok
         self.calls: list[list[str]] = []
+        # What the "build" writes; a test can swap in real PE bytes.
+        self.image = b"image"
 
     def __call__(self, argv, *, capture: bool = False):
         self.calls.append(list(argv))
         script = argv[-1]
         if "create_sysimage" in script:
             if self.build_ok:
-                Path(_quoted_path(script, "sysimage_path")).write_bytes(b"image")
+                Path(_quoted_path(script, "sysimage_path")).write_bytes(self.image)
             return subprocess.CompletedProcess(argv, 0 if self.build_ok else 1, "", "")
         if "sysimage-verify" in script:
             return subprocess.CompletedProcess(
@@ -227,21 +229,108 @@ def test_windows_bakes_fewer_leaves_to_duck_the_dll_limit(
 def test_an_image_windows_cannot_load_is_refused_with_the_reason(
     tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Over the DLL limit the OS says '%1 is not a valid Win32 application',
+    """Over the OS limit the loader says '%1 is not a valid Win32 application',
     which explains nothing; the build has to say what actually happened."""
     ws = tmp_path / "ws"
     env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
     monkeypatch.setattr(sysimage_build, "on_windows", lambda: True)
     monkeypatch.setattr(sysimage, "on_windows", lambda: True)
-    # The fake build writes a 5-byte image; a 3-byte "limit" puts it over.
+    # The fake build writes a 5-byte image; a 3-byte "limit" puts it over,
+    # and 5 bytes of not-a-PE also exercises the file-size fallback.
     monkeypatch.setattr(sysimage_build, "WINDOWS_IMAGE_LIMIT", 3)
 
-    with pytest.raises(SysimageBuildError, match="2 GiB"):
+    with pytest.raises(SysimageBuildError, match="refuses to load"):
         build(workspace=ws, julia_project=env)
 
     assert not sysimage.sysimage_path(ws).exists()
     assert sysimage.read_stamp(ws) is None
     assert list(sysimage.sysimage_dir(ws).glob("candidate-*")) == []
+
+
+# ---------------------------------------------------------------------------
+# The Windows loader limit, which is on the mapped span, not the file.
+
+
+def write_pe(path: Path, *, data_size: int = 0x1000, debug_sizes: tuple[int, ...] = ()) -> int:
+    """A minimal PE32+ DLL shaped the way the linker shapes a sysimage:
+    load-bearing sections first, DWARF debug sections as a contiguous tail,
+    COFF symbol table after everything. Returns the header's SizeOfImage."""
+    import struct
+
+    file_align, sect_align = 512, 4096
+
+    def up(x: int, a: int) -> int:
+        return (x + a - 1) // a * a
+
+    names = [b".text", b".data"] + [f"/{4 + 15 * i}".encode() for i in range(len(debug_sizes))]
+    vsizes = [16, data_size, *debug_sizes]
+    headers = up(64 + 4 + 20 + 240 + len(names) * 40, file_align)
+    va, raw, rows = sect_align, headers, []
+    for name, vsize in zip(names, vsizes, strict=True):
+        rawsize = up(vsize, file_align)
+        rows.append((name, vsize, va, rawsize, raw))
+        va, raw = up(va + vsize, sect_align), raw + rawsize
+    size_of_image = va
+
+    dos = bytearray(64)
+    dos[:2] = b"MZ"
+    struct.pack_into("<I", dos, 0x3C, 64)
+    coff = struct.pack("<HHIIIHH", 0x8664, len(names), 0, raw, 1, 240, 0x2022)
+    opt = bytearray(240)
+    struct.pack_into("<H", opt, 0, 0x20B)
+    struct.pack_into("<Q", opt, 24, 0x180000000)
+    struct.pack_into("<II", opt, 32, sect_align, file_align)
+    struct.pack_into("<I", opt, 56, size_of_image)
+    struct.pack_into("<I", opt, 60, headers)
+    struct.pack_into("<I", opt, 108, 16)
+    table = b"".join(
+        struct.pack("<8sIIIIIIHHI", name, vsize, va, rawsize, rawptr, 0, 0, 0, 0, 0x42000040)
+        for name, vsize, va, rawsize, rawptr in rows
+    )
+    body = bytes(dos) + b"PE\0\0" + coff + bytes(opt) + table
+    with path.open("wb") as f:
+        f.write(body)
+        f.write(b"\0" * (headers - len(body)))
+        for _, _, _, rawsize, _ in rows:
+            f.write(b"\0" * rawsize)
+        f.write(b"symtab")  # what PointerToSymbolTable points at
+    return size_of_image
+
+
+def test_loader_size_reads_the_pe_header_not_the_file(tmp_path: Path) -> None:
+    """Windows judges SizeOfImage (the mapped span), not bytes on disk; the
+    failing geoteric build was 95 MiB under the old file-size check and was
+    refused anyway."""
+    image = tmp_path / "sys.dll"
+    size_of_image = write_pe(image, debug_sizes=(0x1000,))
+    assert sysimage_build._loader_size(image) == size_of_image
+    assert sysimage_build._loader_size(image) != image.stat().st_size
+
+    not_pe = tmp_path / "not-pe.dll"
+    not_pe.write_bytes(b"image")
+    assert sysimage_build._loader_size(not_pe) == 5
+
+
+def test_a_real_pe_over_the_limit_is_refused_by_its_mapped_size(
+    tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The judgement is the header's SizeOfImage, never the file: an image
+    whose file squeaks under the limit is still refused when its mapped span
+    does not, which is exactly the build that once died in verification."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    template = tmp_path / "template.dll"
+    size_of_image = write_pe(template)
+    julia.image = template.read_bytes()
+
+    monkeypatch.setattr(sysimage_build, "on_windows", lambda: True)
+    monkeypatch.setattr(sysimage, "on_windows", lambda: True)
+    monkeypatch.setattr(sysimage_build, "WINDOWS_IMAGE_LIMIT", size_of_image - 1)
+    with pytest.raises(SysimageBuildError, match="refuses to load"):
+        build(workspace=ws, julia_project=env)
+
+    monkeypatch.setattr(sysimage_build, "WINDOWS_IMAGE_LIMIT", size_of_image)
+    assert build(workspace=ws, julia_project=env).path.exists()
 
 
 def test_the_cpu_target_reaches_both_the_build_and_the_stamp(
