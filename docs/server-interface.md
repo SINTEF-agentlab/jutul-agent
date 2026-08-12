@@ -324,6 +324,10 @@ scale 1 — full-size text; and it is scaled up (capped at 3x) only until neithe
 dimension compresses below two thirds of its authored pixels, with the client
 scaling the overshoot back down. For a panel shaped within the clamp — the
 common case — the figure *is* the panel: no bands, no distortion, no scaling.
+After any fit or re-fit an overflow guard grows the figure until no layout
+block hangs outside the canvas (fixed-width controls can demand more than a
+compressed width offers), so the echoed size — never the requested one — is
+what the client stages.
 
 When a live view's panel no longer suits its figure — it grew past it, or
 changed shape enough that scaling leaves a large share of the panel unused —
