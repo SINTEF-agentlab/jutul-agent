@@ -8,7 +8,7 @@ import type { StoreApi } from "zustand/vanilla";
 import { ApiError, api } from "./api";
 import { stageSize } from "./canvas/stageSize";
 import { hostApiUrl, hostContext } from "./hostContext";
-import { HISTORY_CHANGED, type ClientMessage, type ServerMessage } from "./protocol";
+import { HISTORY_CHANGED, type ServerMessage } from "./protocol";
 import type { CredentialPrompt, SessionStore } from "./store";
 import { Transport } from "./transport";
 
@@ -195,7 +195,7 @@ export class Controller {
   // Deliver a prompt held while no socket was open (see `queuedPrompt`). The socket
   // buffers it if it is still connecting. The canvas hint rides ahead of it: a
   // fresh chat's first prompt takes this path, before any socket existed to
-  // carry the hint `deliver` normally sends — without this, the first plot of a
+  // carry the hint `deliver` normally sends, so without this the first plot of a
   // new session is the one plot not shaped for the panel.
   private flushQueuedPrompt(): void {
     if (!this.queuedPrompt) return;
@@ -213,7 +213,7 @@ export class Controller {
     } else if (msg.type === "popout_ready") {
       this.resolvePopout(msg.record, msg.url, msg.error ?? null);
     } else if (msg.type === "refit_done") {
-      // Stage what the figure actually became — the squash floor may have held
+      // Stage what the figure actually became; the squash floor may have held
       // the width, so the echo is the truth, never the size we asked for.
       const view = Object.values(this.s.views).find((v) => v.record === msg.record);
       if (view) this.s.setViewSize(view.id, msg.width, msg.height);
@@ -286,7 +286,7 @@ export class Controller {
     }, 1000);
   }
 
-  /** Re-run a dead view's recorded code so it comes back live, in place — and
+  /** Re-run a dead view's recorded code so it comes back live, in place, and
    *  re-fitted: a fresh panel-size hint rides ahead on the same socket, and the
    *  server fits the replay to it exactly as it fits a new plot (full-size text
    *  at the panel's size, width floored against squashing a wide layout). */
@@ -311,9 +311,9 @@ export class Controller {
   // forever for the same stage. A new stage size makes a new key.
   private sentRefits = new Map<string, string>();
 
-  /** A live view's stage and figure disagree on size — the panel grew, shrank,
+  /** A live view's stage and figure disagree on size: the panel grew, shrank,
    *  or changed shape: have the kernel re-fit the figure, in place. The
-   *  reliable direction — a kernel-side resize pushes the new layout through
+   *  reliable direction, since a kernel-side resize pushes the new layout through
    *  Bonito to the frame, while the served page noticing its own frame change
    *  is not dependable. The answer (`refit_done`) carries the real size to
    *  stage. Sent even mid-turn: the server queues the resize behind the
@@ -329,12 +329,12 @@ export class Controller {
 
   /** Tell the server how big the plot stage is (or will be), so a new figure
    *  is shaped for the panel it lands in. Sent with every prompt and after a
-   *  window resize settles — cheap, and only ever a hint. */
+   *  window resize settles. Cheap, and only ever a hint. */
   sendCanvasHint(): void {
     const { width, height } = stageSize();
     if (width < 100 || height < 100) return;
     // `send` buffers while the socket is still connecting and answers false
-    // with no socket at all — either way a missed hint is only a hint.
+    // with no socket at all; either way a missed hint is only a hint.
     this.transport.send({
       type: "ui_event",
       payload: { kind: "canvas_size", width, height },
