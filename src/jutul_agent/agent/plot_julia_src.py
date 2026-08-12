@@ -164,30 +164,42 @@ def _overflow_guard(makie: str) -> str:
     overshoot back down, so this costs a few percent of scale, never layout).
     Growing shifts fraction-positioned content with it, so each pass overshoots
     the deficit (4x covers the worst common case in one step; measured on the
-    explorer: 7px over at 1067 wide, inside at 1095 after one pass)."""
+    explorer: 7px over at 1067 wide, inside at 1095 after one pass).
+
+    Two bounds keep a pathological layout from running away. Total growth is
+    capped against the size the fit chose, not the previous pass, so a figure
+    whose overflow grows with its canvas — one that can never be satisfied —
+    costs at most half again its width, rather than compounding per pass into
+    something the browser has to scale down to unreadable. And a pass that
+    cannot move (already at the cap) stops the loop instead of re-resizing to
+    the same size, which would cost a canvas clear for nothing."""
 
     return (
-        "    for _pass in 1:3\n"
-        "        local _gvp = _fig.scene.viewport[]\n"
-        "        local _xhi, _yhi = 0.0, 0.0\n"
-        "        for _c in _fig.content\n"
-        "            local _bb = try\n"
-        "                _c.layoutobservables.computedbbox[]\n"
-        "            catch\n"
-        "                nothing\n"
+        "    let _w00 = _fig.scene.viewport[].widths[1], _h00 = _fig.scene.viewport[].widths[2]\n"
+        "        for _pass in 1:3\n"
+        "            local _gvp = _fig.scene.viewport[]\n"
+        "            local _xhi, _yhi = 0.0, 0.0\n"
+        "            for _c in _fig.content\n"
+        "                local _bb = try\n"
+        "                    _c.layoutobservables.computedbbox[]\n"
+        "                catch\n"
+        "                    nothing\n"
+        "                end\n"
+        "                _bb === nothing && continue\n"
+        "                _xhi = max(_xhi, _bb.origin[1] + _bb.widths[1])\n"
+        "                _yhi = max(_yhi, _bb.origin[2] + _bb.widths[2])\n"
         "            end\n"
-        "            _bb === nothing && continue\n"
-        "            _xhi = max(_xhi, _bb.origin[1] + _bb.widths[1])\n"
-        "            _yhi = max(_yhi, _bb.origin[2] + _bb.widths[2])\n"
+        "            local _ox = _xhi - _gvp.widths[1]\n"
+        "            local _oy = _yhi - _gvp.widths[2]\n"
+        "            (_ox <= 0 && _oy <= 0) && break\n"
+        "            local _gw = max(round(Int, _gvp.widths[1]),\n"
+        "                ceil(Int, min(_gvp.widths[1] + 4 * max(_ox, 0), 1.5 * _w00)))\n"
+        "            local _gh = max(round(Int, _gvp.widths[2]),\n"
+        "                ceil(Int, min(_gvp.widths[2] + 4 * max(_oy, 0), 1.5 * _h00)))\n"
+        "            (_gw == round(Int, _gvp.widths[1]) &&\n"
+        "                _gh == round(Int, _gvp.widths[2])) && break\n"
+        f"            {makie}.resize!(_fig, _gw, _gh)\n"
         "        end\n"
-        "        local _ox = _xhi - _gvp.widths[1]\n"
-        "        local _oy = _yhi - _gvp.widths[2]\n"
-        "        (_ox <= 0 && _oy <= 0) && break\n"
-        "        local _gw = clamp(ceil(Int, _gvp.widths[1] + 4 * max(_ox, 0)),\n"
-        "            _gvp.widths[1], 2 * _gvp.widths[1])\n"
-        "        local _gh = clamp(ceil(Int, _gvp.widths[2] + 4 * max(_oy, 0)),\n"
-        "            _gvp.widths[2], 2 * _gvp.widths[2])\n"
-        f"        {makie}.resize!(_fig, _gw, _gh)\n"
         "    end\n"
     )
 
