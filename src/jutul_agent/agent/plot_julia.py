@@ -469,6 +469,17 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
         live serving for the rest of the session; until it succeeds, plots render
         via the static export (a warning, not an error)."""
         nonlocal backend_loaded, live_base, warned_no_live
+        if backend_loaded:
+            # The memos outlive the kernel: a reset (`reset_julia`) silently
+            # clears the backend and the Bonito server while the Python session
+            # keeps both flags — probe, and redo whatever the kernel lost.
+            probe = await session.julia.eval(jl.plot_state_probe(web))
+            flags = re.search(rf"{jl.PLOT_STATE_MARKER}=(\w+),(\w+)", probe.output or "")
+            if flags is None or flags.group(1) != "true":
+                backend_loaded = False
+            if flags is None or flags.group(2) != "true":
+                live_base = None
+                session.web_plot_port = None
         if not backend_loaded:
             loader = _load_web_plot_backend if web else _load_plot_backend
             err = await loader(session, adapter)

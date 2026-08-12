@@ -298,6 +298,10 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
     assert "local _pw, _ph = 990, 1230" in code
     assert "clamp(_pw / _ph, (_w0 / _h0) * 2 / 3, (_w0 / _h0) / (2 / 3))" in code
     assert "clamp(max((_w0 * 2 / 3) / _w1, (_h0 * 2 / 3) / _h1), 1.0, 3.0)" in code
+    # The overflow guard runs after the fit: a layout whose block minimums
+    # exceed the compressed width grows back until nothing hangs outside.
+    assert "computedbbox" in code
+    assert code.index("_wt") < code.index("computedbbox") < code.index(FIG_SIZE_MARKER)
     # Fitting happens before the echo, so the recorded size is the truth.
     assert code.index("resize!") < code.index(FIG_SIZE_MARKER)
 
@@ -340,7 +344,10 @@ def test_resize_call_resizes_the_routed_figure_and_echoes() -> None:
     code = resize_web_fig_call("/viz/res", 1200, 1000)
     assert 'get(Main.__JUTUL_WEB_FIGS__, raw"/viz/res", nothing)' in code
     assert "resize!(_fig, 1200, 1000)" in code
-    assert FIG_SIZE_MARKER in code
+    # The overflow guard follows the resize and precedes the echo, so the echo
+    # reports the size the figure really settled at.
+    assert code.index("resize!(_fig, 1200, 1000)") < code.index("computedbbox")
+    assert code.index("computedbbox") < code.index(FIG_SIZE_MARKER)
     assert '"missing"' in code
 
 

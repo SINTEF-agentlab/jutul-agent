@@ -114,6 +114,24 @@ WEB_LIVE_ROUTE_CAP = 24
 # layout intact in a narrow panel.
 FIG_SIZE_MARKER = "__JUTUL_FIG_SIZE__"
 
+# What ``plot_state_probe`` prints: whether the plotting backend and (web) the
+# live figure registry still exist in this kernel. The plot tool memoizes both
+# setups, but a kernel reset silently clears them while the Python session
+# keeps the memos — without a probe, every later plot in that session would
+# serve into a kernel that no longer has a backend or a Bonito server.
+PLOT_STATE_MARKER = "__JUTUL_PLOT_STATE__"
+
+
+def plot_state_probe(web: bool) -> str:
+    """Julia to report whether the memoized plotting setup still exists."""
+    if web:
+        return (
+            f'println("{PLOT_STATE_MARKER}=", isdefined(Main, :Bonito),'
+            ' ",", isdefined(Main, :__JUTUL_WEB_FIGS__))'
+        )
+    return f'println("{PLOT_STATE_MARKER}=", isdefined(Main, :GLMakie), ",true")'
+
+
 # Printed before any fit or resize touches the figure: the size its code built
 # it at. A later re-fit (the panel changed shape under a live view) anchors its
 # squash floor to this, so refitting is idempotent — floors never ratchet.
@@ -135,13 +153,53 @@ FIT_MIN_FRACTION = "2 / 3"
 FIT_MAX_SCALE = "3.0"
 
 
+def _overflow_guard(makie: str) -> str:
+    """Julia to grow a just-resized figure until its layout fits its canvas.
+
+    A layout whose block minimums (fixed-width labels, buttons, textboxes) sum
+    past a compressed figure's width hangs the excess out the right edge —
+    Makie places it, the canvas clips it (the reservoir explorer's checkbox
+    labels, measured live). Measure the union of the blocks' computed bboxes
+    and, while any block sticks out, grow the canvas (the browser scales the
+    overshoot back down, so this costs a few percent of scale, never layout).
+    Growing shifts fraction-positioned content with it, so each pass overshoots
+    the deficit (4x covers the worst common case in one step; measured on the
+    explorer: 7px over at 1067 wide, inside at 1095 after one pass)."""
+
+    return (
+        "    for _pass in 1:3\n"
+        "        local _gvp = _fig.scene.viewport[]\n"
+        "        local _xhi, _yhi = 0.0, 0.0\n"
+        "        for _c in _fig.content\n"
+        "            local _bb = try\n"
+        "                _c.layoutobservables.computedbbox[]\n"
+        "            catch\n"
+        "                nothing\n"
+        "            end\n"
+        "            _bb === nothing && continue\n"
+        "            _xhi = max(_xhi, _bb.origin[1] + _bb.widths[1])\n"
+        "            _yhi = max(_yhi, _bb.origin[2] + _bb.widths[2])\n"
+        "        end\n"
+        "        local _ox = _xhi - _gvp.widths[1]\n"
+        "        local _oy = _yhi - _gvp.widths[2]\n"
+        "        (_ox <= 0 && _oy <= 0) && break\n"
+        "        local _gw = clamp(ceil(Int, _gvp.widths[1] + 4 * max(_ox, 0)),\n"
+        "            _gvp.widths[1], 2 * _gvp.widths[1])\n"
+        "        local _gh = clamp(ceil(Int, _gvp.widths[2] + 4 * max(_oy, 0)),\n"
+        "            _gvp.widths[2], 2 * _gvp.widths[2])\n"
+        f"        {makie}.resize!(_fig, _gw, _gh)\n"
+        "    end\n"
+    )
+
+
 def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str:
     """Julia to apply an explicit figure size and echo the size the figure has.
 
     An explicit ``size`` wins; otherwise ``fit`` — the panel's pixel size —
-    applies the fit rule above. The echo reports the *resulting* size, not the
-    request, so the recorded ``size_px`` is what the browser will receive even
-    when the figure's own layout refused part of the resize."""
+    applies the fit rule above, then the overflow guard. The echo reports the
+    *resulting* size, not the request, so the recorded ``size_px`` is what the
+    browser will receive even when the figure's own layout refused part of the
+    resize (or the guard grew it past the request)."""
 
     resize = ""
     if size is not None:
@@ -162,7 +220,7 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
             "        local _ht = round(Int, _h1 * _s)\n"
             "        (_wt != round(Int, _w0) || _ht != round(Int, _h0)) &&\n"
             "            _M.resize!(_fig, _wt, _ht)\n"
-            "    end\n"
+            "    end\n" + _overflow_guard("_M")
         )
     return (
         "    let _vp = _fig.scene.viewport[]\n"
@@ -699,8 +757,10 @@ def resize_web_fig_call(route: str, width: int, height: int) -> str:
     a browser-side resize relies on the served page telling Julia, which is
     measurably unreliable, while a kernel-side ``resize!`` pushes the new
     layout to every connected view through Bonito's own observable traffic.
-    Figure state (camera, widgets) is untouched. Echoes the resulting size;
-    answers ``missing`` for a route not serving a figure."""
+    Figure state (camera, widgets) is untouched. The overflow guard runs after
+    the resize, so a layout whose minimums exceed the target grows to fit and
+    the echo reports the size the figure really has. Answers ``missing`` for a
+    route not serving a figure."""
 
     return (
         "begin\n"
@@ -714,7 +774,8 @@ def resize_web_fig_call(route: str, width: int, height: int) -> str:
         f" round(Int, _vp.widths[2]) != {int(height)}) &&\n"
         f"                WGLMakie.Makie.resize!(_fig, {int(width)}, {int(height)})\n"
         "        end\n"
-        "        let _vp = _fig.scene.viewport[]\n"
+        + _overflow_guard("WGLMakie.Makie")
+        + "        let _vp = _fig.scene.viewport[]\n"
         f'            println("{FIG_SIZE_MARKER}=", _vp.widths[1], "x", _vp.widths[2])\n'
         "        end\n"
         '        "ok"\n'

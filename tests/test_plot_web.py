@@ -80,6 +80,45 @@ async def test_web_surface_serves_plot_live(tmp_path: Path) -> None:
         log.close()
 
 
+async def test_plot_setup_heals_after_a_kernel_reset(tmp_path: Path) -> None:
+    # The tool memoizes the backend load and the Bonito server, but a kernel
+    # reset (`reset_julia`) silently clears both while the Python session keeps
+    # the memos. A per-plot state probe must notice and redo the lost setup —
+    # without it, every plot after a reset serves into a kernel with no
+    # backend and no live-figure registry, forever.
+    seen: list[str] = []
+    kernel_reset = False
+
+    async def fake_eval(code: str) -> EvalResult:
+        seen.append(code)
+        if jl_src.PLOT_STATE_MARKER in code:
+            state = "false,false" if kernel_reset else "true,true"
+            return EvalResult(output=f"{jl_src.PLOT_STATE_MARKER}={state}")
+        if "Bonito.Server" in code:
+            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+        return EvalResult(output="")
+
+    session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
+    tool = make_plot_julia_tool(session, surface="web")
+
+    await _call(tool, {"code": "lines(1:3)", "slot": "a"})
+    starts = sum("Bonito.Server" in c for c in seen)
+    imports = sum(c.strip() == "import CairoMakie, WGLMakie, Bonito" for c in seen)
+    assert starts == 1 and imports == 1
+
+    # A healthy kernel: the probe answers true and nothing is redone.
+    await _call(tool, {"code": "lines(1:3)", "slot": "b"})
+    assert sum("Bonito.Server" in c for c in seen) == 1
+    assert sum(c.strip() == "import CairoMakie, WGLMakie, Bonito" for c in seen) == 1
+
+    # The kernel resets: the next plot reloads the backend and restarts the server.
+    kernel_reset = True
+    await _call(tool, {"code": "lines(1:3)", "slot": "c"})
+    assert sum("Bonito.Server" in c for c in seen) == 2
+    assert sum(c.strip() == "import CairoMakie, WGLMakie, Bonito" for c in seen) == 2
+    assert session.web_plot_port == 51000
+
+
 async def test_web_plot_without_size_fits_the_panel_hint(tmp_path: Path) -> None:
     # With a canvas-size hint on the session and no explicit size, the figure
     # is fitted to the panel (width floored against squash, height following
