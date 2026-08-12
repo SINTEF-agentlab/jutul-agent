@@ -249,6 +249,16 @@ def popout_ready_to_wire(
     return {"type": "popout_ready", "record": record, "url": url, "error": error}
 
 
+def refit_done_to_wire(record: str, width: int, height: int) -> dict[str, Any]:
+    """A ``refit`` landed: the figure's real size now, from the kernel's echo.
+
+    Can differ from what the client asked for (the squash floor may hold the
+    width), so the client stages the echo, never its own request.
+    """
+
+    return {"type": "refit_done", "record": record, "width": width, "height": height}
+
+
 def error_to_wire(message: str) -> dict[str, Any]:
     """A surfaced failure that keeps the session alive (bad command, failed turn)."""
 

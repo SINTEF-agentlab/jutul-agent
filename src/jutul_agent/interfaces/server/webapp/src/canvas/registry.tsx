@@ -144,9 +144,10 @@ export interface StagedFrameProps {
   /** Hold ms after `load` before reporting loaded (WebGL reflow flash). */
   hold: number;
   onLoaded: () => void;
-  /** Called (debounced) when the stage has grown past the figure in both
-   *  dimensions — the caller re-fits the live figure to the new size. */
-  onGrown?: (width: number, height: number) => void;
+  /** Called (debounced) when the stage and the figure disagree on size — the
+   *  panel grew, shrank, or changed shape — with the stage's settled size; the
+   *  caller re-fits the live figure for it. */
+  onMismatch?: (width: number, height: number) => void;
 }
 
 /** One figure frame inside its stage: the sizing core shared by static plot
@@ -165,7 +166,7 @@ export function StagedFrame({
   probe,
   hold,
   onLoaded,
-  onGrown,
+  onMismatch,
 }: StagedFrameProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Clear a pending hold-timer if the panel unmounts first (tab/canvas closed),
@@ -193,16 +194,18 @@ export function StagedFrame({
   const [nudge, setNudge] = useState(0);
   const sized = !!width && !!height;
 
-  // The stage grew past the figure in both dimensions: after the size settles,
-  // ask for a kernel-side re-fit (the caller decides what that means). Each box
-  // change restarts the timer, so only the settled size fires.
+  // The stage and the figure disagree on size — the panel grew, shrank, or
+  // changed shape: after the size settles, ask for a kernel-side re-fit (the
+  // caller decides what that means). A small tolerance ignores rounding; each
+  // box change restarts the timer, so only the settled size fires.
   useEffect(() => {
-    if (!onGrown || !sized || !active || mode !== "scale") return;
-    const grown = box.w >= width! && box.h >= height! && (box.w > width! || box.h > height!);
-    if (!grown) return;
-    const t = setTimeout(() => onGrown(box.w, box.h), 600);
+    if (!onMismatch || !sized || !active || mode !== "scale") return;
+    if (box.w < 100 || box.h < 100) return;
+    const mismatch = Math.abs(box.w - width!) > 8 || Math.abs(box.h - height!) > 8;
+    if (!mismatch) return;
+    const t = setTimeout(() => onMismatch(box.w, box.h), 600);
     return () => clearTimeout(t);
-  }, [onGrown, sized, active, mode, box.w, box.h, width, height]);
+  }, [onMismatch, sized, active, mode, box.w, box.h, width, height]);
 
   const handleLoad = () => {
     if (hold) timer.current = setTimeout(onLoaded, hold);

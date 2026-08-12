@@ -212,6 +212,11 @@ export class Controller {
       this.refreshHistory();
     } else if (msg.type === "popout_ready") {
       this.resolvePopout(msg.record, msg.url, msg.error ?? null);
+    } else if (msg.type === "refit_done") {
+      // Stage what the figure actually became — the squash floor may have held
+      // the width, so the echo is the truth, never the size we asked for.
+      const view = Object.values(this.s.views).find((v) => v.record === msg.record);
+      if (view) this.s.setViewSize(view.id, msg.width, msg.height);
     } else if (msg.type === "credential_required") {
       // The server refused a model switch for want of a key (the UI usually catches
       // this before sending; this covers any path that slips through). Prompt for it.
@@ -301,19 +306,25 @@ export class Controller {
     this.s.beginWorking(); // the refreshed viz + turn_end (or an error) clears it
   }
 
-  /** A live view's stage grew past its figure: have the kernel re-fit the
-   *  figure to the stage, in place. The reliable direction — a kernel-side
-   *  resize pushes the new layout through Bonito to the frame, while the served
-   *  page noticing its own frame grow is not dependable. Optimistically records
-   *  the new size so the stage stops letterboxing at once; best-effort beyond
-   *  that (a busy kernel skips it, and the scaled view is always correct). */
+  // The last stage size each view asked a refit for, so a request whose answer
+  // could not match it exactly (the squash floor held the width) is not re-sent
+  // forever for the same stage. A new stage size makes a new key.
+  private sentRefits = new Map<string, string>();
+
+  /** A live view's stage and figure disagree on size — the panel grew, shrank,
+   *  or changed shape: have the kernel re-fit the figure, in place. The
+   *  reliable direction — a kernel-side resize pushes the new layout through
+   *  Bonito to the frame, while the served page noticing its own frame change
+   *  is not dependable. The answer (`refit_done`) carries the real size to
+   *  stage. Sent even mid-turn: the server queues the resize behind the
+   *  kernel's current eval and it lands the moment the kernel frees. */
   refitView(viewId: string, width: number, height: number): void {
     const view = this.s.views[viewId];
     if (!view?.record || !view.live) return;
-    // Sent even mid-turn: the server queues the resize behind the kernel's
-    // current eval (a running simulation), and it lands the moment it frees.
+    const key = `${width}x${height}`;
+    if (this.sentRefits.get(viewId) === key) return;
     if (!this.transport.send({ type: "refit", record: view.record, width, height })) return;
-    this.s.setViewSize(viewId, width, height);
+    this.sentRefits.set(viewId, key);
   }
 
   /** Tell the server how big the plot stage is (or will be), so a new figure

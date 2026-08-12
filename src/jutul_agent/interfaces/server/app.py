@@ -76,6 +76,30 @@ _LIVE_HTTP_TIMEOUT = {"connect": 5.0, "read": 300.0, "write": 30.0, "pool": 30.0
 _ROUTE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:--pop\d+)?")
 
 
+def _fit_target(stage: list[int], authored: Any) -> list[int]:
+    """The size a re-fit resizes a live figure to, for a ``stage``-sized panel.
+
+    The Python twin of the serve-time fit in ``jl._fig_size_block``, anchored to
+    the figure's *authored* size: width becomes the panel's but never drops
+    below the squash floor, and height follows the panel's aspect but never
+    drops below the authored height at the chosen width. Anchoring to the
+    authored size (not the current one) makes refitting idempotent — however
+    often the panel changes shape, the floors never ratchet. Without a recorded
+    authored size the stage itself is the target.
+    """
+    import math
+
+    sw, sh = stage
+    if not (isinstance(authored, (list, tuple)) and len(authored) == 2):
+        return [sw, sh]
+    aw, ah = int(authored[0]), int(authored[1])
+    if aw <= 0 or ah <= 0:
+        return [sw, sh]
+    tw = max(sw, math.ceil(aw * 2 / 3))
+    th = max(round(tw * sh / sw), round(ah * tw / aw))
+    return [tw, th]
+
+
 def _sane_size(width: Any, height: Any) -> list[int] | None:
     """A client-supplied pixel size as ``[w, h]``, or ``None`` if implausible.
 
@@ -1615,21 +1639,25 @@ class _StreamState:
             )
 
     async def _refit(self, message: dict[str, Any]) -> None:
-        """Resize a live figure to its frame's new size, in place.
+        """Re-fit a live figure to its panel's new size, in place.
 
-        The canvas sends this when its stage outgrows a live view: the kernel
-        ``resize!``-es the routed figure and Bonito pushes the new layout to
-        the connected frame — camera and widget state untouched, no code
-        re-run. The eval is spawned, not awaited: kernel evals serialize on
-        their own lock, so during a running turn (a simulation, a long solve)
-        the resize simply queues and lands the moment the kernel frees — and
-        the WebSocket receive loop stays responsive for cancels and decisions
-        meanwhile. Silent on failure: the client's scaled presentation is the
-        always-correct fallback.
+        The canvas sends this whenever its stage and a live view disagree on
+        size — the panel grew, shrank, or changed shape. The target comes from
+        the same rule that fits a fresh plot, anchored to the figure's recorded
+        *authored* size so the squash floor never ratchets, and the kernel
+        ``resize!``-es the routed figure — camera and widget state untouched,
+        no code re-run. The answer is a ``refit_done`` with the echoed size, so
+        the client stages exactly what the figure became (which is not always
+        what it asked for: the floor may have held the width).
+
+        The eval is spawned, not awaited: kernel evals serialize on their own
+        lock, so during a running turn (a simulation, a long solve) the resize
+        queues and lands the moment the kernel frees — and the WebSocket
+        receive loop stays responsive for cancels and decisions meanwhile.
         """
         record = str(message.get("record") or "")
-        size = _sane_size(message.get("width"), message.get("height"))
-        if not record or size is None:
+        stage = _sane_size(message.get("width"), message.get("height"))
+        if not record or stage is None:
             return
         from jutul_agent.agent.plot_julia import _plot_id_of, refit_web
 
@@ -1643,10 +1671,15 @@ class _StreamState:
         )
         if payload is None:
             return
+        target = _fit_target(stage, payload.get("authored_px") or payload.get("size_px"))
 
         async def run() -> None:
             with contextlib.suppress(Exception):
-                await refit_web(self._host.session, _plot_id_of(payload), size)
+                err, echoed = await refit_web(self._host.session, _plot_id_of(payload), target)
+                if err is None and echoed is not None:
+                    await _safe_send(
+                        self._ws, protocol.refit_done_to_wire(record, echoed[0], echoed[1])
+                    )
 
         task = asyncio.create_task(run())
         # Keep a reference so the task isn't garbage-collected mid-flight.
