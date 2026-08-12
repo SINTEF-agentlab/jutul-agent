@@ -32,6 +32,7 @@ from pathlib import Path
 
 from jutul_agent.sysimage import (
     image_suffix,
+    on_windows,
     sysimage_dir,
     sysimage_path,
     write_stamp,
@@ -93,15 +94,29 @@ def ensure_builder_env() -> Path:
     return env
 
 
-def baked_packages(julia_project: Path) -> tuple[str, ...]:
-    """The packages an image built from this project will contain.
+# Left out of a Windows image so it fits under the DLL limit *with its
+# docstrings intact*: sessions look Julia documentation up all the time, and an
+# image stripped of metadata answers every ``@doc`` with nothing. Each name here
+# is a leaf of the environment -- nothing else that is baked depends on it, or
+# excluding it would remove nothing (``create_sysimage`` always bakes the
+# closure of what it is given). These stay in the environment and load from
+# their own pkgimages at first use: the graph/table export paths, not the
+# solve/plot core.
+WINDOWS_UNBAKED = frozenset({"CSV", "DataFrames", "GraphMakie", "LayeredLayouts", "NetworkLayout"})
 
-    The same set ``create_sysimage`` picks by default (every direct dependency),
-    read here so the build can say what it is about to do and how long a list it
-    is working through.
+
+def baked_packages(julia_project: Path) -> tuple[str, ...]:
+    """The packages the image is built from (and verified to really contain).
+
+    Every direct dependency of the project -- ``create_sysimage``'s own default
+    -- except, on Windows, the :data:`WINDOWS_UNBAKED` leaves the image sheds to
+    stay under the 2 GiB DLL limit.
     """
 
-    return tuple(sorted(_project_deps(julia_project)))
+    deps = _project_deps(julia_project)
+    if on_windows():
+        deps -= WINDOWS_UNBAKED
+    return tuple(sorted(deps))
 
 
 def _project_deps(julia_project: Path) -> set[str]:
@@ -277,7 +292,10 @@ def build(
         _julia(
             [
                 "using PackageCompiler",
-                "create_sysimage(;"
+                # The bake list is passed explicitly (rather than defaulted to
+                # every direct dependency) so the Windows exclusions above are
+                # honoured; elsewhere the list *is* every direct dependency.
+                "create_sysimage(" + _julia_string_vector(list(packages)) + ";"
                 f' sysimage_path = raw"{candidate.as_posix()}",'
                 f' project = raw"{julia_project.as_posix()}",'
                 f' cpu_target = "{cpu_target}",'
@@ -289,6 +307,7 @@ def build(
         )
         if not candidate.exists():
             raise SysimageBuildError("the build reported success but produced no image")
+        _check_loadable_size(candidate)
         if verify:
             # Narrated because it is captured: starting Julia on a multi-GB image
             # and rendering a figure takes long enough to read as a stall otherwise.
@@ -325,6 +344,32 @@ def build(
         packages=packages,
         verified=verify,
         contained=len(state.versions) + len(state.path_packages),
+    )
+
+
+# Windows cannot load a DLL of 2 GiB or more, a hard OS limit PackageCompiler
+# cannot lift (LoadLibrary fails with the unhelpful "%1 is not a valid Win32
+# application"). A full simulator environment builds to right around that line.
+WINDOWS_IMAGE_LIMIT = 2**31
+
+
+def _check_loadable_size(candidate: Path) -> None:
+    """Refuse an image Windows will not load, with the reason spelled out.
+
+    Without this the failure arrives from verification as "%1 is not a valid
+    Win32 application", which explains nothing and looks like a broken build
+    rather than a hard OS limit.
+    """
+
+    size = candidate.stat().st_size
+    if not on_windows() or size < WINDOWS_IMAGE_LIMIT:
+        return
+    raise SysimageBuildError(
+        f"the built image is {size / 2**30:.2f} GiB, and Windows cannot load a "
+        "DLL of 2 GiB or more, so it can never be used. The environment simply "
+        "has too much to bake on this platform: trim its dependencies (capability "
+        "packages included), or run without a system image until Julia ships "
+        "compressed images (planned for 1.13)."
     )
 
 

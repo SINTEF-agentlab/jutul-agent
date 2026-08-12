@@ -87,6 +87,18 @@ The image is compiled for the machine that builds it. Pass
 `--cpu-target generic` (or another target) to build one that will run on
 different hardware, at some cost in speed.
 
+### Windows and the 2 GiB limit
+
+Windows cannot load a DLL of 2 GiB or more, and a full simulator environment
+builds to right around that line. A Windows image therefore leaves a handful of
+leaf packages out of the bake (the graph-plot and table-export paths: CSV,
+DataFrames, GraphMakie and its layout packages). They stay in the environment
+and load the ordinary way at first use, so nothing is lost but a few seconds,
+once, on the sessions that use them. Docstrings are kept: stripping metadata
+would fit too, but then every `@doc` in a session answers with nothing, which
+an agent that reads documentation cannot afford. Julia 1.13's compressed images
+should remove the need for any of this.
+
 ## Staying in sync
 
 A package inside a system image is never checked against its source. A pkgimage
