@@ -196,6 +196,54 @@ def test_an_image_held_open_fails_cleanly_rather_than_with_a_traceback(
     assert list(sysimage.sysimage_dir(ws).glob("candidate-*")) == []
 
 
+def test_windows_bakes_fewer_leaves_to_duck_the_dll_limit(
+    tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows cannot load a DLL of 2 GiB or more, and a full env builds to right
+    over that line. The image sheds leaf packages rather than docstrings:
+    stripping metadata would fit too, but then every `@doc` in a session
+    answers with nothing, which an agent that reads documentation cannot afford."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a", "DataFrames": "b", "CSV": "c"})
+
+    monkeypatch.setattr(sysimage_build, "on_windows", lambda: True)
+    monkeypatch.setattr(sysimage, "on_windows", lambda: True)
+    assert baked_packages(env) == ("JutulDarcy",)
+    build(workspace=ws, julia_project=env)
+    create = next(call for call in julia.calls if "create_sysimage" in call[-1])
+    assert '"JutulDarcy"' in create[-1]
+    assert "DataFrames" not in create[-1] and "CSV" not in create[-1]
+
+    julia.calls.clear()
+    monkeypatch.setattr(sysimage_build, "on_windows", lambda: False)
+    monkeypatch.setattr(sysimage, "on_windows", lambda: False)
+    # Elsewhere there is no limit to duck under, and everything is baked.
+    assert baked_packages(env) == ("CSV", "DataFrames", "JutulDarcy")
+    build(workspace=ws, julia_project=env)
+    create = next(call for call in julia.calls if "create_sysimage" in call[-1])
+    assert '"DataFrames"' in create[-1] and '"CSV"' in create[-1]
+
+
+def test_an_image_windows_cannot_load_is_refused_with_the_reason(
+    tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Over the DLL limit the OS says '%1 is not a valid Win32 application',
+    which explains nothing; the build has to say what actually happened."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    monkeypatch.setattr(sysimage_build, "on_windows", lambda: True)
+    monkeypatch.setattr(sysimage, "on_windows", lambda: True)
+    # The fake build writes a 5-byte image; a 3-byte "limit" puts it over.
+    monkeypatch.setattr(sysimage_build, "WINDOWS_IMAGE_LIMIT", 3)
+
+    with pytest.raises(SysimageBuildError, match="2 GiB"):
+        build(workspace=ws, julia_project=env)
+
+    assert not sysimage.sysimage_path(ws).exists()
+    assert sysimage.read_stamp(ws) is None
+    assert list(sysimage.sysimage_dir(ws).glob("candidate-*")) == []
+
+
 def test_the_cpu_target_reaches_both_the_build_and_the_stamp(
     tmp_path: Path, julia: _FakeJulia
 ) -> None:
