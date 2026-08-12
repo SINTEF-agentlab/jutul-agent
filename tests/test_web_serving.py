@@ -50,6 +50,8 @@ def test_popout_wrapper_stages_the_live_route() -> None:
         assert resp.headers["content-type"].startswith("text/html")
         assert 'src="/live/sid-1/viz/res--pop2"' in resp.text
         assert "const W = 1600, H = 900;" in resp.text
+        # Both fit branches ship: reflow into a grown window, scale into a small one.
+        assert "s >= 1" in resp.text and "scale(" in resp.text
 
         # A route id that is not a plot route (path tricks, markup) 404s.
         for bad in ("../../etc", "a/b", "<script>", "x" * 80):

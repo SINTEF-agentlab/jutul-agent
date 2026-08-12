@@ -93,8 +93,11 @@ def _sane_size(width: Any, height: Any) -> list[int] | None:
 
 
 # The popout wrapper page (see ``popout_wrapper``). Placeholders instead of an
-# f-string so the JS braces stay readable; the scale never exceeds 1 because a
-# canvas grown by CSS blurs — growth letterboxes on the dark backdrop instead.
+# f-string so the JS braces stay readable. A window *smaller* than the figure
+# scales it down to fit (never CSS-upscaled: a canvas grown by CSS blurs); a
+# window *bigger* than the figure hands the frame the whole window and the
+# served figure reflows larger — growth is the safe direction, so text keeps
+# its size and the extra room becomes plot area instead of letterbox.
 _POPOUT_WRAPPER_HTML = """<!doctype html>
 <html>
 <head>
@@ -103,19 +106,31 @@ _POPOUT_WRAPPER_HTML = """<!doctype html>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #101114; }
   #stage { position: absolute; transform-origin: top left; }
-  iframe { display: block; border: 0; width: __W__px; height: __H__px; }
+  iframe { display: block; border: 0; }
 </style>
 </head>
 <body>
-<div id="stage"><iframe src="__SRC__" allow="fullscreen"></iframe></div>
+<div id="stage"><iframe id="frame" src="__SRC__" allow="fullscreen"></iframe></div>
 <script>
   const W = __W__, H = __H__;
   function fit() {
-    const s = Math.min(innerWidth / W, innerHeight / H, 1);
+    const s = Math.min(innerWidth / W, innerHeight / H);
     const stage = document.getElementById("stage");
-    stage.style.transform = "scale(" + s + ")";
-    stage.style.left = Math.max(0, (innerWidth - W * s) / 2) + "px";
-    stage.style.top = Math.max(0, (innerHeight - H * s) / 2) + "px";
+    const frame = document.getElementById("frame");
+    if (s >= 1) {
+      // Grown past the figure: reflow it to the window.
+      frame.style.width = innerWidth + "px";
+      frame.style.height = innerHeight + "px";
+      stage.style.transform = "none";
+      stage.style.left = "0px";
+      stage.style.top = "0px";
+    } else {
+      frame.style.width = W + "px";
+      frame.style.height = H + "px";
+      stage.style.transform = "scale(" + s + ")";
+      stage.style.left = Math.max(0, (innerWidth - W * s) / 2) + "px";
+      stage.style.top = Math.max(0, (innerHeight - H * s) / 2) + "px";
+    }
   }
   addEventListener("resize", fit);
   fit();
