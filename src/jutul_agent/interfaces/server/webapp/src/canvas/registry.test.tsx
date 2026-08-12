@@ -114,14 +114,11 @@ describe("stageGeometry", () => {
     expect(g.top).toBe(Math.round((952 - g.height) / 2));
   });
 
-  it("scale never upscales past the figure's own size", () => {
-    // A canvas grown by CSS blurs, so a panel larger than the figure centers it 1:1.
+  it("scale hands a bigger stage to the frame so the figure reflows, not blurs", () => {
+    // A canvas grown by CSS blurs, so a panel larger than the figure gives the
+    // frame the whole panel instead — the served figure reflows into the room.
     const g = stageGeometry("scale", 800, 600, 2000, 1500);
-    expect(g.scale).toBe(1);
-    expect(g.width).toBe(800);
-    expect(g.height).toBe(600);
-    expect(g.left).toBe(600);
-    expect(g.top).toBe(450);
+    expect(g).toEqual({ left: 0, top: 0, width: 2000, height: 1500, scale: 1 });
   });
 
   it("fill hands the figure the whole box", () => {

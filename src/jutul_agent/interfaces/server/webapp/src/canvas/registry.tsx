@@ -102,9 +102,12 @@ function useLiveReady(url: string, enabled: boolean, resetKey: number): boolean 
 }
 
 /** The stage rectangle for a figure of design size ``w x h`` in a ``bw x bh``
- *  panel. "scale" fits the figure at its own layout, shrunk as needed (never
- *  upscaled: a canvas grown by CSS blurs) and centered; "fill" hands the figure
- *  the whole panel to reflow into. */
+ *  panel. "scale" fits the figure at its own layout, shrunk as needed and
+ *  centered — but never CSS-upscaled (a canvas grown by CSS blurs): a stage
+ *  *bigger* than the figure hands the frame the whole panel instead, so the
+ *  served figure reflows larger. Growth is the safe direction — text keeps its
+ *  size and the extra room becomes plot area, not letterbox. "fill" hands the
+ *  figure the whole panel unconditionally. */
 export function stageGeometry(
   mode: ViewMode,
   w: number,
@@ -115,7 +118,10 @@ export function stageGeometry(
   if (mode === "fill" || bw <= 0 || bh <= 0 || w <= 0 || h <= 0) {
     return { left: 0, top: 0, width: bw, height: bh, scale: 1 };
   }
-  const scale = Math.min(bw / w, bh / h, 1);
+  const scale = Math.min(bw / w, bh / h);
+  if (scale >= 1) {
+    return { left: 0, top: 0, width: bw, height: bh, scale: 1 };
+  }
   const width = Math.round(w * scale);
   const height = Math.round(h * scale);
   return {
