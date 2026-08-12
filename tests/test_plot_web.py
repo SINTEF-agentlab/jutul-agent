@@ -108,6 +108,35 @@ async def test_web_plot_without_size_extends_toward_the_panel_hint(tmp_path: Pat
     assert "1.1500" not in routed
 
 
+async def test_unslotted_plot_replays_onto_its_original_route(tmp_path: Path) -> None:
+    # An unslotted plot's live route and its artifact stem must be the same
+    # name: a replay derives the route from the record, and only the original
+    # route revives the browser view in place (a drifted route shows up as a
+    # duplicate view instead).
+    from jutul_agent.agent.plot_julia import replot_web
+
+    async def fake_eval(code: str) -> EvalResult:
+        if "Bonito.Server" in code:
+            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+        return EvalResult(output="")
+
+    session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
+    tool = make_plot_julia_tool(session, surface="web")
+    await _call(tool, {"code": "lines(1:3)"})
+
+    from jutul_agent.trace import schema
+
+    artifact = next(e for e in session.trace.iter_events() if e.kind == schema.ARTIFACT)
+    routed = next(c for c in session.julia.calls if "Bonito.route!" in c)
+    stem = str(artifact.payload["path"]).rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    assert f'raw"/viz/{stem}"' in routed
+
+    session.julia.calls.clear()
+    err, url, _size = await replot_web(session, artifact.payload)
+    assert err is None
+    assert url == f"/live/{session.session_id}/viz/{stem}"
+
+
 async def test_web_plot_ignores_a_degenerate_panel_hint(tmp_path: Path) -> None:
     async def fake_eval(code: str) -> EvalResult:
         if "Bonito.Server" in code:
