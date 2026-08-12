@@ -101,6 +101,26 @@ describe("IframePanel live readiness", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(container.querySelector("iframe")).not.toBeNull();
   });
+
+  it("puts documents on paper and figures on the theme colour", async () => {
+    // The frame is what shows through a figure's transparent page while a
+    // resize clears the WebGL buffer, so a figure's frame must not be white:
+    // it would strobe the panel white on every re-fit. A document's page is a
+    // centered column with transparent margins and does want paper.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
+    const doc = renderWithStore(
+      <IframePanel view={reportView} active reloadToken={0} onLoaded={vi.fn()} />,
+    );
+    expect(doc.container.querySelector(".stage-frame")?.className).toContain("paper");
+
+    const fig = renderWithStore(
+      <IframePanel view={{ ...plotView, live: false }} active reloadToken={0} onLoaded={vi.fn()} />,
+    );
+    await act(async () => {
+      await Promise.resolve(); // the plot's readiness ping resolves, then it mounts
+    });
+    expect(fig.container.querySelector(".stage-frame")?.className).toBe("stage-frame");
+  });
 });
 
 describe("stageGeometry", () => {

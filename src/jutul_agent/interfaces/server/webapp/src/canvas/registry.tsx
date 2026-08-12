@@ -143,6 +143,12 @@ export interface StagedFrameProps {
   probe: boolean;
   /** Hold ms after `load` before reporting loaded (WebGL reflow flash). */
   hold: number;
+  /** Put the frame on white instead of the theme colour — for a document,
+   *  whose page is a centered column with transparent margins, so the frame is
+   *  the paper it sits on. Figures want the theme colour: their page is fully
+   *  transparent, so the frame is what shows while a resize clears the canvas
+   *  (see layout.css) and white there flashes on every re-fit. */
+  paper?: boolean;
   onLoaded: () => void;
   /** Called (debounced) when the stage and the figure disagree on size — the
    *  panel grew, shrank, or changed shape — with the stage's settled size; the
@@ -165,6 +171,7 @@ export function StagedFrame({
   token,
   probe,
   hold,
+  paper,
   onLoaded,
   onMismatch,
 }: StagedFrameProps) {
@@ -247,7 +254,7 @@ export function StagedFrame({
       : { inset: 0, height: nudge ? `calc(100% - ${nudge}px)` : undefined };
   return (
     <div ref={stageRef} className={`canvas-stage${active ? " active" : ""}`}>
-      <div className="stage-frame" style={frameStyle}>
+      <div className={`stage-frame${paper ? " paper" : ""}`} style={frameStyle}>
         <iframe
           title={title}
           loading="lazy"
@@ -324,6 +331,7 @@ export function IframePanel({ view, active, reloadToken, onLoaded }: PanelProps)
       token={reloadToken}
       probe={view.kind === "plot"}
       hold={view.kind === "plot" ? 450 : 0}
+      paper={view.kind !== "plot"}
       onLoaded={onLoaded}
     />
   );
