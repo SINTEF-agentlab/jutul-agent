@@ -274,14 +274,14 @@ def _finalize_web(
     record and what's embedded. The PNG is also the poster/thumbnail and ``view``.
     """
 
-    # A CairoMakie PNG is saved when the figure renders under Cairo (2D, and most
-    # 3D scenes); it is the poster/thumbnail and the durable record. A GL-only
-    # scene may yield none, and the interactive view still carries the figure.
+    # A PNG is saved when some rasteriser can render the figure offscreen; it is the
+    # poster/thumbnail and the durable record. A scene none of them can draw yields
+    # none, and the interactive view still carries the figure.
     has_poster = png_abs.exists()
-    # The durable record: a live plot's PNG poster when Cairo produced one, else the
+    # The durable record: a live plot's PNG poster when one was rendered, else the
     # static HTML export (a non-live plot always exports one; the live path exports a
-    # WebGL fallback only when Cairo can't render the scene). Recording the PNG when
-    # none was written would leave a dead path that 404s on resume.
+    # WebGL fallback only when no rasteriser could render the scene). Recording the PNG
+    # when none was written would leave a dead path that 404s on resume.
     if live_url and has_poster:
         rec_path, mime, fmt = png_rel, "image/png", "png"
     else:
