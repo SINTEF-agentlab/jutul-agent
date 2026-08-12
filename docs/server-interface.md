@@ -320,14 +320,19 @@ at scale 1 with full-size text, and a figure authored wider only narrows to a
 floor (two thirds of its authored width) so its layout is never crushed — past
 the floor it keeps the panel's aspect and scales down mildly instead.
 
-When a live view's frame *grows past* its figure, the front end should send
-`{"type": "refit", "record": ..., "width": ..., "height": ...}`: the kernel
+When a live view's panel no longer suits its figure — it grew past it, or
+changed shape enough that scaling leaves a large share of the panel unused —
+the front end should send
+`{"type": "refit", "record": ..., "width": ..., "height": ...}` with the
+panel's size: the server re-runs the same fit rule a fresh plot gets (anchored
+to the figure's recorded authored size, so floors never ratchet), the kernel
 resizes the routed figure in place (no code re-run; camera and widget state
-kept) and the new layout reaches the frame through the figure's own live
-connection — the reliable direction, since a served page noticing its own
-frame grow is not dependable. Best-effort: a busy kernel drops it, and the
-front end's scaled presentation remains correct either way. The popout wrapper
-does the same over `POST /popout/{session}/refit`.
+kept), and the answer is a `refit_done` carrying the figure's *resulting* size
+for the front end to stage. During a running turn the resize queues behind the
+kernel's current eval and lands when it frees. The bundled UI only asks when
+the re-layout earns its visible jump (under ~75% panel coverage); a view that
+already covers its panel well is left alone. The popout wrapper does the same
+over `POST /popout/{session}/refit`.
 
 A written report is delivered the same way. `write_report` renders a
 self-contained HTML document into the session's artifacts and the server forwards

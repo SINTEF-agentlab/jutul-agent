@@ -194,16 +194,18 @@ export function StagedFrame({
   const [nudge, setNudge] = useState(0);
   const sized = !!width && !!height;
 
-  // The stage and the figure disagree on size — the panel grew, shrank, or
-  // changed shape: after the size settles, ask for a kernel-side re-fit (the
-  // caller decides what that means). A small tolerance ignores rounding; each
-  // box change restarts the timer, so only the settled size fires.
+  // A kernel re-fit re-lays the figure out, which lands as a second, visibly
+  // later update after the instant CSS scale — so it must earn that jump: only
+  // when the scaled figure leaves a good share of the panel unused (a shape
+  // mismatch or real growth) is a re-fit requested, after the size settles. A
+  // view already covering most of its panel is left exactly as it is.
   useEffect(() => {
     if (!onMismatch || !sized || !active || mode !== "scale") return;
     if (box.w < 100 || box.h < 100) return;
-    const mismatch = Math.abs(box.w - width!) > 8 || Math.abs(box.h - height!) > 8;
-    if (!mismatch) return;
-    const t = setTimeout(() => onMismatch(box.w, box.h), 600);
+    const scale = Math.min(box.w / width!, box.h / height!, 1);
+    const coverage = (width! * scale * (height! * scale)) / (box.w * box.h);
+    if (coverage >= 0.75) return;
+    const t = setTimeout(() => onMismatch(box.w, box.h), 1000);
     return () => clearTimeout(t);
   }, [onMismatch, sized, active, mode, box.w, box.h, width, height]);
 
