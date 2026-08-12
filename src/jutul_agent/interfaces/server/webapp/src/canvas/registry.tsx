@@ -181,7 +181,17 @@ export function StagedFrame({
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    const measure = () => setBox({ w: el.clientWidth, h: el.clientHeight });
+    // A hidden stage measures 0x0 — keep the last real size instead of
+    // adopting it. The frame's geometry follows this box, and collapsing a
+    // hidden frame to zero is not cosmetic: the served figure tracks its
+    // parent's size, so a zeroed frame resizes the live figure itself while
+    // its canvas is throttled — which is how a tab switched away during
+    // resizes came back torn (axes moved, plot primitives stale).
+    const measure = () => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) {
+        setBox({ w: el.clientWidth, h: el.clientHeight });
+      }
+    };
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     measure();
@@ -198,7 +208,10 @@ export function StagedFrame({
   // later update after the instant CSS scale — so it must earn that jump: only
   // when the scaled figure leaves a good share of the panel unused (a shape
   // mismatch or real growth) is a re-fit requested, after the size settles. A
-  // view already covering most of its panel is left exactly as it is.
+  // view already covering most of its panel is left exactly as it is, and the
+  // one re-fit that fires converges to the server rule's optimum in a single
+  // step (a full panel, or a gentle letterbox at the distortion bound — the
+  // stage-size dedupe in refitView keeps that from re-firing forever).
   useEffect(() => {
     if (!onMismatch || !sized || !active || mode !== "scale") return;
     if (box.w < 100 || box.h < 100) return;
