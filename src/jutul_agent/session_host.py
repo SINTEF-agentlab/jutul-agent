@@ -156,6 +156,35 @@ class SessionHost:
         self._model, self._approval_mode = new_model, new_approval
         self._runner = None  # rebuilt lazily against the new agent
 
+    def set_host_context(self, context: dict[str, Any] | None, *, rebuild: bool = True) -> bool:
+        """Adopt the host application's selection; return whether it changed.
+
+        Keeps three things in step: the session (which persists the value and
+        records the change in the trace, and is what capability tools read), the
+        stored capability list (so a later rebuild for an unrelated reason, such
+        as a model switch, does not resurrect the previous selection), and the live
+        agent's system prompt.
+
+        ``rebuild=False`` is for the moment just after ``start``, where the
+        capability list the agent was built from already carries this value and a
+        rebuild would only repeat the work. Every later change wants the default:
+        the fragment is baked into the agent at build time, so an update reaches
+        the model only by building a new one. That is safe mid-session (the
+        kernel, the checkpointed history, and the live Julia state all survive)
+        but *not* mid-turn, so callers must be idle before calling.
+        """
+        from jutul_agent.agent.capabilities import replace_host_context
+
+        changed = self.session.adopt_host_context(context)
+        # Rewritten even when nothing changed, so the stored layer is the one
+        # invariant that always holds: what the agent is told matches what the
+        # session knows. Only the rebuild is conditional, because that is the
+        # expensive half.
+        self._extensions = replace_host_context(self._extensions, context)
+        if changed and rebuild and self.agent is not None:
+            self.reconfigure()
+        return changed
+
     @property
     def memory_dir(self):
         """The workspace memory directory for this session (created if needed)."""

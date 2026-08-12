@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import urlparse
 
 from fastapi import (
     FastAPI,
@@ -37,7 +38,11 @@ from jutul_agent.agent.approval import (
     build_resume_payload,
     categories_for_interrupt,
 )
-from jutul_agent.agent.capabilities import HttpToolSpec, http_tool_capability
+from jutul_agent.agent.capabilities import (
+    HttpToolSpec,
+    host_context_capability,
+    http_tool_capability,
+)
 from jutul_agent.interfaces.server import protocol
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
 from jutul_agent.preview import TOOL_STREAM_RENDER_INTERVAL, TOOL_STREAM_TAIL_CAP
@@ -94,6 +99,13 @@ class CreateSessionRequest(BaseModel):
     # The host app's declarative HTTP tools, validated straight into the domain
     # ``HttpToolSpec`` (one schema, no parallel request model to keep in sync).
     tools: list[HttpToolSpec] | None = None
+    # What the host application currently has selected: an opaque JSON object of
+    # its own identifiers, which the agent is told about and its tools can read.
+    host_context: dict[str, Any] | None = None
+    # Where the host application's own HTTP API listens, for this launch. Never
+    # stored: it describes the application as it is running now, so a remembered
+    # one could send the agent somewhere that has since moved or closed.
+    host_api: str | None = None
 
 
 class ResumeSessionRequest(BaseModel):
@@ -101,6 +113,17 @@ class ResumeSessionRequest(BaseModel):
     model: str | None = None
     approval_mode: str | None = None
     workspace: str | None = None
+    # The host's selection *now*, which supersedes what this session was last
+    # told. Omitted (or null) means "unchanged": a front end opened outside the
+    # host application has nothing to say about the selection, and must not be
+    # able to erase it by resuming a session the host started.
+    host_context: dict[str, Any] | None = None
+    # Re-declared on resume for the same reason they are declared on create: the
+    # tools belong to the running application, not to the stored session, and a
+    # session resumed without them would come back with the host app's routines
+    # missing from an otherwise intact conversation.
+    tools: list[HttpToolSpec] | None = None
+    host_api: str | None = None
 
 
 class CredentialRequest(BaseModel):
@@ -110,11 +133,61 @@ class CredentialRequest(BaseModel):
     value: str
 
 
-def _request_extensions(tools: list[HttpToolSpec] | None) -> list:
-    """Turn declared HTTP tool specs into a host-app capability, if any were sent."""
-    if not tools:
-        return []
-    return [http_tool_capability("host-app", tools)]
+def _host_api_url(value: str | None) -> str | None:
+    """Validate the host application's API address, or raise a 400.
+
+    This is the trust boundary: the bundled UI checks the value too, but a
+    request can reach here without going through it. The address ends up in URLs
+    the agent's tools call, and a capability may interpolate it into code it
+    evaluates, so only a plain http(s) origin (with an optional path prefix) is
+    accepted: no credentials, no query, no fragment, and none of the characters
+    that let a string escape the literal it is placed in.
+
+    Rejection is an error rather than a silent ``None`` because a malformed
+    address is always a caller bug: any real URL passes, and a session whose
+    tools quietly cannot reach the application is harder to diagnose than a 400.
+    """
+    if value is None:
+        return None
+    candidate = value.strip().rstrip("/")
+    if not candidate:
+        return None
+    parsed = urlparse(candidate)
+    unsafe = set("\"'\\`$\n\r\t<>")
+    if (
+        parsed.scheme not in ("http", "https")
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or unsafe & set(candidate)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"host_api must be a plain http(s) address, got {value!r}",
+        )
+    return candidate
+
+
+def _request_extensions(
+    tools: list[HttpToolSpec] | None, host_context: dict[str, Any] | None = None
+) -> list:
+    """The capability layers a session-create request brings with it.
+
+    Two things an embedding application declares per session: the routines it
+    exposes to the agent (HTTP tool specs) and what it currently has selected.
+    Both are request-scoped rather than installed, because they describe this
+    launch, which is also why they travel as capabilities instead of as
+    arguments threaded through the session bootstrap.
+    """
+    layers = []
+    if tools:
+        layers.append(http_tool_capability("host-app", tools))
+    selection = host_context_capability(host_context)
+    if selection is not None:
+        layers.append(selection)
+    return layers
 
 
 def create_app(
@@ -381,13 +454,16 @@ def create_app(
         # Refuse before standing up the kernel if the model has no key: the UI
         # shows a key prompt on this structured error, then retries the create.
         _require_credential(req.model or default_model)
+        # Likewise validate the host address up here, so a rejected one cannot
+        # leave a live session behind that no caller knows the id of.
+        host_api = _host_api_url(req.host_api)
         try:
             host = await manager.create(
                 sim=sim,
                 model=req.model or default_model,
                 approval_mode=req.approval_mode or default_approval_mode,
                 workspace=_workspace_for(req.workspace),
-                extensions=_request_extensions(req.tools),
+                extensions=_request_extensions(req.tools, req.host_context),
             )
         except KeyError as exc:  # unknown simulator
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -396,6 +472,12 @@ def create_app(
             # the environment moved while the server was up (a package installed
             # or edited). The message explains itself; pass it through as-is.
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        # The agent already carries the selection (it was built with the layer
+        # above); this records it on the session, so it is persisted for a later
+        # resume, visible in the trace, and readable by capability tools. The API
+        # URL is only ever read from the session, so assigning it is all it needs.
+        host.set_host_context(req.host_context, rebuild=False)
+        host.session.host_api = host_api
         return {"session_id": host.session_id}
 
     @app.get("/sessions")
@@ -406,6 +488,9 @@ def create_app(
     async def resume_session(session_id: str, req: ResumeSessionRequest) -> dict[str, Any]:
         if not _is_valid_session_id(session_id):
             raise HTTPException(status_code=404, detail="no such session")
+        # Validated before anything is reattached or rebuilt, so a bad address
+        # cannot leave a session half-resumed.
+        host_api = _host_api_url(req.host_api)
         existing = manager.get(session_id)
         if existing is not None:
             # Another connection is using it: re-resuming would build a fresh kernel
@@ -424,9 +509,32 @@ def create_app(
             # the request's defaults do not reflect what the session is actually using.
             # The kernel, history, and live REPL are untouched.
             manager.promote(session_id)
+            # The host's selection is the exception to "the live host is
+            # authoritative": it describes the application right now, not this
+            # session's earlier settings, so a reattach carries it over. Nothing
+            # is running (the session is idle and unattached, checked above), so
+            # the rebuild this triggers when it actually changed is safe here.
+            if req.host_context is not None:
+                existing.set_host_context(req.host_context)
+            # Likewise the API URL, which moves whenever the application restarts:
+            # a session reattached against a stale port would only find a closed
+            # door. Sent on every resume, so its absence genuinely means "no host".
+            existing.session.host_api = host_api
             return {"session_id": existing.session_id, "kernel_restarted": False}
         # Not live anymore (evicted, or a new server): resume from disk, which starts
         # a fresh kernel — the conversation is restored but in-memory REPL state is not.
+        #
+        # The selection the rebuilt agent is told about is the request's if the
+        # front end is running inside the host application, and otherwise the one
+        # stored with the session. It has to be resolved here, before the build,
+        # because it is a system-prompt layer: reading it after start would mean
+        # rebuilding the agent we just built.
+        from jutul_agent.session import read_host_context
+
+        state_dir = _session_state_dir(session_id)
+        host_context = req.host_context
+        if host_context is None and state_dir is not None:
+            host_context = read_host_context(state_dir)
         try:
             host = await manager.resume(
                 session_id,
@@ -434,9 +542,19 @@ def create_app(
                 model=req.model or default_model,
                 approval_mode=req.approval_mode or default_approval_mode,
                 workspace=_workspace_for(req.workspace),
+                extensions=_request_extensions(req.tools, host_context),
             )
         except (KeyError, FileNotFoundError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        # The resumed session read its own stored selection on the way up. Defer to
+        # that when the request carried none: a front end running outside the host
+        # application has nothing to say about the selection, and adopting its
+        # silence as "nothing selected" would erase what the session was working on.
+        host.set_host_context(
+            req.host_context if req.host_context is not None else host.session.host_context,
+            rebuild=False,
+        )
+        host.session.host_api = host_api
         return {"session_id": host.session_id, "kernel_restarted": True}
 
     @app.delete("/sessions/{session_id}")
@@ -1053,9 +1171,19 @@ class _StreamState:
         # only release a route this connection's own popouts created.
         self._popouts: dict[str, str] = {}
         self._popout_seq = 0
+        # A host-app selection that arrived mid-turn, held as a 1-tuple so a
+        # deferred ``None`` (the host cleared its selection) is distinguishable
+        # from "nothing is waiting". Applied when the turn settles.
+        self._deferred_host_context: tuple[dict[str, Any] | None] | None = None
 
     async def handle(self, message: dict[str, Any]) -> None:
         kind = message.get("type")
+        # A selection that arrived mid-turn is applied at the first idle moment.
+        # Doing it here as well as at turn end covers the turns that never reach
+        # a clean end (cancelled, or paused on an approval that is then
+        # abandoned): the next thing the user does gets the current selection.
+        if self._deferred_host_context is not None and not self._busy():
+            await self._flush_host_context()
         if kind == "prompt":
             await self._start_prompt(str(message.get("text") or ""))
         elif kind == "decision":
@@ -1068,10 +1196,65 @@ class _StreamState:
             await self._close_popout(str(message.get("url") or ""))
         elif kind == "ui_event":
             self._host.session.trace.append(schema.UI_EVENT, {"payload": message.get("payload")})
+        elif kind == "host_context":
+            await self._set_host_context(message.get("context"))
         elif kind == "command":
             await self._handle_command(message)
         else:
             await _safe_send(self._ws, protocol.error_to_wire(f"unknown message {kind!r}"))
+
+    async def _set_host_context(self, context: Any) -> None:
+        """Adopt a selection the host application changed while the session was open.
+
+        The selection lives in the system prompt, so adopting one rebuilds the
+        agent, which must not happen under a running turn (it would swap the
+        runner mid-flight). A change that arrives during a turn is therefore held
+        and applied when the turn settles, which is also the friendlier
+        behaviour: the turn the user is watching finishes against the objects it
+        started on, instead of the ground moving underneath it.
+        """
+        if context is not None and not isinstance(context, dict):
+            await _safe_send(self._ws, protocol.error_to_wire("host_context must be a JSON object"))
+            return
+        if self._busy():
+            self._deferred_host_context = (context,)
+            return
+        self._deferred_host_context = None
+        await self._apply_host_context(context)
+
+    async def _flush_host_context(self) -> None:
+        """Apply a selection that arrived mid-turn, now that the turn is settling.
+
+        Deliberately does not re-check ``_busy``: the caller at the end of a turn
+        is still running inside that turn's own task, so the check it already
+        made ("nothing else is in flight") is the meaningful one.
+        """
+        held, self._deferred_host_context = self._deferred_host_context, None
+        if held is not None:
+            await self._apply_host_context(held[0])
+
+    async def _apply_host_context(self, context: dict[str, Any] | None) -> None:
+        """Adopt the selection and tell the user, if it is not what we already had.
+
+        A failed rebuild is reported and the session kept, like a rejected model
+        or approval mode: this runs from the message loop, so letting it raise
+        would take the connection down over a selection change. The session has
+        already recorded the new selection and will state it at the next
+        successful rebuild, so the miss is transient rather than lost.
+        """
+        try:
+            changed = self._host.set_host_context(context)
+        except Exception as exc:
+            await _safe_send(
+                self._ws,
+                protocol.error_to_wire(f"could not apply the application's selection: {exc}"),
+            )
+            return
+        if changed:
+            await _safe_send(
+                self._ws,
+                protocol.notice_to_wire("The application's selection changed; the agent was told."),
+            )
 
     async def _handle_command(self, message: dict[str, Any]) -> None:
         """Apply a session setting (model, approval policy) mid-conversation.
@@ -1377,6 +1560,7 @@ class _StreamState:
         if usage is not None:
             await _safe_send(self._ws, usage)
         await _safe_send(self._ws, protocol.turn_end_to_wire(result.messages))
+        await self._flush_host_context()
         task = self._host.maybe_title(self._on_titled)
         if task is not None:
             self._title_task = task

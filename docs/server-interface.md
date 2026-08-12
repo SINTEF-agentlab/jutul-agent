@@ -94,7 +94,7 @@ turn.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/sessions` | Create a session and return its id |
+| `POST` | `/sessions` | Create a session and return its id (optionally with the host app's `tools` and `host_context`) |
 | `GET` | `/sessions` | List live session ids |
 | `GET` | `/sessions/history` | List resumable sessions on disk (title, time, simulator) |
 | `POST` | `/sessions/{id}/resume` | Reopen an earlier session (reattaches if still live, else restarts its kernel; `kernel_restarted` says which) |
@@ -139,10 +139,12 @@ Messages from the front end to the server are a prompt to start a turn, a
 decision to answer an approval request (`approve`, `reject`, or `respond` with a
 message), a cancel to stop a running turn, a command to change a session setting
 or run a session action (`set_model`, `set_approval`, `add_dir`, `compact`), a
-plot replay (`replot`, below), a popout-window close (`popout_closed`), and a
-user-interface event, described next. A setting command rebuilds the agent in
-place, so the model or approval policy can change mid-session without losing the
-conversation or the live Julia state.
+plot replay (`replot`, below), a popout-window close (`popout_closed`), a change
+to the host application's selection (`host_context`, see
+[embedding](#embedding-the-host-applications-selection)), and a user-interface
+event, described next. A setting command rebuilds the agent in place, so the
+model or approval policy can change mid-session without losing the conversation
+or the live Julia state.
 
 The bundled UI exposes these as slash commands in the composer (`/model`,
 `/approval-mode`, `/add-dir`, `/compact`, plus client-side `/transcript`,
@@ -203,6 +205,59 @@ need, without touching the core or the simulator registry. How to package and
 register one (a Python entry point, or operations described over HTTP when the
 backend is in another language) is covered in
 [building your application](extending-for-your-application.md).
+
+## Embedding: the host application's selection
+
+An application that embeds this UI in a frame usually opens it *on something*:
+the datasets, models, or other objects the user has selected in its own
+interface. That selection reaches the agent as **host context**: an opaque JSON
+object of the application's own identifiers, which becomes a `host-context`
+capability layer in the system prompt. The agent is told these are the host's identifiers and to pass
+them to the host's tools rather than invent them or ask the user to read them out.
+
+There are three ways in, and a front end embedded in a host app uses all three:
+
+| When | How |
+| --- | --- |
+| Launch | `?data=` on the UI's URL: base64 of UTF-8 JSON. The bundled UI decodes it and sends it as `host_context` on `POST /sessions`. |
+| Reopening a session | `host_context` on `POST /sessions/{id}/resume`. Omitting it means "unchanged", so a UI opened outside the host app cannot erase what a session was working on. |
+| While a session is open | `{"type": "host_context", "context": {...}}` on the WebSocket. |
+
+A host application that also exposes an HTTP API of its own passes its base URL
+the same way: `?apiurl=` (base64 of the URL) becomes `host_api` on create and
+resume, and lands on the session as `session.host_api` for a capability's tools
+to call. Unlike the selection it is **never stored**, because it describes the
+application as it is running now, not the session: a remembered address could
+point a later session somewhere that has since moved or closed. Every resume
+therefore carries it afresh, and its absence means "the application is not there".
+
+Only a plain http(s) address is accepted: no credentials, no query, no fragment,
+and none of the characters that would let it escape a string literal. A
+capability may interpolate the address into code it evaluates, so anything else
+is refused with a 400 rather than stored. Any real URL passes, so a rejection
+means the caller sent something that was never an address.
+
+The bundled UI reads `?data=` once at load and treats it as a property of the
+page, not of a session: every session it creates or resumes is told the current
+selection, so all of a user's conversations agree with what they see in the
+application. Because the URL can only change by reloading the frame, a host that
+wants to update the selection *without* losing the conversation posts a message
+to the frame instead, sending `{type: "jutul-agent:host-context", context}` (or `data`,
+the same base64 string), accepted only from the embedding window.
+
+Adopting a selection rebuilds the agent, which is safe mid-session (the kernel,
+the conversation, and the live Julia state all survive) but not mid-turn, so a
+change that arrives while the agent is working is applied when the turn settles.
+An unchanged selection is a no-op. Each adoption is recorded as a `host_context`
+trace event and stored beside the session, so a session resumed from disk knows
+its selection even when the front end has nothing to say about it, and the
+transcript still shows what was selected earlier, which the system prompt cannot:
+it only ever states the current selection.
+
+Encoding note for the host side: `?data=` is read with `URLSearchParams`, which
+applies form decoding, where `+` means a space. The decoder puts it back and also
+accepts the url-safe alphabet and missing padding, so either encoder works, though
+base64url is the safer thing to emit.
 
 ## Visualization
 

@@ -35,6 +35,10 @@ UPLOAD = "upload"
 # drive the front end, the front end reports back as UI_EVENT.
 UI_COMMAND = "ui"
 UI_EVENT = "ui_event"
+# The host application's current selection, recorded whenever it is adopted or
+# changes, so a session's transcript shows which of the app's objects the agent
+# was working on at each point.
+HOST_CONTEXT = "host_context"
 
 EVAL_TARGET = "eval_target"
 EVAL_RESULT = "eval_result"
@@ -59,6 +63,7 @@ ALL_KINDS: frozenset[str] = frozenset(
         UPLOAD,
         UI_COMMAND,
         UI_EVENT,
+        HOST_CONTEXT,
         EVAL_TARGET,
         EVAL_RESULT,
     }

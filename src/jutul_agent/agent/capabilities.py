@@ -15,6 +15,7 @@ expose its own routines over HTTP.
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -160,6 +161,54 @@ def discover_extensions() -> list[Capability]:
             continue
         capabilities.append(capability)
     return capabilities
+
+
+# ---------------------------------------------------------------------------
+# Host context: what the application the agent is embedded in has selected.
+
+# The capability name reserved for host context, so a host that changes its
+# selection mid-session can replace exactly this layer and leave the rest.
+HOST_CONTEXT_CAPABILITY = "host-context"
+
+
+def host_context_capability(context: dict[str, Any] | None) -> Capability | None:
+    """The host application's current selection, as a system-prompt layer.
+
+    ``None`` when there is nothing to say, so callers can splice the result into
+    an extension list without a special case for the unembedded run.
+
+    A prompt fragment rather than a message in the conversation, because the
+    selection is a fact about the present: rebuilding with a new one leaves no
+    stale copy for the model to find later in its own history.
+    """
+    if not context:
+        return None
+    body = json.dumps(context, indent=2, sort_keys=True)
+    fragment = (
+        "## The host application's selection\n\n"
+        "This session was opened from an application that has these objects "
+        "selected. The values are that application's own identifiers: pass them "
+        "verbatim to its tools instead of inventing identifiers or asking the "
+        "user to repeat them. When the user refers to one of these objects "
+        "without naming it, this is what they mean.\n\n"
+        f"```json\n{body}\n```\n\n"
+        "This is the selection as it stands now, and supersedes any identifier "
+        "mentioned earlier in the conversation."
+    )
+    return Capability(name=HOST_CONTEXT_CAPABILITY, prompt_fragment=fragment)
+
+
+def replace_host_context(
+    capabilities: Sequence[Capability], context: dict[str, Any] | None
+) -> list[Capability]:
+    """``capabilities`` with its host-context layer swapped for ``context``.
+
+    The layer goes last; the others keep their order. Where it sits does not
+    matter, because prompt fragments are independent sections.
+    """
+    others = [cap for cap in capabilities if cap.name != HOST_CONTEXT_CAPABILITY]
+    fresh = host_context_capability(context)
+    return [*others, fresh] if fresh is not None else others
 
 
 # ---------------------------------------------------------------------------

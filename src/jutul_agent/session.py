@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import re
 import shutil
 import tempfile
@@ -10,14 +11,22 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from jutul_agent.julia.session import JuliaSession
 from jutul_agent.paths import session_output_dir, workspace_state_dir
 from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.trace import TraceLog
-from jutul_agent.trace.schema import SESSION_END, SESSION_RESUME, SESSION_START, SESSION_TITLE
+from jutul_agent.trace.schema import (
+    HOST_CONTEXT,
+    SESSION_END,
+    SESSION_RESUME,
+    SESSION_START,
+    SESSION_TITLE,
+)
 
 TITLE_FILENAME = "title"
+HOST_CONTEXT_FILENAME = "host_context.json"
 _SLUG_MAX_CHARS = 32
 _TITLE_MAX_CHARS = 80
 
@@ -64,6 +73,23 @@ def read_session_title(state_dir: Path) -> str | None:
     except OSError:
         return None
     return title or None
+
+
+def read_host_context(state_dir: Path) -> dict[str, Any] | None:
+    """The host application's last-known selection for a session state dir.
+
+    Stored beside the trace so a session resumed from disk still knows which of
+    the host app's objects it was working on, even when the front end that
+    resumes it was opened without one (a plain browser tab rather than the app's
+    frame). A missing, unreadable, or non-object file reads as "none known":
+    host context is an enrichment, never a precondition for opening a session.
+    """
+    path = state_dir / HOST_CONTEXT_FILENAME
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 @dataclass(frozen=True)
@@ -231,6 +257,17 @@ class Session:
     open_windows: bool = False
     # Human-readable title derived from the first prompt (see ``adopt_title``).
     title: str | None = None
+    # The host application's current selection, when the agent is embedded in one
+    # (see ``adopt_host_context``): an opaque JSON object naming the app's own
+    # objects. Capability tools read it to default their arguments; the agent is
+    # told about it through the ``host-context`` capability's prompt fragment.
+    host_context: dict[str, Any] | None = None
+    # Where the host application's own HTTP API listens, for this launch only.
+    # Never persisted: it describes the application as it is running now, so a
+    # remembered address could point a later session somewhere that has moved.
+    # A capability's tools read it to reach the application (``None`` when the
+    # session was not launched from one, which means those tools cannot work).
+    host_api: str | None = None
     # Whether this session continues an earlier conversation. The thread state
     # is restored from the checkpointer; the Julia REPL is not.
     resumed: bool = False
@@ -342,6 +379,7 @@ class Session:
             open_windows=open_windows,
             surface=surface,
             title=read_session_title(dir_),
+            host_context=read_host_context(dir_),
             resumed=True,
             _ephemeral_memory_dir=ephemeral_dir,
         )
@@ -398,6 +436,29 @@ class Session:
         with contextlib.suppress(OSError):
             (self.state_dir / TITLE_FILENAME).write_text(title + "\n", encoding="utf-8")
         self.trace.append(SESSION_TITLE, {"session_id": self.session_id, "title": title})
+
+    def adopt_host_context(self, context: dict[str, Any] | None) -> bool:
+        """Record the host application's selection; return whether it changed.
+
+        Persists it beside the trace (so a from-disk resume knows it) and records
+        a trace event, which is what makes a mid-session change auditable: the
+        system prompt only ever states the *current* selection, so the trace is
+        the only place the earlier one survives. Returns ``False`` for an
+        unchanged value so callers can skip the agent rebuild that adopting a new
+        one requires. Writing is best-effort; an unwritable state dir costs the
+        durability of the value, not the session.
+        """
+        if context == self.host_context:
+            return False
+        self.host_context = context
+        path = self.state_dir / HOST_CONTEXT_FILENAME
+        with contextlib.suppress(OSError):
+            if context is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_text(json.dumps(context, indent=2, sort_keys=True), encoding="utf-8")
+        self.trace.append(HOST_CONTEXT, {"session_id": self.session_id, "context": context})
+        return True
 
     def note_report(self, report_path: Path) -> None:
         """Remember a report so its sidecar transcript is refreshed at turn end.
