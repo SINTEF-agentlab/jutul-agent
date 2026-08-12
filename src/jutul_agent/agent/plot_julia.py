@@ -534,7 +534,10 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
         Args:
             code: Julia plotting code (a native plotter call or inline figure).
             caption: Optional caption shown in the transcript.
-            size: Optional `(width, height)` in pixels.
+            size: Optional `(width, height)` in pixels. Leave it unset unless the
+                user asked for exact dimensions: in the browser the tool fits the
+                figure to the user's panel automatically, and an explicit size
+                turns that fit off.
             dpi: Optional DPI for the PNG.
             slot: Stable name (`artifacts/<slot>.png`) and window key; reuse it to
                 refresh the same plot/window.

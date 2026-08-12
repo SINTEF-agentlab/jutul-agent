@@ -920,12 +920,13 @@ async def test_replot_without_size_fits_the_session_panel_hint(tmp_path: Path) -
 
 async def test_refit_resizes_the_live_figure_in_place(tmp_path: Path) -> None:
     # The canvas's grown-stage message: the kernel resize!-es the routed figure
-    # (no code re-run), and junk or busy states drop the request silently — the
-    # client's scaled presentation is the always-correct fallback.
+    # (no code re-run), and junk states drop the request silently — the client's
+    # scaled presentation is the always-correct fallback.
     st, ws, session = _plot_state(tmp_path)
     await st.handle(
         {"type": "refit", "record": "artifacts/res.png", "width": 1200, "height": 1000}
     )
+    await asyncio.gather(*st._refits)
     call = session.julia.calls[-1]
     assert "resize!(_fig, 1200, 1000)" in call
     assert 'raw"/viz/res"' in call
@@ -934,7 +935,33 @@ async def test_refit_resizes_the_live_figure_in_place(tmp_path: Path) -> None:
     calls = len(session.julia.calls)
     await st.handle({"type": "refit", "record": "artifacts/res.png", "width": 9, "height": 9})
     await st.handle({"type": "refit", "record": "artifacts/nope.png", "width": 900, "height": 900})
+    await asyncio.gather(*st._refits)
     assert len(session.julia.calls) == calls  # junk size and unknown record: dropped
+
+
+async def test_refit_queues_behind_a_running_turn_without_blocking(tmp_path: Path) -> None:
+    # A refit during a simulation must neither be dropped (the stage would stay
+    # letterboxed with nothing to retry it) nor block the WebSocket loop (a
+    # cancel must still get through): it is spawned, queues on the kernel's own
+    # eval lock, and lands when the kernel frees.
+    st, _ws, session = _plot_state(tmp_path)
+
+    async def _hang() -> None:
+        await asyncio.sleep(30)
+
+    st._turn = asyncio.create_task(_hang())
+    try:
+        await st.handle(
+            {"type": "refit", "record": "artifacts/res.png", "width": 1500, "height": 900}
+        )
+        # handle() returned immediately (no await on the eval); the spawned task
+        # completes on its own even though the "turn" is still running.
+        await asyncio.gather(*st._refits)
+        assert any("resize!(_fig, 1500, 900)" in c for c in session.julia.calls)
+    finally:
+        st._turn.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await st._turn
 
 
 async def test_canvas_size_hint_lands_on_the_session(tmp_path: Path) -> None:
