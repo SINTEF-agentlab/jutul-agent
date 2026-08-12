@@ -282,9 +282,9 @@ export class Controller {
   }
 
   /** Re-run a dead view's recorded code so it comes back live, in place — and
-   *  re-fit it to the panel: the figure keeps its authored width (the width its
-   *  layout was designed for) and its height extends to the stage's shape, so
-   *  the regenerated view fills the panel instead of floating between bands. */
+   *  re-fitted: a fresh panel-size hint rides ahead on the same socket, and the
+   *  server fits the replay to it exactly as it fits a new plot (full-size text
+   *  at the panel's size, width floored against squashing a wide layout). */
   regenerate(viewId: string): void {
     const view = this.s.views[viewId];
     if (!view?.record) return;
@@ -296,16 +296,8 @@ export class Controller {
       this.s.addSysNote("Not connected; reload the page and try again.", "warn");
       return;
     }
-    const msg: ClientMessage = { type: "replot", record: view.record };
-    const stage = stageSize();
-    if (view.width && stage.width >= 100 && stage.height >= 100) {
-      msg.width = view.width;
-      msg.height = Math.max(
-        view.height ?? 0,
-        Math.round((view.width * stage.height) / stage.width),
-      );
-    }
-    this.transport.send(msg);
+    this.sendCanvasHint();
+    this.transport.send({ type: "replot", record: view.record });
     this.s.beginWorking(); // the refreshed viz + turn_end (or an error) clears it
   }
 

@@ -85,6 +85,9 @@ export function Canvas() {
       grip.removeEventListener("pointerup", up);
       grip.removeEventListener("pointercancel", up);
       if (frac > 0) localStorage.setItem(CANVAS_W_KEY, String(frac));
+      // The split changed the stage: refresh the server's panel-size hint so
+      // the next plot (or regenerate) is fitted to the panel as it is now.
+      controller.sendCanvasHint();
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", up);

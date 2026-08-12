@@ -907,6 +907,17 @@ async def test_replot_with_junk_size_replays_unresized(tmp_path: Path) -> None:
     assert "resize!(_fig" not in serve
 
 
+async def test_replot_without_size_fits_the_session_panel_hint(tmp_path: Path) -> None:
+    # A plain regenerate re-fits to the panel the same way a fresh plot does:
+    # the client refreshes the hint just before sending the replot.
+    st, _ws, session = _plot_state(tmp_path)
+    session.web_canvas_hint = (900, 1100)
+    await st._start_replot({"type": "replot", "record": "artifacts/res.png"})
+    await st._turn
+    serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
+    assert "local _pw, _ph = 900, 1100" in serve
+
+
 async def test_canvas_size_hint_lands_on_the_session(tmp_path: Path) -> None:
     # The ui_event hint doubles as live session state for plot_julia; junk
     # measurements never overwrite a good hint.

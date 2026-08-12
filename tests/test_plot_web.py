@@ -80,10 +80,10 @@ async def test_web_surface_serves_plot_live(tmp_path: Path) -> None:
         log.close()
 
 
-async def test_web_plot_without_size_extends_toward_the_panel_hint(tmp_path: Path) -> None:
+async def test_web_plot_without_size_fits_the_panel_hint(tmp_path: Path) -> None:
     # With a canvas-size hint on the session and no explicit size, the figure
-    # keeps its authored width and grows its height toward the panel's aspect;
-    # an explicit size from the model still wins outright.
+    # is fitted to the panel (width floored against squash, height following
+    # the panel's aspect); an explicit size from the model still wins outright.
     seen: list[str] = []
 
     async def fake_eval(code: str) -> EvalResult:
@@ -93,19 +93,19 @@ async def test_web_plot_without_size_extends_toward_the_panel_hint(tmp_path: Pat
         return EvalResult(output="")
 
     session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
-    session.web_canvas_hint = (800, 920)  # aspect 1.15
+    session.web_canvas_hint = (800, 920)
     tool = make_plot_julia_tool(session, surface="web")
 
     await _call(tool, {"code": "lines(1:3)", "slot": "a"})
     routed = next(c for c in seen if "Bonito.route!" in c)
-    assert "_vp.widths[1] * 1.1500" in routed
-    assert "_t > _vp.widths[2] && _M.resize!" in routed
+    assert "local _pw, _ph = 800, 920" in routed
+    assert "max(_pw, ceil(Int, _w0 * 2 / 3))" in routed
 
     seen.clear()
     await _call(tool, {"code": "lines(1:3)", "slot": "b", "size": [640, 480]})
     routed = next(c for c in seen if "Bonito.route!" in c)
     assert "resize!(_fig, 640, 480)" in routed
-    assert "1.1500" not in routed
+    assert "_pw" not in routed
 
 
 async def test_unslotted_plot_replays_onto_its_original_route(tmp_path: Path) -> None:

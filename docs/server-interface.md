@@ -313,10 +313,12 @@ falls back to the poster plus the regenerate button.
 
 The client can also volunteer the panel's size ahead of time with
 `{"type": "ui_event", "payload": {"kind": "canvas_size", "width": ..., "height": ...}}`
-(the bundled UI sends it with every prompt and after a window resize settles).
-A figure plotted with no explicit size then keeps its authored width but grows
-its height toward the panel's shape, so plots fill the panel instead of
-letterboxing.
+(the bundled UI sends it with every prompt, before a regenerate, after a window
+resize settles, and after a split drag). A figure plotted — or replayed — with
+no explicit size is then fitted to the panel: at the panel's own size it shows
+at scale 1 with full-size text, and a figure authored wider only narrows to a
+floor (two thirds of its authored width) so its layout is never crushed — past
+the floor it keeps the panel's aspect and scales down mildly instead.
 
 A written report is delivered the same way. `write_report` renders a
 self-contained HTML document into the session's artifacts and the server forwards
