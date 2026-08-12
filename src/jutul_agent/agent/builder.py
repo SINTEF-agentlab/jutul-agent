@@ -154,6 +154,34 @@ _ANTHROPIC_THINKING_BUDGET_TOKENS = 10_000
 _ANTHROPIC_MAX_TOKENS = 24_000
 
 
+# How long a request may go without producing bytes before it is treated as
+# dead. The provider packages construct their HTTP clients with no timeout at
+# all — not the vendor SDK's own default, an explicit ``None`` — so a stream
+# that stalls (a dropped link, a proxy that holds the socket open) never ends:
+# the turn waits forever, showing nothing. This is a silence budget, not a
+# duration cap. Streaming delivers bytes continuously, so a long reasoning turn
+# resets it; only a genuinely dead connection runs it out, and then the turn
+# fails with something the user can retry.
+_REQUEST_TIMEOUT_S = 600.0
+_CONNECT_TIMEOUT_S = 10.0
+
+
+def _timeout_setting(provider: str) -> dict[str, Any]:
+    """The timeout keyword for ``provider``, in the type its package accepts.
+
+    Only providers whose constructor takes one appear here: passing a type a
+    package rejects would fail construction, and the caller's fallback would
+    then drop the rest of that provider's settings with it.
+    """
+    if provider in ("openai", "ollama"):
+        import httpx
+
+        return {"timeout": httpx.Timeout(_REQUEST_TIMEOUT_S, connect=_CONNECT_TIMEOUT_S)}
+    if provider in ("anthropic", "google_genai"):
+        return {"timeout": _REQUEST_TIMEOUT_S}
+    return {}
+
+
 def _ollama_settings(model_id: str) -> dict[str, Any]:
     from jutul_agent import ollama_client
 
@@ -234,11 +262,15 @@ def _resolve_model_for_agent(model: Any) -> Any:
     """
     if not isinstance(model, str):
         return model
-    settings = _MODEL_SETTINGS.get(provider_of(model))
+    provider = provider_of(model)
+    settings = _MODEL_SETTINGS.get(provider)
     if settings is None:
         return model
     try:
-        kwargs = settings(model)
+        # The timeout goes on every model of a provider that accepts one, not
+        # just the ones with other settings: an unbounded request is the same
+        # hang whether or not the model reasons.
+        kwargs = {**(settings(model) or {}), **_timeout_setting(provider)}
         if kwargs:
             from langchain.chat_models import init_chat_model
 
