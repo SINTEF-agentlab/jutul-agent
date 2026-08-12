@@ -50,9 +50,12 @@ def test_popout_wrapper_stages_the_live_route() -> None:
         assert resp.headers["content-type"].startswith("text/html")
         assert 'src="/live/sid-1/viz/res--pop2"' in resp.text
         assert "let W = 1600, H = 900;" in resp.text
-        # The wrapper scales down into a small window and asks the kernel to
-        # re-fit the figure when the window grows past it.
+        # The wrapper scales down into a small window; when the scaled figure
+        # covers the window poorly it asks the kernel to re-fit and stages the
+        # size the server *echoes*, never the size it asked for.
         assert "scale(" in resp.text
+        assert "coverage" in resp.text
+        assert "W = d.width; H = d.height;" in resp.text
         assert "/popout/sid-1/refit?route=res--pop2" in resp.text
 
         # The refit endpoint validates like the wrapper and is 204 best-effort

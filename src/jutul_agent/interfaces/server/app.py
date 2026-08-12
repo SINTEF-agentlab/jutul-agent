@@ -29,7 +29,13 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -79,25 +85,25 @@ _ROUTE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:--pop\d+)?")
 def _fit_target(stage: list[int], authored: Any) -> list[int]:
     """The size a re-fit resizes a live figure to, for a ``stage``-sized panel.
 
-    The Python twin of the serve-time fit in ``jl._fig_size_block``, anchored to
-    the figure's *authored* size: width becomes the panel's but never drops
-    below the squash floor, and height follows the panel's aspect but never
-    drops below the authored height at the chosen width. Anchoring to the
-    authored size (not the current one) makes refitting idempotent — however
-    often the panel changes shape, the floors never ratchet. Without a recorded
-    authored size the stage itself is the target.
+    The Python twin of the serve-time fit in ``jl._fig_size_block`` — one rule,
+    stated in full there: aspect clamped near the authored shape (letterbox
+    rather than distort), fitted inside the panel at full text size, scaled up
+    only as far as the squash floors demand. Anchoring to the *authored* size
+    (not the current one) makes refitting idempotent — floors never ratchet.
+    Without a recorded authored size the stage itself is the target.
     """
-    import math
-
     sw, sh = stage
     if not (isinstance(authored, (list, tuple)) and len(authored) == 2):
         return [sw, sh]
     aw, ah = int(authored[0]), int(authored[1])
     if aw <= 0 or ah <= 0:
         return [sw, sh]
-    tw = max(sw, math.ceil(aw * 2 / 3))
-    th = max(round(tw * sh / sw), round(ah * tw / aw))
-    return [tw, th]
+    ra = aw / ah
+    r = min(max(sw / sh, ra * 2 / 3), ra * 3 / 2)
+    w1 = min(sw, round(sh * r))
+    h1 = round(w1 / r)
+    s = min(max(1.0, aw * 2 / (3 * w1), ah * 2 / (3 * h1)), 3.0)
+    return [round(w1 * s), round(h1 * s)]
 
 
 def _sane_size(width: Any, height: Any) -> list[int] | None:
@@ -117,13 +123,12 @@ def _sane_size(width: Any, height: Any) -> list[int] | None:
 
 
 # The popout wrapper page (see ``popout_wrapper``). Placeholders instead of an
-# f-string so the JS braces stay readable. A window *smaller* than the figure
-# scales it down to fit (never CSS-upscaled: a canvas grown by CSS blurs). A
-# window *grown past* the figure asks the server to re-fit the live figure to
-# the window (a kernel-side resize! pushed back through Bonito — the reliable
-# direction; the served page noticing its own resize is not), then stages the
-# figure at its new size; until the refit lands, the 1:1 centered presentation
-# is the always-correct fallback.
+# f-string so the JS braces stay readable. The figure is embedded at its real
+# pixel size and CSS-scaled down to the window (never upscaled: a canvas grown
+# by CSS blurs). When the scaled figure covers the window poorly — the same
+# gate the inline canvas uses — the wrapper POSTs a re-fit and then stages the
+# size the server *echoes*, never the size it asked for. Until a refit lands,
+# the scaled centered presentation is the always-correct fallback.
 _POPOUT_WRAPPER_HTML = """<!doctype html>
 <html>
 <head>
@@ -155,16 +160,21 @@ _POPOUT_WRAPPER_HTML = """<!doctype html>
     fit();
     clearTimeout(timer);
     timer = setTimeout(async () => {
-      // Grown past the figure in both dimensions: have the kernel re-fit the
-      // live figure to the window, then stage it at its new size.
-      if (innerWidth >= W && innerHeight >= H && (innerWidth > W || innerHeight > H)) {
-        const w = innerWidth, h = innerHeight;
-        try {
-          const resp = await fetch(REFIT + "&w=" + w + "&h=" + h, { method: "POST" });
-          if (resp.ok) { W = w; H = h; fit(); }
-        } catch (e) { /* best-effort: the scaled presentation stands */ }
-      }
-    }, 500);
+      // The scaled figure leaves too much of the window unused (grown past it,
+      // or a shape mismatch): have the kernel re-fit the live figure to the
+      // window, then stage the size it echoes — the floors may have held.
+      const s = Math.min(innerWidth / W, innerHeight / H, 1);
+      const coverage = (W * s * H * s) / (innerWidth * innerHeight);
+      if (coverage >= 0.75) return;
+      try {
+        const resp = await fetch(
+          REFIT + "&w=" + innerWidth + "&h=" + innerHeight, { method: "POST" });
+        if (resp.ok) {
+          const d = await resp.json();
+          if (d && d.width >= 100 && d.height >= 100) { W = d.width; H = d.height; fit(); }
+        }
+      } catch (e) { /* best-effort: the scaled presentation stands */ }
+    }, 1000);
   });
   fit();
 </script>
@@ -701,15 +711,10 @@ def create_app(
 
     @app.get("/popout/{session_id}")
     def popout_wrapper(session_id: str, route: str, w: int, h: int) -> HTMLResponse:
-        """The page a popout window hosts: the live figure, staged and scaled.
-
-        The figure is embedded at its real (echoed) pixel size ``w x h`` and a
-        CSS transform scales it to the window — the same presentation contract
-        as the inline canvas stage. That makes the popup's look independent of
-        whether the figure's own layout can follow a resize: growing the window
-        (or fullscreen) letterboxes on the dark backdrop instead of leaving the
-        scene painted at its old size with widgets floating outside it.
-        """
+        """The page a popout window hosts: the live figure, staged and scaled
+        under the same presentation contract as the inline canvas stage (see
+        ``_POPOUT_WRAPPER_HTML``), so resizing or fullscreening the popup can
+        never leave the scene mis-drawn with widgets floating outside it."""
         if _ROUTE_ID_RE.fullmatch(route) is None:
             raise HTTPException(status_code=404, detail="no such plot route")
         if not (100 <= w <= 8192 and 100 <= h <= 8192):
@@ -725,23 +730,35 @@ def create_app(
 
     @app.post("/popout/{session_id}/refit")
     async def popout_refit(session_id: str, route: str, w: int, h: int) -> Response:
-        """Resize a popout's live figure to its window, in place (see ``_refit``).
-
-        The wrapper page calls this when its window settles at a new size: the
-        kernel ``resize!``-es the routed figure and Bonito pushes the layout to
-        the window's frame. Best-effort by design — a missing session or route
-        answers 204 all the same, because the wrapper's scaled presentation is
-        the always-correct fallback.
-        """
-        from jutul_agent.agent.plot_julia import refit_web
+        """Re-fit a popout's live figure to its window, in place: the same fit
+        rule as everywhere else, anchored to the record's authored size. The
+        wrapper stages the *echoed* size this answers as JSON. Best-effort — a
+        missing session, route, or figure answers 204 and the wrapper's scaled
+        presentation stands."""
+        from jutul_agent.agent.plot_julia import _plot_id_of, refit_web
 
         if _ROUTE_ID_RE.fullmatch(route) is None or _sane_size(w, h) is None:
             raise HTTPException(status_code=404, detail="no such plot route")
         host = manager.get(session_id)
-        if host is not None:
-            with contextlib.suppress(Exception):
-                await refit_web(host.session, route, [w, h])
-        return Response(status_code=204)
+        if host is None:
+            return Response(status_code=204)
+        # The popout's route is its record's plot id plus a `--popN` suffix.
+        base = re.sub(r"--pop\d+$", "", route)
+        payload = next(
+            (
+                event.payload
+                for event in reversed(host.session.trace.iter_events())
+                if event.kind == schema.ARTIFACT and _plot_id_of(event.payload) == base
+            ),
+            None,
+        )
+        authored = (payload or {}).get("authored_px") or (payload or {}).get("size_px")
+        echoed = None
+        with contextlib.suppress(Exception):
+            _err, echoed = await refit_web(host.session, route, _fit_target([w, h], authored))
+        if echoed is None:
+            return Response(status_code=204)
+        return JSONResponse({"width": echoed[0], "height": echoed[1]})
 
     @app.api_route("/live/{session_id}/{path:path}", methods=["GET", "HEAD"])
     async def live_plot_proxy(session_id: str, path: str, request: Request) -> Response:
@@ -1599,7 +1616,7 @@ class _StreamState:
             suffix = f"--pop{self._popout_seq}"
         try:
             err, url, size_px = await replot_web(
-                self._host.session, payload, route_suffix=suffix, record=not popout, size=size
+                self._host.session, payload, route_suffix=suffix, record=not popout, fit_to=size
             )
         except asyncio.CancelledError:
             await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
@@ -1641,19 +1658,14 @@ class _StreamState:
     async def _refit(self, message: dict[str, Any]) -> None:
         """Re-fit a live figure to its panel's new size, in place.
 
-        The canvas sends this whenever its stage and a live view disagree on
-        size — the panel grew, shrank, or changed shape. The target comes from
-        the same rule that fits a fresh plot, anchored to the figure's recorded
-        *authored* size so the squash floor never ratchets, and the kernel
-        ``resize!``-es the routed figure — camera and widget state untouched,
-        no code re-run. The answer is a ``refit_done`` with the echoed size, so
-        the client stages exactly what the figure became (which is not always
-        what it asked for: the floor may have held the width).
-
-        The eval is spawned, not awaited: kernel evals serialize on their own
-        lock, so during a running turn (a simulation, a long solve) the resize
-        queues and lands the moment the kernel frees — and the WebSocket
-        receive loop stays responsive for cancels and decisions meanwhile.
+        The canvas sends this when its stage and a live view disagree on size.
+        The target comes from the same rule that fits a fresh plot, anchored to
+        the recorded *authored* size, and the kernel ``resize!``-es the routed
+        figure — camera and widget state untouched, no code re-run. The answer
+        is a ``refit_done`` with the echoed size: the client stages what the
+        figure became, not what it asked for. The eval is spawned, not awaited:
+        during a running turn it queues on the kernel's eval lock and lands
+        when the kernel frees, while the WebSocket loop stays responsive.
         """
         record = str(message.get("record") or "")
         stage = _sane_size(message.get("width"), message.get("height"))

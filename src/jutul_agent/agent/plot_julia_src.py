@@ -120,30 +120,27 @@ FIG_SIZE_MARKER = "__JUTUL_FIG_SIZE__"
 FIG_AUTHORED_MARKER = "__JUTUL_FIG_AUTHORED__"
 
 
-# How much of its authored width a figure may lose when fitted to a narrower
-# panel. The floor is the squash guard: a wide dashboard's layout was designed
-# for its width, and past this much compression its controls start colliding
-# (measured with the reservoir explorer: fine at ~2/3, crowded at ~2/5). When
-# the floor binds, the figure stays wider than the panel and is scaled down —
-# still matching the panel's aspect, so the panel is filled either way.
-FIT_MIN_WIDTH_FRACTION = "2 / 3"
+# The fit rule, shared verbatim with its Python twin (``app._fit_target``).
+# For authored size ``a`` and panel ``p``, in order: (1) the target aspect is
+# the panel's, clamped to within 2/3 to 3/2 of the authored aspect — a figure may
+# reshape toward its panel but never distort past that (a tall figure is not
+# stretched flat to fill a wide panel; it letterboxes at full size instead);
+# (2) that shape is fitted inside the panel at scale 1 — full-size text; (3) it
+# is scaled up (never down, capped at 3x) until neither dimension compresses
+# below 2/3 of its authored pixels — fixed-pixel controls collide past that
+# (measured with the reservoir explorer) — and the browser scales the overshoot
+# back down. For a panel shaped within the clamp (the common case) the figure
+# IS the panel: no bands, no distortion, no scaling.
+FIT_MIN_FRACTION = "2 / 3"
+FIT_MAX_SCALE = "3.0"
 
 
 def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str:
     """Julia to apply an explicit figure size and echo the size the figure has.
 
-    An explicit ``size`` wins. Otherwise ``fit`` — the panel's pixel size — fits
-    the figure to the panel it will land in: the width becomes the panel's
-    (floored at ``FIT_MIN_WIDTH_FRACTION`` of the authored width, so a wide
-    layout is never crushed), and the height follows the panel's aspect but
-    never drops below the authored height at the new width (the layout only
-    ever gains relative room, it is never squashed). At the panel's own size
-    the figure shows at scale 1 — full-size text — and when the width floor
-    binds it still matches the panel's aspect, so the panel is filled without
-    bands at a mild scale instead.
-
-    The echo reports the *resulting* size (viewport widths), not the request, so
-    the recorded ``size_px`` is what the browser will actually receive — even
+    An explicit ``size`` wins; otherwise ``fit`` — the panel's pixel size —
+    applies the fit rule above. The echo reports the *resulting* size, not the
+    request, so the recorded ``size_px`` is what the browser will receive even
     when the figure's own layout refused part of the resize."""
 
     resize = ""
@@ -155,8 +152,14 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
             f"        local _pw, _ph = {int(fit[0])}, {int(fit[1])}\n"
             "        local _w0 = _vp.widths[1]\n"
             "        local _h0 = _vp.widths[2]\n"
-            f"        local _wt = max(_pw, ceil(Int, _w0 * {FIT_MIN_WIDTH_FRACTION}))\n"
-            "        local _ht = max(round(Int, _wt * _ph / _pw), round(Int, _h0 * _wt / _w0))\n"
+            f"        local _r = clamp(_pw / _ph, (_w0 / _h0) * {FIT_MIN_FRACTION},"
+            f" (_w0 / _h0) / ({FIT_MIN_FRACTION}))\n"
+            "        local _w1 = min(_pw, round(Int, _ph * _r))\n"
+            "        local _h1 = round(Int, _w1 / _r)\n"
+            f"        local _s = clamp(max((_w0 * {FIT_MIN_FRACTION}) / _w1,"
+            f" (_h0 * {FIT_MIN_FRACTION}) / _h1), 1.0, {FIT_MAX_SCALE})\n"
+            "        local _wt = round(Int, _w1 * _s)\n"
+            "        local _ht = round(Int, _h1 * _s)\n"
             "        (_wt != round(Int, _w0) || _ht != round(Int, _h0)) &&\n"
             "            _M.resize!(_fig, _wt, _ht)\n"
             "    end\n"
@@ -164,9 +167,7 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
     return (
         "    let _vp = _fig.scene.viewport[]\n"
         f'        println("{FIG_AUTHORED_MARKER}=", _vp.widths[1], "x", _vp.widths[2])\n'
-        "    end\n"
-        + resize
-        + "    let _vp = _fig.scene.viewport[]\n"
+        "    end\n" + resize + "    let _vp = _fig.scene.viewport[]\n"
         f'        println("{FIG_SIZE_MARKER}=", _vp.widths[1], "x", _vp.widths[2])\n'
         "    end\n"
     )
@@ -694,16 +695,12 @@ def close_windows_call(key: str) -> str:
 
 
 def resize_web_fig_call(route: str, width: int, height: int) -> str:
-    """Julia to resize a live figure to the frame it is shown in, in place.
-
-    The robust direction for following a growing panel or popout window: a
-    browser-side resize relies on the served page noticing and telling Julia,
-    which is measurably unreliable, while a Julia-side ``resize!`` propagates to
-    every connected view through Bonito's own observable traffic — the same
-    channel widget updates ride, which always works. The figure's state (camera,
-    toggles, sliders) is untouched; only the layout re-solves. Echoes the
-    resulting size; answers ``missing`` for a route not serving a figure.
-    """
+    """Julia to resize a routed live figure in place — the robust direction:
+    a browser-side resize relies on the served page telling Julia, which is
+    measurably unreliable, while a kernel-side ``resize!`` pushes the new
+    layout to every connected view through Bonito's own observable traffic.
+    Figure state (camera, widgets) is untouched. Echoes the resulting size;
+    answers ``missing`` for a route not serving a figure."""
 
     return (
         "begin\n"
