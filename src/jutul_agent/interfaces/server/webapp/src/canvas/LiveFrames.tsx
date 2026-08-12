@@ -41,8 +41,9 @@ export function LiveFrames({
             probe
             hold={450}
             onLoaded={() => onLoaded(f.viewId, f.nonce)}
-            // A stage grown past the live figure asks the kernel to re-fit it.
-            onGrown={(w, h) => controller.refitView(f.viewId, w, h)}
+            // A stage that disagrees with the live figure's size (the panel
+            // grew, shrank, or changed shape) asks the kernel to re-fit it.
+            onMismatch={(w, h) => controller.refitView(f.viewId, w, h)}
           />
         );
       })}

@@ -71,6 +71,9 @@ export type ServerMessage =
       height?: number | null;
     }
   | { type: "popout_ready"; record: string; url: string | null; error?: string | null }
+  /** A `refit` landed: the figure's real size now (the squash floor may have
+   *  held the width, so this is the echo to stage — not the client's request). */
+  | { type: "refit_done"; record: string; width: number; height: number }
   | { type: "notice"; text: string }
   | { type: "ui"; action: string; payload: Record<string, unknown> }
   | { type: "credential_required"; provider: string; label: string; env_var: string }
@@ -133,6 +136,7 @@ export const SIDE_OUTPUT_TYPES: ReadonlySet<ServerMessageType> = new Set([
   "artifact",
   "ui",
   "popout_ready",
+  "refit_done",
 ]);
 
 /** A `ui` action the client consumes internally (a history-refresh signal) instead

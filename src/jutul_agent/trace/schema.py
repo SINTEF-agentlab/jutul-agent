@@ -95,6 +95,7 @@ def artifact_payload(
     format: str | None = None,
     kind: str | None = None,
     size_px: Sequence[int] | None = None,
+    authored_px: Sequence[int] | None = None,
     dpi: int | None = None,
     slot: str | None = None,
     source_code: str | None = None,
@@ -116,6 +117,10 @@ def artifact_payload(
         "format": format,
         "kind": kind,
         "size_px": list(size_px) if size_px is not None else None,
+        # The size the figure's code built it at, before any panel fit resized
+        # it — what a later re-fit anchors its squash floor to, so repeated
+        # refits never ratchet a wide layout narrower and narrower.
+        "authored_px": list(authored_px) if authored_px is not None else None,
         "dpi": dpi,
         "slot": slot,
         "source_code": source_code,

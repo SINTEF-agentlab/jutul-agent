@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import socket
 from collections.abc import Callable
 from pathlib import Path
@@ -789,6 +790,9 @@ def _plot_eval_handler(code: str):
 
     if "Bonito.Server" in code and "__JUTUL_WEB_PORT__" in code:
         return EvalResult(output="__JUTUL_WEB_PORT__=9123")
+    if "get(Main.__JUTUL_WEB_FIGS__" in code:  # a refit: echo the requested size
+        m = re.search(r"resize!\(_fig, (\d+), (\d+)\)", code)
+        return EvalResult(output=f"{jl.FIG_SIZE_MARKER}={m.group(1)}x{m.group(2)}")
     if "__JUTUL_WEB_FIGS__[" in code:
         return EvalResult(output=f"{jl.FIG_SIZE_MARKER}=1600x900")
     if jl.SCREEN_PREFERENCE_MARKER in code:
@@ -919,9 +923,10 @@ async def test_replot_without_size_fits_the_session_panel_hint(tmp_path: Path) -
 
 
 async def test_refit_resizes_the_live_figure_in_place(tmp_path: Path) -> None:
-    # The canvas's grown-stage message: the kernel resize!-es the routed figure
-    # (no code re-run), and junk states drop the request silently — the client's
-    # scaled presentation is the always-correct fallback.
+    # The canvas's stage-mismatch message: the kernel resize!-es the routed
+    # figure (no code re-run) and answers refit_done with the echoed size; junk
+    # states drop the request silently — the client's scaled presentation is
+    # the always-correct fallback.
     st, ws, session = _plot_state(tmp_path)
     await st.handle(
         {"type": "refit", "record": "artifacts/res.png", "width": 1200, "height": 1000}
@@ -930,6 +935,8 @@ async def test_refit_resizes_the_live_figure_in_place(tmp_path: Path) -> None:
     call = session.julia.calls[-1]
     assert "resize!(_fig, 1200, 1000)" in call
     assert 'raw"/viz/res"' in call
+    done = next(m for m in ws.sent if m["type"] == "refit_done")
+    assert (done["record"], done["width"], done["height"]) == ("artifacts/res.png", 1200, 1000)
     assert not any(m["type"] == "viz" for m in ws.sent)  # in place: no re-pin
 
     calls = len(session.julia.calls)
@@ -937,6 +944,37 @@ async def test_refit_resizes_the_live_figure_in_place(tmp_path: Path) -> None:
     await st.handle({"type": "refit", "record": "artifacts/nope.png", "width": 900, "height": 900})
     await asyncio.gather(*st._refits)
     assert len(session.julia.calls) == calls  # junk size and unknown record: dropped
+
+
+async def test_refit_anchors_its_floor_to_the_authored_size(tmp_path: Path) -> None:
+    # A wide-authored figure re-fitted for a narrow panel keeps the squash
+    # floor (2/3 of the *authored* width — not of whatever it was last resized
+    # to, so repeated refits never ratchet) and matches the panel's aspect.
+    from jutul_agent.trace import schema
+
+    st, ws, session = _plot_state(tmp_path)
+    session.trace.append(
+        schema.ARTIFACT,
+        schema.artifact_payload(
+            path="artifacts/wide.png",
+            mime="image/png",
+            caption="Wide",
+            format="png",
+            kind="plot",
+            size_px=[1067, 951],
+            authored_px=[1600, 800],
+            slot="wide",
+            live_url="/live/x/viz/wide",
+            source_code="plot_reservoir(model)",
+        ),
+    )
+    await st.handle({"type": "refit", "record": "artifacts/wide.png", "width": 700, "height": 901})
+    await asyncio.gather(*st._refits)
+    call = session.julia.calls[-1]
+    # floor: ceil(1600 * 2/3) = 1067 > 700; height follows the panel's aspect.
+    assert "resize!(_fig, 1067, 1373)" in call
+    done = next(m for m in ws.sent if m["type"] == "refit_done")
+    assert (done["width"], done["height"]) == (1067, 1373)
 
 
 async def test_refit_queues_behind_a_running_turn_without_blocking(tmp_path: Path) -> None:
