@@ -22,6 +22,7 @@ This module is the orchestration: it loads the backend, runs the generated Julia
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import re
@@ -350,6 +351,18 @@ def _plot_id_of(payload: dict[str, Any]) -> str:
     return rec.rsplit("/", 1)[-1].rsplit(".", 1)[0]
 
 
+# How long a re-fit may hold the kernel. Kernel evals serialize on one lock and
+# have no deadline of their own, which is right for work the user asked for — a
+# simulation may run for an hour — but wrong for this. A re-fit is cosmetic and
+# nobody is waiting on its result, so an eval that wedges here (a resize pushing
+# to a browser session that has gone away, a figure whose layout solver spins)
+# would hold the lock and every later turn would sit silent behind it. The
+# deadline turns that into a view that stays scaled, which is the fallback the
+# client already renders. Cancelling interrupts the eval in Julia and frees the
+# lock — see ``JuliaKernel.eval``'s cancellation path.
+REFIT_TIMEOUT_S = 20.0
+
+
 async def refit_web(
     session: Session, route_id: str, size: list[int]
 ) -> tuple[str | None, list[int] | None]:
@@ -358,9 +371,14 @@ async def refit_web(
     The cheap sibling of ``replot_web`` for a view whose frame changed size:
     no code re-runs and the figure's state (camera, widget values) is kept —
     see ``jl.resize_web_fig_call`` for why this direction is the robust one.
+    Bounded by ``REFIT_TIMEOUT_S``: cosmetic work must never wedge a session.
     """
 
-    result = await session.julia.eval(jl.resize_web_fig_call(jl.viz_route(route_id), *size))
+    call = jl.resize_web_fig_call(jl.viz_route(route_id), *size)
+    try:
+        result = await asyncio.wait_for(session.julia.eval(call), REFIT_TIMEOUT_S)
+    except TimeoutError:
+        return "the resize did not finish in time", None
     if result.error:
         return f"the resize failed: {_truncate(result.error, 200)}", None
     echoed = _parse_size(result.output)
