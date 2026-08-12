@@ -13,7 +13,7 @@ import re
 import socket
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1850,3 +1850,60 @@ def test_live_plot_get_waits_out_a_busy_julia(
     assert captured and isinstance(captured[0], httpx.Timeout)
     assert (captured[0].read or 0) >= 300, "a busy Julia must queue, not 502"
     assert (captured[0].connect or 0) <= 10, "a dead port must still fail fast"
+
+
+async def test_a_turn_that_breaks_after_the_agent_still_ends(tmp_path: Path) -> None:
+    # The composer is locked until the server says the turn ended, so a failure
+    # *after* the agent returned — while shaping the end itself — must not take
+    # the end with it. Without the backstop the browser waits on a turn nobody
+    # is running, with an equally inert stop button, and only a reload frees it.
+    st, ws, _session = _plot_state(tmp_path)
+
+    class _Result:
+        interrupts: ClassVar[list[Any]] = []
+
+        @property
+        def messages(self) -> list[Any]:
+            raise RuntimeError("the messages could not be read")
+
+    async def ok(*_args: Any, **_kwargs: Any) -> Any:
+        return _Result()
+
+    st._host.drive_turn = ok  # type: ignore[assignment]
+    await st._run_turn(lambda: None)
+
+    assert [m["type"] for m in ws.sent].count("turn_end") == 1
+    assert any(m["type"] == "error" for m in ws.sent)
+
+
+async def test_the_end_is_sent_once_even_when_the_tail_breaks(tmp_path: Path) -> None:
+    # The turn succeeded and its end went out; a failure afterwards (titling, the
+    # host-context flush) must neither be reported as a turn failure nor produce
+    # a second end.
+    st, ws, _session = _plot_state(tmp_path)
+
+    class _Result:
+        interrupts: ClassVar[list[Any]] = []
+        messages: ClassVar[list[Any]] = []
+
+    async def ok(*_args: Any, **_kwargs: Any) -> Any:
+        return _Result()
+
+    def explode() -> None:
+        raise RuntimeError("titling went wrong")
+
+    st._host.drive_turn = ok  # type: ignore[assignment]
+    st._host.maybe_title = lambda _cb: explode()  # type: ignore[assignment]
+    await st._run_turn(lambda: None)
+
+    assert [m["type"] for m in ws.sent].count("turn_end") == 1
+    assert not [m for m in ws.sent if m["type"] == "error"]
+
+
+async def test_cancel_answers_even_with_no_turn_running(tmp_path: Path) -> None:
+    # If the client thinks a turn is in flight and the server does not, the
+    # client is the one stuck: the stop button must still free its composer.
+    st, ws, _session = _plot_state(tmp_path)
+    await st.cancel_turn()
+    assert [m["type"] for m in ws.sent] == ["turn_end"]
+    assert ws.sent[0]["cancelled"] is True
