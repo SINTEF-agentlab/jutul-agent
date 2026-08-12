@@ -6,6 +6,7 @@
 import type { StoreApi } from "zustand/vanilla";
 
 import { ApiError, api } from "./api";
+import { hostApiUrl, hostContext } from "./hostContext";
 import { HISTORY_CHANGED, type ServerMessage } from "./protocol";
 import type { CredentialPrompt, SessionStore } from "./store";
 import { Transport } from "./transport";
@@ -114,7 +115,25 @@ export class Controller {
     });
     this.refreshHistory();
     this.refreshContextWindow();
+    this.watchHostContext();
     await this.startSession();
+  }
+
+  /** Forward later changes to the host application's selection to the session.
+   *
+   *  The launch value rides in on create and resume; this covers the host
+   *  changing it while a conversation is open. A send that finds no socket is
+   *  dropped on purpose: every path that opens one (create, resume, reconnect)
+   *  carries the current selection in its request, so the session cannot be left
+   *  behind by a change it missed.
+   *
+   *  Never torn down, because it lives as long as the page does: `init` runs
+   *  once, and a reload replaces the whole controller along with the listener. */
+  private watchHostContext(): void {
+    hostContext.listen();
+    hostContext.subscribe((context) => {
+      this.transport.send({ type: "host_context", context });
+    });
   }
 
   async refreshCredentials(): Promise<void> {
@@ -136,7 +155,11 @@ export class Controller {
       meta: `starting ${sim}… (first run builds its environment, this can take a few minutes)`,
     });
     try {
-      const { session_id } = await api.createSession({ sim: sim || undefined });
+      const { session_id } = await api.createSession({
+        sim: sim || undefined,
+        host_context: hostContext.current() ?? undefined,
+        host_api: hostApiUrl ?? undefined,
+      });
       this.s.setSession(session_id, "");
       this.store.setState({ meta: this.meta() });
       this.transport.open(session_id);
@@ -527,6 +550,11 @@ export class Controller {
     const body = await api.resumeSession(id, {
       sim: this.s.sim || undefined,
       model: this.s.model || undefined,
+      // An older session reopened from the sidebar is brought up to date with
+      // what the application has selected now, and pointed at where it listens
+      // now, rather than what it had when the conversation was last touched.
+      host_context: hostContext.current() ?? undefined,
+      host_api: hostApiUrl ?? undefined,
     });
     if (stale()) return;
     if (!(reconnecting && body.kernel_restarted === false)) {

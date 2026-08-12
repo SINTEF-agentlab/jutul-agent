@@ -89,7 +89,11 @@ export type ClientMessage =
   | { type: "replot"; record: string; target?: "revive" | "popout" }
   /** A popout window this client opened has closed; the server releases its route. */
   | { type: "popout_closed"; url: string }
-  | { type: "ui_event"; payload: unknown };
+  | { type: "ui_event"; payload: unknown }
+  /** The embedding application changed what it has selected. The server rebuilds
+   *  the agent's system prompt around the new one (deferred to the end of a turn
+   *  if one is running), so the conversation and the Julia session survive it. */
+  | { type: "host_context"; context: Record<string, unknown> | null };
 
 /**
  * One recorded item from `GET /sessions/{id}/messages`, replayed to reconstruct a

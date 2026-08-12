@@ -46,6 +46,7 @@ than restating the strings, and the table below is the payload contract.
 | `upload` | web server | `path` of a file the user uploaded into the workspace |
 | `ui` | a capability's user-interface tool | `action` and `payload`, forwarded to the front end as a `ui` message |
 | `ui_event` | web server | `payload` of an interaction the front end reported (recorded for later analysis) |
+| `host_context` | web server | `session_id` and the `context` object the embedding application had selected, recorded each time it is adopted or changes (the system prompt only ever states the current one, so this is where the earlier selections survive) |
 | `eval_target` | bench solver | `expected` golden answer for an eval session |
 | `eval_result` | `jutul-agent review eval-link` | `passed`, `task`, `scores` (written onto the session after scoring) |
 

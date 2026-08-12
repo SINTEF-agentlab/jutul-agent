@@ -1,6 +1,7 @@
 // The REST surface of the server (everything except the per-turn WebSocket),
 // typed. Mirrors the FastAPI routes in interfaces/server/app.py.
 
+import type { HostContext } from "./hostContext";
 import type { ReplayMessage } from "./protocol";
 
 export interface ModelInfo {
@@ -132,11 +133,23 @@ export const api = {
     return data.messages;
   },
 
-  createSession: (body: { sim?: string; model?: string }) =>
-    postJSON<{ session_id: string }>("/sessions", body),
+  // `host_context` is the embedding application's current selection and
+  // `host_api` is where its own API listens. Both are sent on resume as well as
+  // create because they describe the application now, not the stored session:
+  // omitting the selection (a UI opened outside the host) leaves the session's
+  // stored one alone, while omitting the URL drops the host's tools, which is
+  // right, because the port it was on is gone.
+  createSession: (body: {
+    sim?: string;
+    model?: string;
+    host_context?: HostContext;
+    host_api?: string;
+  }) => postJSON<{ session_id: string }>("/sessions", body),
 
-  resumeSession: (id: string, body: { sim?: string; model?: string }) =>
-    postJSON<{ session_id: string; kernel_restarted: boolean }>(`/sessions/${id}/resume`, body),
+  resumeSession: (
+    id: string,
+    body: { sim?: string; model?: string; host_context?: HostContext; host_api?: string },
+  ) => postJSON<{ session_id: string; kernel_restarted: boolean }>(`/sessions/${id}/resume`, body),
 
   deleteSession: (id: string) =>
     fetch(`/sessions/${id}`, { method: "DELETE" }).catch(() => undefined),

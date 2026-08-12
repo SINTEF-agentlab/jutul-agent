@@ -94,6 +94,13 @@ specific needs:
 - **Declarative HTTP tools** let an application in any language expose its
   routines: send tool specs (name, description, schema, endpoint) when you create
   a session and the agent gets tools that call them. No Python plug-in needed.
+- **Host context** tells the agent what your application currently has selected,
+  so it can pass your identifiers to those tools instead of asking the user for
+  them. Launch the UI with `?data=<base64 JSON>`, and `?apiurl=<base64 URL>` if
+  your application has an API of its own; the bundled front end does the rest.
+  Your capability's tools read them from `session.host_context` and
+  `session.host_api`. See [the server interface](server-interface.md#embedding-the-host-applications-selection)
+  for how both are kept current across sessions and while one is open.
 
 ## Build your web app
 
