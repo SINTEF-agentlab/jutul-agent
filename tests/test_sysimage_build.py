@@ -9,6 +9,7 @@ to work, and that a build no one verified leaves the workspace exactly as it was
 from __future__ import annotations
 
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -201,8 +202,8 @@ def test_an_image_held_open_fails_cleanly_rather_than_with_a_traceback(
 def test_windows_bakes_fewer_leaves_to_duck_the_dll_limit(
     tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Windows cannot load a DLL of 2 GiB or more, and a full env builds to right
-    over that line. The image sheds leaf packages rather than docstrings:
+    """Windows will not map a DLL past `WINDOWS_IMAGE_LIMIT`, and a full env builds
+    to right over that line. The image sheds leaf packages rather than docstrings:
     stripping metadata would fit too, but then every `@doc` in a session
     answers with nothing, which an agent that reads documentation cannot afford."""
     ws = tmp_path / "ws"
@@ -224,6 +225,59 @@ def test_windows_bakes_fewer_leaves_to_duck_the_dll_limit(
     build(workspace=ws, julia_project=env)
     create = next(call for call in julia.calls if "create_sysimage" in call[-1])
     assert '"DataFrames"' in create[-1] and '"CSV"' in create[-1]
+
+
+def test_windows_turns_off_the_workload_that_does_not_fit(
+    tmp_path: Path,
+    julia: _FakeJulia,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """CairoMakie's workload costs more image than the Windows limit leaves spare.
+    It is turned off through the generated environment, never a checkout, which
+    would carry the cut to machines that have no such limit."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    (env / "LocalPreferences.toml").write_text('[CondaPkg]\nbackend = "Null"\n', encoding="utf-8")
+
+    monkeypatch.setattr(sysimage_build, "on_windows", lambda: True)
+    monkeypatch.setattr(sysimage, "on_windows", lambda: True)
+    build(workspace=ws, julia_project=env)
+
+    preferences = tomllib.loads((env / "LocalPreferences.toml").read_text(encoding="utf-8"))
+    assert preferences["CairoMakie"]["precompile_workload"] is False
+    # Whatever else the environment had set is still set.
+    assert preferences["CondaPkg"]["backend"] == "Null"
+    assert "precompile_workload = false" in capsys.readouterr().out
+
+
+def test_off_windows_the_environment_keeps_every_workload(
+    tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    monkeypatch.setattr(sysimage_build, "on_windows", lambda: False)
+    monkeypatch.setattr(sysimage, "on_windows", lambda: False)
+
+    build(workspace=ws, julia_project=env)
+
+    assert not (env / "LocalPreferences.toml").exists()
+
+
+def test_setting_the_preference_twice_changes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stamp digests this file, so a preference the environment already has
+    must not be rewritten: every build would look like an environment that moved."""
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    monkeypatch.setattr(sysimage_build, "on_windows", lambda: True)
+
+    assert sysimage_build.apply_windows_preferences(env) == [
+        "[CairoMakie] precompile_workload = false"
+    ]
+    before = (env / "LocalPreferences.toml").read_text(encoding="utf-8")
+    assert sysimage_build.apply_windows_preferences(env) == []
+    assert (env / "LocalPreferences.toml").read_text(encoding="utf-8") == before
 
 
 def test_an_image_windows_cannot_load_is_refused_with_the_reason(

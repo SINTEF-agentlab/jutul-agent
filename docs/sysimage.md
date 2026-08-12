@@ -87,17 +87,29 @@ The image is compiled for the machine that builds it. Pass
 `--cpu-target generic` (or another target) to build one that will run on
 different hardware, at some cost in speed.
 
-### Windows and the 2 GiB limit
+### Windows and the image size limit
 
-Windows cannot load a DLL of 2 GiB or more, and a full simulator environment
-builds to right around that line. A Windows image therefore leaves a handful of
-leaf packages out of the bake (the graph-plot and table-export paths: CSV,
-DataFrames, GraphMakie and its layout packages). They stay in the environment
-and load the ordinary way at first use, so nothing is lost but a few seconds,
-once, on the sessions that use them. Docstrings are kept: stripping metadata
-would fit too, but then every `@doc` in a session answers with nothing, which
-an agent that reads documentation cannot afford. Julia 1.13's compressed images
-should remove the need for any of this.
+Windows refuses to map a DLL whose in-memory span — the PE header's
+`SizeOfImage`, not the file's size on disk — is over `0x77000000` (1.86 GiB),
+with the unhelpful "%1 is not a valid Win32 application". A full simulator
+environment builds to right around that line, so a Windows build makes room in
+two ways, and refuses to install an image that is still over it.
+
+It leaves a handful of leaf packages out of the bake (the graph-plot and
+table-export paths: CSV, DataFrames, GraphMakie and its layout packages). They
+stay in the environment and load the ordinary way at first use, so nothing is
+lost but a few seconds, once, on the sessions that use them.
+
+It also sets `[CairoMakie] precompile_workload = false` in the environment's
+`LocalPreferences.toml`, because that one workload costs 163 MiB — more than the
+limit leaves spare. The poster shapes we actually save are baked by `JutulAgent`'s
+own workload instead, so what this costs is a first Cairo render of a plot that
+goes off those paths. It is written on Windows only, and only into the generated
+environment, so it never follows a checkout elsewhere.
+
+Docstrings are kept: stripping metadata would fit too, but then every `@doc` in
+a session answers with nothing, which an agent that reads documentation cannot
+afford. Julia 1.13's compressed images should remove the need for any of this.
 
 ## Staying in sync
 

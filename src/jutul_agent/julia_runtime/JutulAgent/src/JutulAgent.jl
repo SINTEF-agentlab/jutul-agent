@@ -33,11 +33,29 @@ function _warm_draw(Backend)
     return fig
 end
 
+# The shapes a saved PNG is made of: a labelled 2D axis with a legend (rate curves)
+# and a 3D axis with a colorbar (a reservoir). CairoMakie renders every web poster,
+# and its own workload -- which used to cover these draw paths -- is off on Windows,
+# where it does not fit (jutul_agent.sysimage_build.WINDOWS_ENV_PREFERENCES). So bake
+# what we save rather than the general case.
+function _warm_poster(Backend)
+    fig = Backend.Figure(size = (96, 96))
+    ax = Backend.Axis(fig[1, 1], title = "t", xlabel = "x", ylabel = "y")
+    Backend.lines!(ax, 1:3, [1.0, 2.0, 1.5], label = "a")
+    Backend.scatter!(ax, 1:3, [1.0, 2.0, 1.5], label = "b")
+    Backend.axislegend(ax)
+    ax3 = Backend.Axis3(fig[2, 1])
+    plot = Backend.surface!(ax3, 1:4, 1:4, [Float64(i + j) for i in 1:4, j in 1:4])
+    Backend.Colorbar(fig[2, 2], plot)
+    return fig
+end
+
 @setup_workload begin
     @compile_workload begin
         CairoMakie.activate!()
         mktempdir() do dir
             CairoMakie.save(joinpath(dir, "warm-cairo.png"), _warm_draw(CairoMakie))
+            CairoMakie.save(joinpath(dir, "warm-poster.png"), _warm_poster(CairoMakie))
         end
         try
             GLMakie.activate!(visible = false)
