@@ -349,6 +349,27 @@ def _plot_id_of(payload: dict[str, Any]) -> str:
     return rec.rsplit("/", 1)[-1].rsplit(".", 1)[0]
 
 
+async def refit_web(
+    session: Session, route_id: str, size: list[int]
+) -> tuple[str | None, list[int] | None]:
+    """Resize a live figure's served layout in place; ``(error, echoed size)``.
+
+    The cheap sibling of ``replot_web`` for a view whose frame changed size: no
+    code re-runs and the figure's state (camera, widget values) is untouched —
+    the kernel just ``resize!``-es the routed figure and Bonito pushes the new
+    layout to every connected view. Preferred over relying on the served page's
+    own resize handling, whose browser-to-Julia event delivery is unreliable.
+    """
+
+    result = await session.julia.eval(jl.resize_web_fig_call(jl.viz_route(route_id), *size))
+    if result.error:
+        return f"the resize failed: {_truncate(result.error, 200)}", None
+    echoed = _parse_fig_size(result.output)
+    if echoed is None:
+        return "no live figure on that route", None
+    return None, echoed
+
+
 async def replot_web(
     session: Session,
     payload: dict[str, Any],

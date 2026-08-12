@@ -301,6 +301,19 @@ export class Controller {
     this.s.beginWorking(); // the refreshed viz + turn_end (or an error) clears it
   }
 
+  /** A live view's stage grew past its figure: have the kernel re-fit the
+   *  figure to the stage, in place. The reliable direction — a kernel-side
+   *  resize pushes the new layout through Bonito to the frame, while the served
+   *  page noticing its own frame grow is not dependable. Optimistically records
+   *  the new size so the stage stops letterboxing at once; best-effort beyond
+   *  that (a busy kernel skips it, and the scaled view is always correct). */
+  refitView(viewId: string, width: number, height: number): void {
+    const view = this.s.views[viewId];
+    if (!view?.record || !view.live || this.s.busy) return;
+    if (!this.transport.send({ type: "refit", record: view.record, width, height })) return;
+    this.s.setViewSize(viewId, width, height);
+  }
+
   /** Tell the server how big the plot stage is (or will be), so a new figure
    *  is shaped for the panel it lands in. Sent with every prompt and after a
    *  window resize settles — cheap, and only ever a hint. */

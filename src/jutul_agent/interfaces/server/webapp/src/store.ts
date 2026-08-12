@@ -165,6 +165,8 @@ export interface SessionActions {
   removeView: (id: string) => void;
   pinDoc: (url: string, title: string, slot: string) => void;
   setViewMode: (id: string, mode: ViewMode) => void;
+  /** Record a live figure's new served size (a kernel-side re-fit landed). */
+  setViewSize: (id: string, width: number, height: number) => void;
   downgradeView: (id: string) => void;
 }
 
@@ -659,6 +661,11 @@ export function createSessionStore() {
       setViewMode: (id, mode) =>
         set((s) =>
           s.views[id] ? { views: { ...s.views, [id]: { ...s.views[id], mode } } } : {},
+        ),
+
+      setViewSize: (id, width, height) =>
+        set((s) =>
+          s.views[id] ? { views: { ...s.views, [id]: { ...s.views[id], width, height } } } : {},
         ),
 
       downgradeView: (id) => {

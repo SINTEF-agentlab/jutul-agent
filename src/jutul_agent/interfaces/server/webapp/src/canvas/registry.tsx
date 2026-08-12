@@ -102,12 +102,11 @@ function useLiveReady(url: string, enabled: boolean, resetKey: number): boolean 
 }
 
 /** The stage rectangle for a figure of design size ``w x h`` in a ``bw x bh``
- *  panel. "scale" fits the figure at its own layout, shrunk as needed and
- *  centered — but never CSS-upscaled (a canvas grown by CSS blurs): a stage
- *  *bigger* than the figure hands the frame the whole panel instead, so the
- *  served figure reflows larger. Growth is the safe direction — text keeps its
- *  size and the extra room becomes plot area, not letterbox. "fill" hands the
- *  figure the whole panel unconditionally. */
+ *  panel. "scale" fits the figure at its own layout, shrunk as needed (never
+ *  upscaled: a canvas grown by CSS blurs) and centered; "fill" hands the figure
+ *  the whole panel to reflow into. A stage grown past a *live* figure is not
+ *  handled here but by a kernel-side re-fit (see the refit effect below), which
+ *  resizes the served figure itself — this geometry then sees matching sizes. */
 export function stageGeometry(
   mode: ViewMode,
   w: number,
@@ -118,10 +117,7 @@ export function stageGeometry(
   if (mode === "fill" || bw <= 0 || bh <= 0 || w <= 0 || h <= 0) {
     return { left: 0, top: 0, width: bw, height: bh, scale: 1 };
   }
-  const scale = Math.min(bw / w, bh / h);
-  if (scale >= 1) {
-    return { left: 0, top: 0, width: bw, height: bh, scale: 1 };
-  }
+  const scale = Math.min(bw / w, bh / h, 1);
   const width = Math.round(w * scale);
   const height = Math.round(h * scale);
   return {
@@ -148,6 +144,9 @@ export interface StagedFrameProps {
   /** Hold ms after `load` before reporting loaded (WebGL reflow flash). */
   hold: number;
   onLoaded: () => void;
+  /** Called (debounced) when the stage has grown past the figure in both
+   *  dimensions — the caller re-fits the live figure to the new size. */
+  onGrown?: (width: number, height: number) => void;
 }
 
 /** One figure frame inside its stage: the sizing core shared by static plot
@@ -166,6 +165,7 @@ export function StagedFrame({
   probe,
   hold,
   onLoaded,
+  onGrown,
 }: StagedFrameProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Clear a pending hold-timer if the panel unmounts first (tab/canvas closed),
@@ -192,6 +192,17 @@ export function StagedFrame({
   // only fires on a later resize — so cause one.
   const [nudge, setNudge] = useState(0);
   const sized = !!width && !!height;
+
+  // The stage grew past the figure in both dimensions: after the size settles,
+  // ask for a kernel-side re-fit (the caller decides what that means). Each box
+  // change restarts the timer, so only the settled size fires.
+  useEffect(() => {
+    if (!onGrown || !sized || !active || mode !== "scale") return;
+    const grown = box.w >= width! && box.h >= height! && (box.w > width! || box.h > height!);
+    if (!grown) return;
+    const t = setTimeout(() => onGrown(box.w, box.h), 600);
+    return () => clearTimeout(t);
+  }, [onGrown, sized, active, mode, box.w, box.h, width, height]);
 
   const handleLoad = () => {
     if (hold) timer.current = setTimeout(onLoaded, hold);
