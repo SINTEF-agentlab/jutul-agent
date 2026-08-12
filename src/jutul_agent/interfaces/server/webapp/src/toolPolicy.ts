@@ -11,7 +11,16 @@ export interface ToolPolicy {
   rawOutput?: boolean;
   /** A short result summary appended to the summary line ("42 lines"). */
   note?: (content: string) => string;
+  /** The tool reports failure in its reply text (an "ERROR: ..." string the
+   *  model reads, rather than a raised error). The card then shows failed, with
+   *  the reply surfaced — without this a failed plot call reads as done while
+   *  no figure ever appears. */
+  failed?: (content: string) => boolean;
 }
+
+/** The convention the Julia-facing tools use: a failure is a returned reply
+ *  starting with ERROR, so the model can read and react to it. */
+const errorReply = (content: string): boolean => content.trimStart().startsWith("ERROR");
 
 export const TOOL_POLICY: Record<string, ToolPolicy> = {
   write_todos: { rawOutput: false }, // the checklist is the body
@@ -19,7 +28,10 @@ export const TOOL_POLICY: Record<string, ToolPolicy> = {
   grep: { collapsed: true, body: "none", note: (c) => unitNote(c, "match", "matches") },
   glob: { collapsed: true, body: "none", note: (c) => unitNote(c, "file") },
   ls: { collapsed: true, body: "none", rawOutput: false, note: listingNote },
-  plot_julia: { collapsed: true, rawOutput: false }, // the figure is pinned in the canvas
+  // The figure is pinned in the canvas; a failure must still surface here.
+  plot_julia: { collapsed: true, rawOutput: false, failed: errorReply },
+  recapture_plot: { collapsed: true, failed: errorReply },
+  close_plots: { collapsed: true, failed: errorReply },
   write_report: { collapsed: true, body: "none", rawOutput: false }, // the report is in the canvas
   record_attempt: { rawOutput: false }, // a structured body (rationale + metrics) below
 };
