@@ -6,8 +6,9 @@
 import type { StoreApi } from "zustand/vanilla";
 
 import { ApiError, api } from "./api";
+import { stageSize } from "./canvas/stageSize";
 import { hostApiUrl, hostContext } from "./hostContext";
-import { HISTORY_CHANGED, type ServerMessage } from "./protocol";
+import { HISTORY_CHANGED, type ClientMessage, type ServerMessage } from "./protocol";
 import type { CredentialPrompt, SessionStore } from "./store";
 import { Transport } from "./transport";
 
@@ -86,6 +87,14 @@ export class Controller {
         this.queuedPrompt = null;
       },
     );
+    // Keep the server's canvas-size hint fresh across window resizes, so a plot
+    // made mid-turn is shaped for the panel as it is now, not as it was when
+    // the turn started. Debounced: only the settled size matters.
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => this.sendCanvasHint(), 400);
+    });
   }
 
   private get s() {
@@ -184,9 +193,13 @@ export class Controller {
   }
 
   // Deliver a prompt held while no socket was open (see `queuedPrompt`). The socket
-  // buffers it if it is still connecting.
+  // buffers it if it is still connecting. The canvas hint rides ahead of it: a
+  // fresh chat's first prompt takes this path, before any socket existed to
+  // carry the hint `deliver` normally sends — without this, the first plot of a
+  // new session is the one plot not shaped for the panel.
   private flushQueuedPrompt(): void {
     if (!this.queuedPrompt) return;
+    this.sendCanvasHint();
     this.transport.send({ type: "prompt", text: this.queuedPrompt });
     this.queuedPrompt = null;
   }
@@ -234,7 +247,16 @@ export class Controller {
     const queue = this.pendingPopouts.get(view.record) ?? [];
     queue.push(popup);
     this.pendingPopouts.set(view.record, queue);
-    this.transport.send({ type: "replot", record: view.record, target: "popout" });
+    // The replay re-fits the figure to the window the browser actually gave us
+    // (the requested size is a wish; the measured viewport is the fact).
+    const inner = popup.innerWidth >= 100 && popup.innerHeight >= 100;
+    this.transport.send({
+      type: "replot",
+      record: view.record,
+      target: "popout",
+      width: inner ? popup.innerWidth : w,
+      height: inner ? popup.innerHeight : h,
+    });
   }
 
   /** The server's answer to a popout replay: navigate the waiting popup to its
@@ -259,7 +281,10 @@ export class Controller {
     }, 1000);
   }
 
-  /** Re-run a dead view's recorded code so it comes back live, in place. */
+  /** Re-run a dead view's recorded code so it comes back live, in place — and
+   *  re-fit it to the panel: the figure keeps its authored width (the width its
+   *  layout was designed for) and its height extends to the stage's shape, so
+   *  the regenerated view fills the panel instead of floating between bands. */
   regenerate(viewId: string): void {
     const view = this.s.views[viewId];
     if (!view?.record) return;
@@ -271,8 +296,31 @@ export class Controller {
       this.s.addSysNote("Not connected; reload the page and try again.", "warn");
       return;
     }
-    this.transport.send({ type: "replot", record: view.record });
+    const msg: ClientMessage = { type: "replot", record: view.record };
+    const stage = stageSize();
+    if (view.width && stage.width >= 100 && stage.height >= 100) {
+      msg.width = view.width;
+      msg.height = Math.max(
+        view.height ?? 0,
+        Math.round((view.width * stage.height) / stage.width),
+      );
+    }
+    this.transport.send(msg);
     this.s.beginWorking(); // the refreshed viz + turn_end (or an error) clears it
+  }
+
+  /** Tell the server how big the plot stage is (or will be), so a new figure
+   *  is shaped for the panel it lands in. Sent with every prompt and after a
+   *  window resize settles — cheap, and only ever a hint. */
+  sendCanvasHint(): void {
+    const { width, height } = stageSize();
+    if (width < 100 || height < 100) return;
+    // `send` buffers while the socket is still connecting and answers false
+    // with no socket at all — either way a missed hint is only a hint.
+    this.transport.send({
+      type: "ui_event",
+      payload: { kind: "canvas_size", width, height },
+    });
   }
 
   // --- composing / sending --------------------------------------------------
@@ -308,6 +356,9 @@ export class Controller {
   // while connecting; a false means no socket, so keep the text and re-establish the
   // session (a fresh start flushes it, a reconnect replays then flushes it).
   private deliver(msg: { type: "prompt"; text: string }): void {
+    // The hint rides ahead of the prompt on the same ordered socket, so any
+    // plot this turn makes is shaped for the panel as it is right now.
+    this.sendCanvasHint();
     if (this.transport.send(msg)) {
       // Buffered into a still-connecting socket: keep a durable copy too, since a
       // reconnect would clear the transport's buffer. The socket's onOpen drops this

@@ -85,8 +85,10 @@ export type ClientMessage =
   | { type: "cancel" }
   | { type: "command"; command: "set_model" | "set_approval" | "add_dir" | "compact"; arg: string }
   /** Replay a recorded plot: revive its view in place, or serve an independent
-   *  figure for a popout window (answered by `popout_ready`). */
-  | { type: "replot"; record: string; target?: "revive" | "popout" }
+   *  figure for a popout window (answered by `popout_ready`). `width`/`height`
+   *  are an optional target the client measured (the stage, the popup window):
+   *  the server re-fits the replayed figure to that rectangle. */
+  | { type: "replot"; record: string; target?: "revive" | "popout"; width?: number; height?: number }
   /** A popout window this client opened has closed; the server releases its route. */
   | { type: "popout_closed"; url: string }
   | { type: "ui_event"; payload: unknown }

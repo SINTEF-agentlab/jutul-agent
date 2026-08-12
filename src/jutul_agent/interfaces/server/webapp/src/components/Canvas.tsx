@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { LiveFrames } from "../canvas/LiveFrames";
 import { isImageView, panelFor } from "../canvas/registry";
+import { CANVAS_W_KEY, clampFrac } from "../canvas/stageSize";
 import { useController, useSel } from "../context";
 import {
   BackIcon,
@@ -17,11 +18,6 @@ import {
   PopoutIcon,
   RegenerateIcon,
 } from "../icons";
-
-// The canvas width as a viewport fraction, persisted so the split survives a
-// reload. Clamps mirror the CSS min/max so a restored value is always sane.
-const CANVAS_W_KEY = "jutul.canvas-w";
-const clampFrac = (frac: number) => Math.min(Math.max(frac, 0.3), 0.62);
 
 function restoreCanvasWidth(): void {
   const saved = Number(localStorage.getItem(CANVAS_W_KEY));

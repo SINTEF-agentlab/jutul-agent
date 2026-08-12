@@ -280,6 +280,11 @@ class Session:
     # reverse proxy reads this to know which local port to forward a live plot's
     # traffic to, so the browser never needs its own route to that ephemeral port.
     web_plot_port: int | None = None
+    # The browser canvas panel's current size in CSS pixels (web surface only),
+    # kept fresh by the client over the stream socket. ``plot_julia`` uses its
+    # aspect to extend a new figure's height toward the panel's shape when the
+    # model gave no explicit size; ``None`` until a client reports one.
+    web_canvas_hint: tuple[int, int] | None = None
     _ephemeral_memory_dir: Path | None = field(default=None, repr=False)
     # Folders holding a report written this session, whose sidecar transcript is
     # refreshed at turn end (see ``refresh_report_transcripts``).
