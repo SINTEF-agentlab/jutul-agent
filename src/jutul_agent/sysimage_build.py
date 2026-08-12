@@ -105,6 +105,54 @@ def ensure_builder_env() -> Path:
 WINDOWS_UNBAKED = frozenset({"CSV", "DataFrames", "GraphMakie", "LayeredLayouts", "NetworkLayout"})
 
 
+# Cut from a Windows image for the same reason as the packages above; a preference
+# is how a package's own precompile workload is turned off. CairoMakie's costs
+# 163 MiB, more than the limit leaves spare. JutulAgent's workload bakes the poster
+# shapes instead, so what this costs is a first Cairo render off that path.
+WINDOWS_ENV_PREFERENCES: dict[str, dict[str, bool]] = {"CairoMakie": {"precompile_workload": False}}
+
+
+def apply_windows_preferences(julia_project: Path) -> list[str]:
+    """Set the Windows-only build preferences in the environment, and say so.
+
+    They go in ``LocalPreferences.toml`` because that is where a package reads one
+    while it precompiles, and they stay there, which is what the stamp digests. A
+    no-op elsewhere, and nothing in a checkout records the cut, so it cannot follow
+    a repository to a machine that does not need it.
+    """
+
+    if not on_windows():
+        return []
+
+    import tomli_w
+
+    path = julia_project / "LocalPreferences.toml"
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        data = {}
+
+    changed: list[str] = []
+    for package, preferences in WINDOWS_ENV_PREFERENCES.items():
+        section = data.get(package)
+        if not isinstance(section, dict):
+            section = {}
+            data[package] = section
+        for key, value in preferences.items():
+            if section.get(key) != value:
+                section[key] = value
+                # Reported the way the file spells it, which is where a reader looks.
+                changed.append(f"[{package}] {tomli_w.dumps({key: value}).strip()}")
+    if changed:
+        path.write_text(tomli_w.dumps(data), encoding="utf-8")
+    for preference in changed:
+        print(
+            f"note: set {preference} in this environment: the workload it turns "
+            "off does not fit under the Windows image limit. Windows only."
+        )
+    return changed
+
+
 def baked_packages(julia_project: Path) -> tuple[str, ...]:
     """The packages the image is built from (and verified to really contain).
 
@@ -270,6 +318,8 @@ def build(
             "cannot compile here (JuliaLang/PackageCompiler.jl#1070)."
         )
 
+    apply_windows_preferences(julia_project)
+
     env = ensure_builder_env()
     destination = sysimage_path(workspace)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -348,28 +398,18 @@ def build(
 
 
 # Windows refuses to map a DLL whose in-memory span -- the PE header's
-# SizeOfImage, not the file's size on disk -- exceeds this. LoadLibrary fails
-# with the unhelpful "%1 is not a valid Win32 application" (error 193), a hard
-# OS limit PackageCompiler cannot lift. The value was bisected empirically on
-# Windows 11 with synthetic DLLs: 0x77000000 itself loads, one page more is
-# refused, and the boundary is identical whether the bytes are file-backed or
-# virtual-only. A full simulator environment builds to right around this line.
+# SizeOfImage, not the file's size on disk -- exceeds this, failing with the
+# unhelpful "%1 is not a valid Win32 application". A hard OS limit, and a full
+# simulator environment builds to right around it.
 WINDOWS_IMAGE_LIMIT = 0x77000000
 
 
 def _check_loadable_size(candidate: Path) -> None:
     """Refuse an image Windows will not load, with the reason spelled out.
 
-    Refuse, not repair: stripping the DWARF sections would fit easily (~170 MiB
-    of a full build) and the image still runs, but every stack frame of
-    image-compiled code then resolves to nothing -- errors lose their traces,
-    and real init code that indexes ``stacktrace()`` (FreeTypeAbstraction, via
-    the leaf-package precompiles) dies on the empty array. An image that
-    cannot exist beats one that fails like that at a distance.
-
-    Without this the failure arrives from verification as "%1 is not a valid
-    Win32 application", which explains nothing and looks like a broken build
-    rather than a hard OS limit.
+    Refuse, not repair: stripping the debug sections would fit, but then no
+    stack frame of image-compiled code resolves, which empties error traces and
+    breaks init code that reads ``stacktrace()``.
     """
 
     if not on_windows():
@@ -391,11 +431,10 @@ def _check_loadable_size(candidate: Path) -> None:
 def _loader_size(candidate: Path) -> int:
     """The size the Windows loader judges: SizeOfImage, file size as fallback.
 
-    SizeOfImage is the image's mapped span, and it is what the loader checks:
-    the file on disk is tens of MiB bigger (debug sections and symbol table
-    counted differently), which is how a build once passed a file-size check
-    and was refused anyway. When the header cannot be read, the file size errs
-    toward refusing, never toward shipping an unloadable image.
+    The file on disk is tens of MiB bigger than the mapped span the loader
+    checks, so it is the wrong number to judge by. When the header cannot be
+    read the file size errs toward refusing, never toward shipping an image
+    that cannot load.
     """
 
     import struct
@@ -469,9 +508,9 @@ def verify_image(image: Path, julia_project: Path, packages: tuple[str, ...]) ->
     )
     if result.returncode != 0 or "sysimage-verify: ok" not in (result.stdout or ""):
         tail = "\n".join(((result.stdout or "") + (result.stderr or "")).strip().splitlines()[-15:])
-        # The loader-size check runs before verification, so this only fires if
-        # the OS limit drifts from the measured constant; better a translated
-        # error than the loader's, an hour of build time in.
+        # The loader-size check runs first, so this only fires if the real limit
+        # is below WINDOWS_IMAGE_LIMIT; better a translated error than the
+        # loader's.
         hint = (
             "\nThat error is the Windows loader refusing the DLL for its size, "
             "not a broken build; WINDOWS_IMAGE_LIMIT is calibrated too high for "

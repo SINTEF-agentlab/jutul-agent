@@ -194,9 +194,13 @@ def prepare_environment(adapter, *, workspace: Path, julia_project: Path, extens
 
     from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
     from jutul_agent.simulators.env_setup import prepare_workspace_env
+    from jutul_agent.sysimage_build import apply_windows_preferences
 
     if extensions is None:
         extensions = discover_extensions()
+    # Before the environment precompiles, so a workload turned off here is one
+    # nothing compiles twice. The build sets them again anyway.
+    apply_windows_preferences(julia_project)
     prepare_workspace_env(
         adapter,
         workspace=workspace,
