@@ -106,6 +106,27 @@ def _fit_target(stage: list[int], authored: Any) -> list[int]:
     return [round(w1 * s), round(h1 * s)]
 
 
+def _sized(value: Any) -> list[int] | None:
+    """A recorded ``[w, h]`` as plain ints, or ``None`` if it is not one."""
+    if not (isinstance(value, (list, tuple)) and len(value) == 2):
+        return None
+    try:
+        w, h = int(value[0]), int(value[1])
+    except (TypeError, ValueError):
+        return None
+    return [w, h] if w > 0 and h > 0 else None
+
+
+def _authored_of(payload: dict[str, Any]) -> list[int] | None:
+    """The size a recorded plot's code built its figure at, if it is known.
+
+    The overflow guard falls back to it: a layout that cannot be made to fit a
+    compressed canvas is put back at the size its author designed, where it is
+    known to work, rather than left half-grown and clipped.
+    """
+    return _sized(payload.get("authored_px")) or _sized(payload.get("size_px"))
+
+
 def _sane_size(width: Any, height: Any) -> list[int] | None:
     """A client-supplied pixel size as ``[w, h]``, or ``None`` if implausible.
 
@@ -765,7 +786,9 @@ def create_app(
         authored = (payload or {}).get("authored_px") or (payload or {}).get("size_px")
         echoed = None
         with contextlib.suppress(Exception):
-            _err, echoed = await refit_web(host.session, route, _fit_target([w, h], authored))
+            _err, echoed = await refit_web(
+                host.session, route, _fit_target([w, h], authored), _sized(authored)
+            )
         if echoed is None:
             return Response(status_code=204)
         return JSONResponse({"width": echoed[0], "height": echoed[1]})
@@ -1726,7 +1749,9 @@ class _StreamState:
 
         async def run() -> None:
             with contextlib.suppress(Exception):
-                err, echoed = await refit_web(self._host.session, _plot_id_of(payload), target)
+                err, echoed = await refit_web(
+                    self._host.session, _plot_id_of(payload), target, _authored_of(payload)
+                )
                 if err is None and echoed is not None:
                     await _safe_send(
                         self._ws, protocol.refit_done_to_wire(record, echoed[0], echoed[1])

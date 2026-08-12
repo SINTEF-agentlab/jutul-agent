@@ -302,10 +302,14 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
     # exceed the compressed width grows back until nothing hangs outside.
     assert "computedbbox" in code
     assert code.index("_wt") < code.index("computedbbox") < code.index(FIG_SIZE_MARKER)
-    # Bounded against the size the fit chose, not the previous pass, so a
-    # layout that can never be satisfied costs half again its width once
-    # instead of compounding; a pass that cannot move stops the loop.
-    assert "1.5 * _w00" in code and "1.5 * _h00" in code
+    # A layout that only misses by a little is fixed by adding the deficit;
+    # one whose controls sit in fractional columns can never be fixed that way
+    # (growing moves them along), so the second pass goes to the authored size,
+    # where the layout is known to work. That size is also the ceiling — 3/2 of
+    # it is where a runaway layout stops — and a pass that cannot move breaks.
+    assert "_jaw" in code and "_jah" in code
+    assert "_tw = _ox > 0 ? max(_gvp.widths[1], _aw) : _gvp.widths[1]" in code
+    assert "1.5 * _aw" in code and "1.5 * _ah" in code
     assert "_gh == round(Int, _gvp.widths[2])) && break" in code
     # Fitting happens before the echo, so the recorded size is the truth.
     assert code.index("resize!") < code.index(FIG_SIZE_MARKER)

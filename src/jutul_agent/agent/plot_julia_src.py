@@ -153,29 +153,33 @@ FIT_MIN_FRACTION = "2 / 3"
 FIT_MAX_SCALE = "3.0"
 
 
-def _overflow_guard(makie: str) -> str:
-    """Julia to grow a just-resized figure until its layout fits its canvas.
+def _overflow_guard(makie: str, authored_w: str, authored_h: str) -> str:
+    """Julia to give a just-resized figure a canvas its layout fits inside.
 
     A layout whose block minimums (fixed-width labels, buttons, textboxes) sum
     past a compressed figure's width hangs the excess out the right edge —
     Makie places it, the canvas clips it (the reservoir explorer's checkbox
-    labels, measured live). Measure the union of the blocks' computed bboxes
-    and, while any block sticks out, grow the canvas (the browser scales the
-    overshoot back down, so this costs a few percent of scale, never layout).
-    Growing shifts fraction-positioned content with it, so each pass overshoots
-    the deficit (4x covers the worst common case in one step; measured on the
-    explorer: 7px over at 1067 wide, inside at 1095 after one pass).
+    labels and sliders, measured live). Measure the union of the blocks'
+    computed bboxes; if anything sticks out, widen the canvas and let the
+    browser scale the overshoot back down, which costs a little scale and
+    never a clipped control.
 
-    Two bounds keep a pathological layout from running away. Total growth is
-    capped against the size the fit chose, not the previous pass, so a figure
-    whose overflow grows with its canvas — one that can never be satisfied —
-    costs at most half again its width, rather than compounding per pass into
-    something the browser has to scale down to unreadable. And a pass that
-    cannot move (already at the cap) stops the loop instead of re-resizing to
-    the same size, which would cost a canvas clear for nothing."""
+    Two steps, because two different things go wrong. A layout that is merely
+    a few pixels short is fixed by adding the deficit (measured on the mesh
+    figure: 7px over at 1067 wide, inside after one pass). A layout whose
+    controls sit in *fractional* columns with fixed-pixel contents can never
+    be fixed that way — growing the canvas moves those columns right just as
+    fast, so adding the deficit creeps forever (measured on the explorer:
+    1067 -> 1119 -> still outside). For that one the answer is not a bigger
+    guess but the size the figure was authored at, where its layout is known
+    to work; so the second pass goes straight there.
+
+    The authored size is therefore also the ceiling. Growing past it would be
+    inventing room the author never designed for, and 3/2 of it is where a
+    genuinely broken layout stops costing scale."""
 
     return (
-        "    let _w00 = _fig.scene.viewport[].widths[1], _h00 = _fig.scene.viewport[].widths[2]\n"
+        f"    let _aw = {authored_w}, _ah = {authored_h}\n"
         "        for _pass in 1:3\n"
         "            local _gvp = _fig.scene.viewport[]\n"
         "            local _xhi, _yhi = 0.0, 0.0\n"
@@ -192,10 +196,18 @@ def _overflow_guard(makie: str) -> str:
         "            local _ox = _xhi - _gvp.widths[1]\n"
         "            local _oy = _yhi - _gvp.widths[2]\n"
         "            (_ox <= 0 && _oy <= 0) && break\n"
+        "            local _tw, _th\n"
+        "            if _pass == 1\n"
+        "                _tw = _gvp.widths[1] + 4 * max(_ox, 0)\n"
+        "                _th = _gvp.widths[2] + 4 * max(_oy, 0)\n"
+        "            else\n"
+        "                _tw = _ox > 0 ? max(_gvp.widths[1], _aw) : _gvp.widths[1]\n"
+        "                _th = _oy > 0 ? max(_gvp.widths[2], _ah) : _gvp.widths[2]\n"
+        "            end\n"
         "            local _gw = max(round(Int, _gvp.widths[1]),\n"
-        "                ceil(Int, min(_gvp.widths[1] + 4 * max(_ox, 0), 1.5 * _w00)))\n"
+        "                ceil(Int, min(_tw, 1.5 * _aw)))\n"
         "            local _gh = max(round(Int, _gvp.widths[2]),\n"
-        "                ceil(Int, min(_gvp.widths[2] + 4 * max(_oy, 0), 1.5 * _h00)))\n"
+        "                ceil(Int, min(_th, 1.5 * _ah)))\n"
         "            (_gw == round(Int, _gvp.widths[1]) &&\n"
         "                _gh == round(Int, _gvp.widths[2])) && break\n"
         f"            {makie}.resize!(_fig, _gw, _gh)\n"
@@ -217,7 +229,11 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
     if size is not None:
         resize = f"    _M.resize!(_fig, {int(size[0])}, {int(size[1])})\n"
     elif fit is not None:
+        # The authored size, read before the fit touches the figure: the fit
+        # rule floors against it, and the overflow guard falls back to it.
         resize = (
+            "    local _jaw = _fig.scene.viewport[].widths[1]\n"
+            "    local _jah = _fig.scene.viewport[].widths[2]\n"
             "    let _vp = _fig.scene.viewport[]\n"
             f"        local _pw, _ph = {int(fit[0])}, {int(fit[1])}\n"
             "        local _w0 = _vp.widths[1]\n"
@@ -232,7 +248,7 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
             "        local _ht = round(Int, _h1 * _s)\n"
             "        (_wt != round(Int, _w0) || _ht != round(Int, _h0)) &&\n"
             "            _M.resize!(_fig, _wt, _ht)\n"
-            "    end\n" + _overflow_guard("_M")
+            "    end\n" + _overflow_guard("_M", "_jaw", "_jah")
         )
     return (
         "    let _vp = _fig.scene.viewport[]\n"
@@ -764,14 +780,18 @@ def close_windows_call(key: str) -> str:
     return f'JutulAgent.JutulAgentPlots.close_windows(raw"{key}")'
 
 
-def resize_web_fig_call(route: str, width: int, height: int) -> str:
+def resize_web_fig_call(
+    route: str, width: int, height: int, authored: list[int] | None = None
+) -> str:
     """Julia to resize a routed live figure in place — the robust direction:
     a browser-side resize relies on the served page telling Julia, which is
     measurably unreliable, while a kernel-side ``resize!`` pushes the new
     layout to every connected view through Bonito's own observable traffic.
     Figure state (camera, widgets) is untouched. The overflow guard runs after
     the resize, so a layout whose minimums exceed the target grows to fit and
-    the echo reports the size the figure really has. Answers ``missing`` for a
+    the echo reports the size the figure really has. ``authored`` is the size
+    the figure's code built it at, which the guard falls back to; without it
+    the guard can only add the measured deficit. Answers ``missing`` for a
     route not serving a figure."""
 
     return (
@@ -786,7 +806,11 @@ def resize_web_fig_call(route: str, width: int, height: int) -> str:
         f" round(Int, _vp.widths[2]) != {int(height)}) &&\n"
         f"                WGLMakie.Makie.resize!(_fig, {int(width)}, {int(height)})\n"
         "        end\n"
-        + _overflow_guard("WGLMakie.Makie")
+        + _overflow_guard(
+            "WGLMakie.Makie",
+            str(int(authored[0])) if authored else str(int(width)),
+            str(int(authored[1])) if authored else str(int(height)),
+        )
         + "        let _vp = _fig.scene.viewport[]\n"
         f'            println("{FIG_SIZE_MARKER}=", _vp.widths[1], "x", _vp.widths[2])\n'
         "        end\n"
