@@ -13,7 +13,7 @@ import re
 import socket
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -840,7 +840,7 @@ async def test_replot_revive_reserves_route_and_revives_view(tmp_path: Path) -> 
     # The regenerate button: the recorded code re-runs on the plot's own route,
     # the re-finalized artifact flushes as a fresh live viz, and the turn ends.
     st, ws, session = _plot_state(tmp_path)
-    await st._replot("artifacts/res.png", "revive")
+    await st._replot_turn("artifacts/res.png", "revive", None)
     viz = next(m for m in ws.sent if m["type"] == "viz")
     assert viz["live"] is True
     assert viz["url"] == f"/live/{session.session_id}/viz/res"
@@ -854,7 +854,7 @@ async def test_replot_revive_reserves_route_and_revives_view(tmp_path: Path) -> 
 
 async def test_replot_unknown_record_is_an_error(tmp_path: Path) -> None:
     st, ws, _session = _plot_state(tmp_path)
-    await st._replot("artifacts/nope.png", "revive")
+    await st._replot_turn("artifacts/nope.png", "revive", None)
     assert ws.sent[0]["type"] == "error"
     assert "no recorded code" in ws.sent[0]["message"]
 
@@ -865,7 +865,7 @@ async def test_replot_popout_serves_independent_route_and_close_releases_it(
     # A popout replays the code into its own route (an independent figure), skips
     # the poster (the record already exists), and the close releases that route.
     st, ws, session = _plot_state(tmp_path)
-    await st._replot("artifacts/res.png", "popout")
+    await st._replot_turn("artifacts/res.png", "popout", None)
     (ready,) = [m for m in ws.sent if m["type"] == "popout_ready"]
     assert ready["error"] is None
     # The popup gets the scale-to-fit wrapper, sized from the figure's echo
@@ -1028,6 +1028,52 @@ async def test_refit_widens_a_tall_figure_only_to_the_distortion_bound(tmp_path:
     assert "resize!(_fig, 1080, 900)" in call
     done = next(m for m in ws.sent if m["type"] == "refit_done")
     assert (done["width"], done["height"]) == (1080, 900)
+
+
+async def test_a_replay_that_blows_up_still_ends_its_turn(tmp_path: Path) -> None:
+    # A replay holds the turn guard, and the UI shows it as working until the
+    # turn ends. Anything that escapes without a closing message leaves the
+    # front end spinning with nothing to click — the "it just hung" bug. Even
+    # a failure nobody anticipated has to end the turn.
+    st, ws, session = _plot_state(tmp_path)
+
+    async def _explode(code: str):
+        raise RuntimeError("kaboom")
+
+    session.julia._eval_handler = _explode
+    await st._start_replot({"type": "replot", "record": "artifacts/res.png"})
+    await st._turn
+    kinds = [m["type"] for m in ws.sent]
+    assert "error" in kinds, kinds
+    assert "turn_end" in kinds, kinds  # the UI is released either way
+
+
+async def test_a_wedged_refit_gives_the_kernel_back(tmp_path: Path) -> None:
+    # Kernel evals serialize on one lock and have no deadline of their own,
+    # which is right for work the user asked for and wrong for a cosmetic
+    # resize: an eval that never returns here would hold the lock and every
+    # later turn would sit silent behind it — the worst failure to have in
+    # front of an audience. The re-fit gives up instead, and the view simply
+    # stays scaled.
+    from jutul_agent.agent import plot_julia
+    from jutul_agent.agent.plot_julia import refit_web
+
+    _st, _ws, session = _plot_state(tmp_path)
+    started = asyncio.Event()
+
+    async def _wedged(code: str):
+        started.set()
+        await asyncio.sleep(3600)  # never returns on its own
+
+    session.julia._eval_handler = _wedged
+    monkey = plot_julia.REFIT_TIMEOUT_S
+    plot_julia.REFIT_TIMEOUT_S = 0.05
+    try:
+        err, echoed = await refit_web(session, "res", [900, 600])
+    finally:
+        plot_julia.REFIT_TIMEOUT_S = monkey
+    assert started.is_set()  # it really did reach the kernel
+    assert echoed is None and err is not None and "in time" in err
 
 
 async def test_refit_queues_behind_a_running_turn_without_blocking(tmp_path: Path) -> None:
@@ -1850,3 +1896,60 @@ def test_live_plot_get_waits_out_a_busy_julia(
     assert captured and isinstance(captured[0], httpx.Timeout)
     assert (captured[0].read or 0) >= 300, "a busy Julia must queue, not 502"
     assert (captured[0].connect or 0) <= 10, "a dead port must still fail fast"
+
+
+async def test_a_turn_that_breaks_after_the_agent_still_ends(tmp_path: Path) -> None:
+    # The composer is locked until the server says the turn ended, so a failure
+    # *after* the agent returned — while shaping the end itself — must not take
+    # the end with it. Without the backstop the browser waits on a turn nobody
+    # is running, with an equally inert stop button, and only a reload frees it.
+    st, ws, _session = _plot_state(tmp_path)
+
+    class _Result:
+        interrupts: ClassVar[list[Any]] = []
+
+        @property
+        def messages(self) -> list[Any]:
+            raise RuntimeError("the messages could not be read")
+
+    async def ok(*_args: Any, **_kwargs: Any) -> Any:
+        return _Result()
+
+    st._host.drive_turn = ok  # type: ignore[assignment]
+    await st._run_turn(lambda: None)
+
+    assert [m["type"] for m in ws.sent].count("turn_end") == 1
+    assert any(m["type"] == "error" for m in ws.sent)
+
+
+async def test_the_end_is_sent_once_even_when_the_tail_breaks(tmp_path: Path) -> None:
+    # The turn succeeded and its end went out; a failure afterwards (titling, the
+    # host-context flush) must neither be reported as a turn failure nor produce
+    # a second end.
+    st, ws, _session = _plot_state(tmp_path)
+
+    class _Result:
+        interrupts: ClassVar[list[Any]] = []
+        messages: ClassVar[list[Any]] = []
+
+    async def ok(*_args: Any, **_kwargs: Any) -> Any:
+        return _Result()
+
+    def explode() -> None:
+        raise RuntimeError("titling went wrong")
+
+    st._host.drive_turn = ok  # type: ignore[assignment]
+    st._host.maybe_title = lambda _cb: explode()  # type: ignore[assignment]
+    await st._run_turn(lambda: None)
+
+    assert [m["type"] for m in ws.sent].count("turn_end") == 1
+    assert not [m for m in ws.sent if m["type"] == "error"]
+
+
+async def test_cancel_answers_even_with_no_turn_running(tmp_path: Path) -> None:
+    # If the client thinks a turn is in flight and the server does not, the
+    # client is the one stuck: the stop button must still free its composer.
+    st, ws, _session = _plot_state(tmp_path)
+    await st.cancel_turn()
+    assert [m["type"] for m in ws.sent] == ["turn_end"]
+    assert ws.sent[0]["cancelled"] is True

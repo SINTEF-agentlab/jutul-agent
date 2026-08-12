@@ -1324,6 +1324,9 @@ class _StreamState:
         self._host = host
         self._pending: list[Any] = []
         self._turn: asyncio.Task[None] | None = None
+        # Whether the running turn has already told the client it ended, so the
+        # backstop in ``_run_turn`` never sends a second end.
+        self._turn_ended = True
         # Held so the fire-and-forget titling task isn't garbage-collected mid-run.
         self._title_task: asyncio.Task[None] | None = None
         # High-water mark over trace event ids for side outputs (artifacts, ui),
@@ -1578,7 +1581,36 @@ class _StreamState:
         # An optional target size the client measured (the stage on a regenerate,
         # the popup window on a popout): the replay re-fits the figure to it.
         size = _sane_size(message.get("width"), message.get("height"))
-        self._turn = asyncio.create_task(self._replot(record, target, size))
+        self._turn = asyncio.create_task(self._replot_turn(record, target, size))
+
+    async def _replot_turn(self, record: str, target: str, size: list[int] | None) -> None:
+        """Run a replay so that it always ends its turn, whatever happens.
+
+        A replay holds the same turn guard a prompt does, so anything escaping
+        without a closing message leaves the UI spinning with nothing to click.
+        ``_replot`` reports the failures it anticipates; the backstop below
+        covers the rest (a trace read that throws, a flush that fails, a cancel
+        arriving outside the one await that expects it).
+        """
+        end = self._replay_end(record, target)
+        self._turn_ended = False
+        try:
+            await self._replot(record, target, size)
+        except asyncio.CancelledError:
+            await self._end_turn(protocol.turn_cancelled_to_wire())
+            raise
+        except Exception as exc:
+            await self._end_turn(end, error=f"could not regenerate the plot: {exc}")
+        finally:
+            await self._end_turn(end)
+
+    def _replay_end(self, record: str, target: str) -> dict[str, Any]:
+        """What ends a replay's turn: a popout answers its request, the rest end
+        the turn the client is showing as busy."""
+
+        if target == "popout":
+            return protocol.popout_ready_to_wire(record, None, error="the replay failed")
+        return protocol.turn_end_to_wire([])
 
     async def _replot(self, record: str, target: str, size: list[int] | None = None) -> None:
         """Re-run a recorded plot's code and deliver the resulting view.
@@ -1598,14 +1630,12 @@ class _StreamState:
 
         async def fail(reason: str) -> None:
             if popout:
-                await _safe_send(
-                    self._ws, protocol.popout_ready_to_wire(record, None, error=reason)
-                )
+                await self._end_turn(protocol.popout_ready_to_wire(record, None, error=reason))
             else:
-                await _safe_send(
-                    self._ws, protocol.error_to_wire(f"could not regenerate the plot: {reason}")
+                await self._end_turn(
+                    protocol.turn_end_to_wire([]),
+                    error=f"could not regenerate the plot: {reason}",
                 )
-                await _safe_send(self._ws, protocol.turn_end_to_wire([]))
 
         payload: dict[str, Any] | None = None
         for event in reversed(self._host.session.trace.iter_events()):
@@ -1628,10 +1658,9 @@ class _StreamState:
             err, url, size_px = await replot_web(
                 self._host.session, payload, route_suffix=suffix, record=not popout, fit_to=size
             )
-        except asyncio.CancelledError:
-            await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
-            raise
         except Exception as exc:  # surface the failure, keep the session alive
+            # Cancellation is deliberately not caught: ``_replot_turn`` reports
+            # it, in one place, for every point a cancel can arrive at.
             err, url, size_px = (
                 f"the Julia session is unavailable ({type(exc).__name__}: {exc})",
                 None,
@@ -1653,10 +1682,10 @@ class _StreamState:
                     f"?route={quote(route_id)}&w={int(w)}&h={int(h)}"
                 )
                 self._popouts[url] = route_id
-            await _safe_send(self._ws, protocol.popout_ready_to_wire(record, url))
+            await self._end_turn(protocol.popout_ready_to_wire(record, url))
             return
         await self._flush_side_outputs()
-        await _safe_send(self._ws, protocol.turn_end_to_wire([]))
+        await self._end_turn(protocol.turn_end_to_wire([]))
         # Make the regeneration part of the shared conversation, so the next turn
         # knows the plot's code re-ran in the shared kernel. Best-effort.
         with contextlib.suppress(Exception):
@@ -1711,14 +1740,23 @@ class _StreamState:
     async def _close_popout(self, url: str) -> None:
         """Release the figure behind a closed popout window. Best-effort: only a
         route this connection's own popout created, and only when the kernel is
-        free (a busy kernel just leaves it to the route cap)."""
+        free (a busy kernel just leaves it to the route cap).
+
+        Deadlined for the same reason a re-fit is (see ``REFIT_TIMEOUT_S``):
+        nobody waits on this, it holds the one kernel lock while it runs, and
+        the route cap already releases the figure if this never lands — so it
+        must not be able to leave the next turn waiting behind it."""
         route_id = self._popouts.pop(url, None)
         if route_id is None or self._busy():
             return
         from jutul_agent.agent import plot_julia_src as jl
+        from jutul_agent.agent.plot_julia import REFIT_TIMEOUT_S
 
         with contextlib.suppress(Exception):
-            await self._host.session.julia.eval(jl.close_web_plots_call(route_id))
+            await asyncio.wait_for(
+                self._host.session.julia.eval(jl.close_web_plots_call(route_id)),
+                REFIT_TIMEOUT_S,
+            )
 
     def _busy(self) -> bool:
         return self._turn is not None and not self._turn.done()
@@ -1769,7 +1807,53 @@ class _StreamState:
         self._turn = asyncio.create_task(self._run_turn(factory))
 
     async def _run_turn(self, factory) -> None:
+        """Drive one turn and, whatever happens, tell the client it ended.
+
+        The client locks its composer for the duration and unlocks it only on an
+        ``interrupt``, an ``error`` or a ``turn_end``. So a turn that raises
+        *outside* the guarded call below — while flushing artifacts, summarising
+        usage, delivering the end itself — would leave the browser waiting on a
+        turn no one is running, with the stop button equally inert (the task is
+        done, so there is nothing left to cancel). Only a reload frees it. The
+        end is therefore delivered from a ``finally``, once per turn.
+        """
         self._side_output_id = self._latest_event_id()
+        self._turn_ended = False
+        try:
+            await self._drive(factory)
+        except asyncio.CancelledError:
+            # Surface whatever the turn produced before it was stopped.
+            with contextlib.suppress(Exception):
+                await self._flush_side_outputs()
+            await self._end_turn(protocol.turn_cancelled_to_wire())
+            raise
+        except Exception as exc:
+            with contextlib.suppress(Exception):
+                await self._flush_side_outputs()
+            await self._end_turn(protocol.turn_end_to_wire([]), error=str(exc))
+        finally:
+            # A turn that reached here without ending raised somewhere the client
+            # cannot see; end it anyway rather than wedge the composer.
+            await self._end_turn(protocol.turn_end_to_wire([]), error="the turn ended unexpectedly")
+
+    async def _end_turn(self, wire: dict[str, Any], *, error: str | None = None) -> None:
+        """Tell the client the turn is over — at most once per turn.
+
+        Every later call is a no-op, so the backstop in ``_run_turn`` is free to
+        fire unconditionally: it only speaks for a turn that ended no other way.
+        A turn paused on an approval counts as ended (the ``interrupt`` frees the
+        composer by itself), so no spurious end follows it.
+        """
+        if self._turn_ended:
+            return
+        self._turn_ended = True
+        if error is not None:
+            await _safe_send(self._ws, protocol.error_to_wire(error))
+        await _safe_send(self._ws, wire)
+
+    async def _drive(self, factory) -> None:
+        """The turn itself. Reports its own outcome through ``_end_turn``; a path
+        that raises before doing so is caught by ``_run_turn``'s backstop."""
         try:
             # The host owns the policy loop (auto-resume past interrupts the
             # mode or the session allowlist already allows) and the settle
@@ -1780,35 +1864,32 @@ class _StreamState:
                 allowlist=self._allowlist,
                 on_message=self._on_message,
             )
-        except asyncio.CancelledError:
-            await self._flush_side_outputs()
-            await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
-            raise
-        except Exception as exc:  # surface the failure, then end the turn
-            await self._flush_side_outputs()  # surface anything produced before it failed
-            await _safe_send(self._ws, protocol.error_to_wire(str(exc)))
-            await _safe_send(self._ws, protocol.turn_end_to_wire([]))
-            return
         finally:
             # A cancelled/errored turn can leave a tool mid-stream; clear streaming
             # state so a stale trailing flush can't fire on a later turn.
             self._end_all_tool_streams()
-        await self._flush_side_outputs()
+        # Best-effort from here on: the artifacts and the usage tick are worth
+        # having, but never at the cost of the turn's end (see ``_run_turn``).
+        with contextlib.suppress(Exception):
+            await self._flush_side_outputs()
         self._pending = list(result.interrupts)
         if self._pending:
             # The turn paused for approval. Send the requests and wait for a
             # decision; the turn ends only once it runs to completion.
+            self._turn_ended = True
             for interrupt in self._pending:
                 await _safe_send(self._ws, protocol.interrupt_to_wire(interrupt))
             return
-        usage = protocol.usage_to_wire(result.messages)
-        if usage is not None:
-            await _safe_send(self._ws, usage)
-        await _safe_send(self._ws, protocol.turn_end_to_wire(result.messages))
-        await self._flush_host_context()
-        task = self._host.maybe_title(self._on_titled)
-        if task is not None:
-            self._title_task = task
+        with contextlib.suppress(Exception):
+            usage = protocol.usage_to_wire(result.messages)
+            if usage is not None:
+                await _safe_send(self._ws, usage)
+        await self._end_turn(protocol.turn_end_to_wire(result.messages))
+        with contextlib.suppress(Exception):
+            await self._flush_host_context()
+            task = self._host.maybe_title(self._on_titled)
+            if task is not None:
+                self._title_task = task
 
     async def _on_titled(self, title: str) -> None:
         """Nudge the front end to refresh its history list with the new title."""
@@ -1922,10 +2003,19 @@ class _StreamState:
         self._tool_delta_wire.clear()
 
     async def cancel_turn(self) -> None:
+        """Stop the running turn — and always answer, even when none is running.
+
+        The client's composer is locked until the server says a turn ended, so a
+        cancel that answers nothing leaves the only escape a page reload. That is
+        the case worth covering: if the client believes a turn is in flight and
+        the server does not, they disagree, and the client is the one stuck.
+        """
         if self._busy():
             self._turn.cancel()  # type: ignore[union-attr]
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._turn  # type: ignore[arg-type]
+            return
+        await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
 
     async def aclose(self) -> None:
         """Tear down on disconnect: cancel a running turn and any in-flight titling.
