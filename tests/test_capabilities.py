@@ -94,7 +94,7 @@ def test_discover_extensions_skips_broken_but_says_why(monkeypatch, capsys) -> N
         name = "brokenext"
 
         def load(self):
-            raise RuntimeError("SEISMIC_DATA_DIR is not set")
+            raise RuntimeError("DATA_DIR is not set")
 
     class _NotACapability:
         name = "wrongext"
@@ -107,7 +107,7 @@ def test_discover_extensions_skips_broken_but_says_why(monkeypatch, capsys) -> N
     )
     assert discover_extensions() == []
     warned = capsys.readouterr().err
-    assert "brokenext" in warned and "SEISMIC_DATA_DIR is not set" in warned
+    assert "brokenext" in warned and "DATA_DIR is not set" in warned
     assert "wrongext" in warned and "not a Capability" in warned
 
 
