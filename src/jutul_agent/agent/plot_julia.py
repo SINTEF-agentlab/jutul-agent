@@ -318,20 +318,21 @@ def _parse_fig_size(output: str | None) -> list[int] | None:
     return [int(match.group(1)), int(match.group(2))]
 
 
-def _panel_aspect(session: Session) -> float | None:
-    """The browser canvas panel's height/width, from the client's size hint.
+def _panel_fit(session: Session) -> list[int] | None:
+    """The browser canvas panel's pixel size, from the client's size hint.
 
     ``None`` without a plausible hint (no client connected yet, or a degenerate
-    measurement), which leaves the figure's authored size untouched. Clamped so
-    a freak measurement can never author an absurdly tall or flat figure.
+    measurement), which leaves the figure's authored size untouched. The fit
+    rule itself (width floored against squash, height following the panel's
+    aspect) lives in the generated Julia — see ``jl._fig_size_block``.
     """
     hint = session.web_canvas_hint
     if not hint:
         return None
     w, h = hint
-    if w < 100 or h < 100:
+    if not (100 <= w <= 8192 and 100 <= h <= 8192):
         return None
-    return max(0.3, min(h / w, 3.0))
+    return [w, h]
 
 
 def _plot_id_of(payload: dict[str, Any]) -> str:
@@ -366,11 +367,12 @@ async def replot_web(
     serves on ``route_suffix``'s separate route and only the live URL is
     returned — an independent, ephemeral view for a popout window.
 
-    ``size`` re-fits the figure to a target the client measured — the canvas
-    stage on a regenerate, the popup window on a popout — so the replay is laid
-    out for the rectangle it will actually land in. The returned size is the
-    figure's *echoed* real size, which can differ when its own layout refuses
-    part of the resize; presentation must trust the echo, never the request.
+    ``size`` re-fits the figure to a target the client measured (the popup
+    window on a popout); without one, the replay fits to the session's panel
+    hint the way a fresh plot does — that is what makes regenerate an honest
+    "re-render for this panel" button. The returned size is the figure's
+    *echoed* real size, which can differ when its own layout refuses part of
+    the resize; presentation must trust the echo, never the request.
 
     The code replays into the current kernel state: variables it used may have
     changed or be gone after a restart, so a failure is reported, not hidden.
@@ -405,6 +407,7 @@ async def replot_web(
             html_path=session.output_dir / html_rel,
             route=route,
             size=size,
+            fit=_panel_fit(session) if size is None else None,
             poster=record,
         )
     )
@@ -545,11 +548,10 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
         if web:
             html_rel = rel_path[:-4] + ".html"
             html_abs = session.output_dir / html_rel
-            # Without an explicit size, extend the figure's height toward the
-            # browser panel's shape (the client keeps the session's hint fresh):
-            # the authored width — what the layout was designed for — is kept,
-            # so the panel fills vertically instead of letterboxing a wide figure.
-            aspect = _panel_aspect(session) if size is None else None
+            # Without an explicit size, fit the figure to the browser panel (the
+            # client keeps the session's hint fresh): full-size text at the
+            # panel's own size, width floored against squashing a wide layout.
+            fit = _panel_fit(session) if size is None else None
             # Serve live (in-figure widgets work) when the session's Bonito server
             # is up; otherwise fall back to a self-contained static export.
             if live_base:
@@ -560,12 +562,12 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
                     html_path=html_abs,
                     route=route,
                     size=size,
-                    aspect=aspect,
+                    fit=fit,
                 )
                 live_url = f"{live_base}{route}"
             else:
                 call = jl.web_render_call(
-                    user_code=code, png_path=abs_path, html_path=html_abs, size=size, aspect=aspect
+                    user_code=code, png_path=abs_path, html_path=html_abs, size=size, fit=fit
                 )
                 live_url = None
             result = await session.julia.eval(call)
