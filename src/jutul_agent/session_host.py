@@ -76,6 +76,8 @@ class SessionHost:
         # turns against the one kernel concurrently and corrupt its state. ``attach``
         # claims the session for a connection; ``detach`` releases it on disconnect.
         self._attached = False
+        # Whether a turn is running; see the ``busy`` property.
+        self._busy = False
         # Background Julia warm-up (load warm package, set GLMakie offscreen); held
         # so it can be cancelled on teardown. Set by ``start``.
         self._warmup_task: Any | None = None
@@ -95,6 +97,20 @@ class SessionHost:
     def attached(self) -> bool:
         """Whether a live connection currently holds this session."""
         return self._attached
+
+    def set_busy(self, busy: bool) -> None:
+        """Mark whether a turn is running, whoever is (or is no longer) watching."""
+        self._busy = busy
+
+    @property
+    def busy(self) -> bool:
+        """Whether a turn is in flight.
+
+        Separate from ``attached`` because a turn outlives the connection that
+        started it: switching sessions closes the socket but leaves the work
+        running, and nothing may tear the session down until it finishes.
+        """
+        return self._busy
 
     @property
     def model(self) -> str | None:

@@ -184,9 +184,10 @@ class SessionManager:
 
         A host already registered under this id (a re-resume) is replaced and the
         stale one closed, and anything beyond ``max_live`` is evicted oldest-first
-        — skipping any host a client is still connected to, so an in-use kernel is
-        never torn down mid-turn (if every live host is attached, the cap is exceeded
-        rather than killing an active one). Kernels are torn down outside the lock so
+        — skipping any host a client is still connected to, and any still running a
+        turn after its connection went away, so an in-use kernel is never torn down
+        mid-turn (if every live host is spoken for, the cap is exceeded rather than
+        killing an active one). Kernels are torn down outside the lock so
         a slow shutdown can't block other sessions; eviction never raises (a closed
         kernel stays resumable on disk).
         """
@@ -198,7 +199,11 @@ class SessionManager:
             self._hosts[host.session_id] = host  # newest → most-recently-used end
             while len(self._hosts) > self._max_live:
                 victim = next(
-                    (sid for sid, h in self._hosts.items() if not h.attached and h is not host),
+                    (
+                        sid
+                        for sid, h in self._hosts.items()
+                        if not h.attached and not h.busy and h is not host
+                    ),
                     None,
                 )
                 if victim is None:  # everything else is in use; keep them all
@@ -242,15 +247,15 @@ class SessionManager:
         """Close and unregister a session; ``False`` if it was not registered.
 
         With ``require_idle`` set, refuse (raise ``SessionBusyError``) when a connection
-        is attached, so a stray delete can't tear a kernel down under a live turn. The
-        attached check and the pop are one atomic step under the lock, with no
-        TOCTOU gap for a connection to attach in between.
+        is attached or a turn is still running, so a stray delete can't tear a kernel
+        down under live work. The check and the pop are one atomic step under the
+        lock, with no TOCTOU gap for a connection to attach in between.
         """
         async with self._lock:
             host = self._hosts.get(session_id)
             if host is None:
                 return False
-            if require_idle and host.attached:
+            if require_idle and (host.attached or host.busy):
                 raise SessionBusyError(session_id)
             del self._hosts[session_id]
         await host.aclose()
