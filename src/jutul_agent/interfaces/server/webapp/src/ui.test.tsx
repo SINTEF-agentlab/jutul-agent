@@ -18,6 +18,33 @@ describe("Thread rendering", () => {
     expect(screen.getByText(/What would you like to explore/)).toBeInTheDocument();
   });
 
+  it("lets an installed capability name the welcome screen and set its prompts", () => {
+    const { store } = renderWithStore(<Thread />);
+    act(() =>
+      store.getState().setConfig({
+        sim: "jutuldarcy",
+        simDetails: { jutuldarcy: { display_name: "JutulDarcy", examples: ["Sim prompt."] } },
+        branding: { display_name: "MyApp", tagline: "Build a model.", examples: ["Build the model."] },
+      }),
+    );
+    expect(screen.getByText(/explore with MyApp/)).toBeInTheDocument();
+    expect(screen.getByText("Build a model.")).toBeInTheDocument();
+    expect(screen.getByText("Build the model.")).toBeInTheDocument();
+    expect(screen.queryByText("Sim prompt.")).toBeNull();
+  });
+
+  it("falls back to the simulator when nothing is branded", () => {
+    const { store } = renderWithStore(<Thread />);
+    act(() =>
+      store.getState().setConfig({
+        sim: "jutuldarcy",
+        simDetails: { jutuldarcy: { display_name: "JutulDarcy", examples: ["Sim prompt."] } },
+      }),
+    );
+    expect(screen.getByText(/explore with JutulDarcy/)).toBeInTheDocument();
+    expect(screen.getByText("Sim prompt.")).toBeInTheDocument();
+  });
+
   it("renders a streamed exchange: user, assistant, tool", () => {
     const { store } = renderWithStore(<Thread />);
     act(() => store.getState().addUser("run a sim"));

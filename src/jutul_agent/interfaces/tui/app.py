@@ -317,15 +317,21 @@ class TUIApp(App[None]):
         self._prompt: PromptTextArea = None  # type: ignore[assignment]
         self._approval_menu: ApprovalMenu = None  # type: ignore[assignment]
 
+    @property
+    def _session_label(self) -> str:
+        """What to call this session: the application a capability declares, else the simulator."""
+        branding = self._host.branding
+        return (branding.display_name if branding else "") or self._session.simulator.display_name
+
     def compose(self) -> ComposeResult:
         yield StatusBar(
-            simulator_label=self._session.simulator.display_name,
+            simulator_label=self._session_label,
             session_id=self._session.session_id,
             model_label=self._model_label,
             id="status",
         )
         with VerticalScroll(id="log"):
-            yield WelcomeBlock(simulator_label=self._session.simulator.display_name)
+            yield WelcomeBlock(simulator_label=self._session_label)
         with Vertical(id="input-panel"):
             yield ApprovalMenu(id="approval-menu")
             with Horizontal(id="input-row"):
@@ -1206,7 +1212,7 @@ class TUIApp(App[None]):
             return "this session only (could not write config)"
 
     def _refresh_subtitle(self) -> None:
-        parts = [self._session.simulator.display_name]
+        parts = [self._session_label]
         if self._model_label:
             parts.append(self._model_label)
         parts.append(display_session_id(self._session.session_id))
@@ -1583,7 +1589,7 @@ class TUIApp(App[None]):
     async def _mount_welcome_if_empty(self) -> None:
         if self._log.children:
             return
-        await self._log.mount(WelcomeBlock(simulator_label=self._session.simulator.display_name))
+        await self._log.mount(WelcomeBlock(simulator_label=self._session_label))
         self._jump_to_latest()
 
     def _command_specs(self) -> list[SlashCommandSpec]:

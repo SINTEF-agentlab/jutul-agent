@@ -18,7 +18,7 @@ from typing import Any, ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
-from jutul_agent.agent.capabilities import Capability
+from jutul_agent.agent.capabilities import Branding, Capability
 from jutul_agent.interfaces.server.app import artifact_wire_events, create_app
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
 from jutul_agent.lab.fakes import (
@@ -167,6 +167,48 @@ def test_simulators_endpoint(tmp_path: Path) -> None:
     detail = body["details"]["jutuldarcy"]
     assert detail["display_name"] == "JutulDarcy"
     assert detail["examples"] and all(isinstance(e, str) for e in detail["examples"])
+
+
+def test_simulators_endpoint_reports_no_branding_when_nothing_declares_it(
+    tmp_path: Path,
+) -> None:
+    with _client(echo_agent, tmp_path) as client:
+        assert client.get("/simulators").json()["branding"] is None
+
+
+def test_simulators_endpoint_carries_installed_branding(tmp_path: Path, monkeypatch) -> None:
+    # An installed capability names the welcome screen and supplies its starter
+    # prompts, so a demo built on jutul-agent introduces itself, not the simulator.
+    from jutul_agent.agent import capabilities as capabilities_mod
+
+    branded = Capability(
+        name="demo",
+        surfaces=("web",),
+        branding=Branding(
+            display_name="Demo", tagline="Build a thing.", example_prompts=("Do a thing.",)
+        ),
+    )
+    monkeypatch.setattr(capabilities_mod, "discover_extensions", lambda: [branded])
+    with _client(echo_agent, tmp_path) as client:
+        body = client.get("/simulators").json()
+    assert body["branding"] == {
+        "display_name": "Demo",
+        "tagline": "Build a thing.",
+        "examples": ["Do a thing."],
+    }
+    # The simulator details are untouched; the front end falls back to them.
+    assert body["details"]["jutuldarcy"]["display_name"] == "JutulDarcy"
+
+
+def test_simulators_endpoint_ignores_branding_from_another_surface(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from jutul_agent.agent import capabilities as capabilities_mod
+
+    tui_only = Capability(name="demo", surfaces=("tui",), branding=Branding(display_name="Demo"))
+    monkeypatch.setattr(capabilities_mod, "discover_extensions", lambda: [tui_only])
+    with _client(echo_agent, tmp_path) as client:
+        assert client.get("/simulators").json()["branding"] is None
 
 
 def test_bound_simulator_uses_one_and_rejects_mismatch(tmp_path: Path) -> None:

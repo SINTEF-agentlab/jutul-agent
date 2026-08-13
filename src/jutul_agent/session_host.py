@@ -106,6 +106,17 @@ class SessionHost:
         """The session's human-in-the-loop policy, or ``None`` for the default."""
         return self._approval_mode
 
+    @property
+    def branding(self):
+        """What this session's capabilities call it, or ``None`` when unbranded.
+
+        Only the layers that reach this surface count, so a capability that
+        renames the web UI does not rename a TUI it never runs in.
+        """
+        from jutul_agent.agent.capabilities import collect_branding, select_for_surface
+
+        return collect_branding(select_for_surface(self._extensions, self._surface))
+
     def adopt_agent(self, agent: Any, backend: Any | None, *, model: str | None = None) -> None:
         """Point the host at an externally rebuilt agent.
 

@@ -5,7 +5,7 @@
 
 import { createStore } from "zustand/vanilla";
 
-import type { CredentialInfo, HistoryEntry, ModelInfo, SimDetails } from "./api";
+import type { Branding, CredentialInfo, HistoryEntry, ModelInfo, SimDetails } from "./api";
 import { framePool } from "./canvas/framePool";
 import { formatTokens } from "./format";
 import type { InterruptAction, ReplayMessage, ServerMessage } from "./protocol";
@@ -104,6 +104,8 @@ export interface SessionState {
   sessionId: string | null;
   sim: string | null;
   simDetails: Record<string, SimDetails>;
+  // Set when an installed capability names the UI instead of the simulator.
+  branding: Branding | null;
   model: string | null;
   models: ModelInfo[];
   contextWindow: number | null;
@@ -180,6 +182,7 @@ const initialState: SessionState = {
   sessionId: null,
   sim: null,
   simDetails: {},
+  branding: null,
   model: null,
   models: [],
   contextWindow: null,
@@ -571,6 +574,7 @@ export function createSessionStore() {
           // keep the connection-independent config
           sim: s.sim,
           simDetails: s.simDetails,
+          branding: s.branding,
           model: s.model,
           models: s.models,
           contextWindow: s.contextWindow,

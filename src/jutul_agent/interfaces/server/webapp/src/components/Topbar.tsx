@@ -18,7 +18,8 @@ export function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const activeView = useSel((s) => s.activeView);
   const openView = useSel((s) => s.openView);
 
-  const simName = (sim && details[sim]?.display_name) || sim;
+  const branding = useSel((s) => s.branding);
+  const simName = branding?.display_name || (sim && details[sim]?.display_name) || sim;
   const showViews = viewCount > 0 && !canvasOpen;
 
   return (
@@ -32,7 +33,10 @@ export function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         <MenuIcon />
       </button>
       {simName ? (
-        <span className="sim-chip" title="This folder's simulator">
+        <span
+          className="sim-chip"
+          title={branding?.display_name ? "This folder's application" : "This folder's simulator"}
+        >
           {simName}
         </span>
       ) : null}
