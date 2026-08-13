@@ -67,13 +67,16 @@ def test_resolve_model_for_agent_handles_ollama_and_cloud(monkeypatch: pytest.Mo
     monkeypatch.delenv("JUTUL_AGENT_OLLAMA_NUM_CTX", raising=False)
     monkeypatch.setattr(ollama_client, "context_window", lambda name: 262144)
     monkeypatch.setattr(ollama_client, "thinks", lambda name: True)
-    # Cloud models without special construction needs (here: non-reasoning
-    # models) stay spec strings so deepagents resolves them + applies its
-    # profiles.
-    assert _resolve_model_for_agent("google_genai:gemini-2.0-flash") == (
-        "google_genai:gemini-2.0-flash"
-    )
-    assert _resolve_model_for_agent("openai:gpt-4.1-mini") == "openai:gpt-4.1-mini"
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    # Every cloud model is built here, even one that wants no other argument:
+    # the request timeout can only be set at construction, and without one the
+    # client waits forever on a connection that died. Our harness profile
+    # resolves for an instance just as it does for a spec string.
+    for spec in ("google_genai:gemini-2.0-flash", "openai:gpt-4.1-mini"):
+        built = _resolve_model_for_agent(spec)
+        assert isinstance(built, BaseChatModel), spec
+        assert _harness_profile_for_model(built, None).general_purpose_subagent.enabled is False
     # A version-tagged Ollama id (>1 colon) becomes a built instance whose context
     # is sized from the model and capped at the budget, and; crucially; our
     # harness profile now resolves for it (it does NOT for such a spec as a string).
@@ -110,11 +113,13 @@ def test_resolve_model_for_agent_enables_openai_reasoning(
     assert getattr(model, "reasoning", None) == {"effort": "medium", "summary": "auto"}
     profile = _harness_profile_for_model(model, None)
     assert profile.general_purpose_subagent.enabled is False
-    # Non-reasoning models pass through as spec strings...
-    assert _resolve_model_for_agent("openai:gpt-4.1-mini") == "openai:gpt-4.1-mini"
-    # ...as do the -chat hybrids, whose profile keeps temperature support and
-    # whose API rejects reasoning.effort.
-    assert _resolve_model_for_agent("openai:gpt-5-chat-latest") == "openai:gpt-5-chat-latest"
+    # Non-reasoning models are built too (for the request timeout) but are not
+    # asked to reason, and neither are the -chat hybrids, whose profile keeps
+    # temperature support and whose API rejects reasoning.effort.
+    for spec in ("openai:gpt-4.1-mini", "openai:gpt-5-chat-latest"):
+        plain = _resolve_model_for_agent(spec)
+        assert isinstance(plain, BaseChatModel), spec
+        assert getattr(plain, "reasoning", None) is None, spec
 
 
 def test_resolve_model_for_agent_enables_anthropic_thinking(
@@ -130,11 +135,42 @@ def test_resolve_model_for_agent_enables_anthropic_thinking(
     assert isinstance(model, BaseChatModel)
     assert getattr(model, "thinking", None) == {"type": "enabled", "budget_tokens": 10_000}
     assert getattr(model, "max_tokens", None) == 24_000
-    # A model the installed provider package has no profile for stays a string
-    # (a fictional id so the assertion can't be invalidated by the provider
-    # package later learning a real model's profile).
-    unknown = "anthropic:claude-imaginary-0-0"
-    assert _resolve_model_for_agent(unknown) == unknown
+    # A model the installed provider package has no profile for is still built
+    # (every cloud request is bounded) but is not asked to think. A fictional id,
+    # so the assertion can't be invalidated by the provider package later
+    # learning a real model's profile.
+    unknown = _resolve_model_for_agent("anthropic:claude-imaginary-0-0")
+    assert isinstance(unknown, BaseChatModel)
+    assert getattr(unknown, "thinking", None) is None
+
+
+def test_resolve_model_for_agent_bounds_cloud_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every cloud client is built with a request timeout.
+
+    Without one it inherits httpx's "wait forever", so a connection that dies
+    without closing leaves the turn running with nothing arriving and no way
+    out but cancelling it. The timeout only reaches the client at construction,
+    which is why this is asserted on the client and not on the model.
+    """
+    from jutul_agent.agent.builder import _resolve_model_for_agent
+
+    for env_var, spec in (
+        ("OPENAI_API_KEY", "openai:gpt-5.4-mini"),
+        ("ANTHROPIC_API_KEY", "anthropic:claude-sonnet-4-6"),
+        ("GOOGLE_API_KEY", "google_genai:gemini-2.5-flash"),
+    ):
+        monkeypatch.setenv(env_var, "test-key")
+        model = _resolve_model_for_agent(spec)
+        # OpenAI and Anthropic hand it to an httpx client they own; Gemini
+        # keeps it on the model and passes it per request.
+        client = getattr(model, "root_client", None) or getattr(model, "_client", None)
+        timeout = getattr(client, "timeout", None) if client is not None else None
+        if timeout is None:
+            timeout = getattr(model, "timeout", None)
+        read = getattr(timeout, "read", timeout)
+        assert read is not None and 0 < float(read) <= 600, f"{spec}: {timeout!r}"
 
 
 def test_resolve_model_for_agent_degrades_without_credentials(
@@ -171,10 +207,10 @@ def test_resolve_model_for_agent_enables_gemini_thoughts(
     model = _resolve_model_for_agent("google_genai:gemini-3.5-flash")
     assert isinstance(model, BaseChatModel)
     assert getattr(model, "include_thoughts", None) is True
-    # Legacy models the data marks non-reasoning stay spec strings.
-    assert _resolve_model_for_agent("google_genai:gemini-2.0-flash") == (
-        "google_genai:gemini-2.0-flash"
-    )
+    # Legacy models the data marks non-reasoning are built without thoughts.
+    legacy = _resolve_model_for_agent("google_genai:gemini-2.0-flash")
+    assert isinstance(legacy, BaseChatModel)
+    assert getattr(legacy, "include_thoughts", None) is not True
 
 
 def test_agent_tool_surface_is_pinned(tmp_path) -> None:

@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import httpx
 from deepagents import (
     GeneralPurposeSubagentProfile,
     HarnessProfile,
@@ -153,6 +154,24 @@ _ANTHROPIC_THINKING_BUDGET_TOKENS = 10_000
 # clear the thinking budget with room for a long reply.
 _ANTHROPIC_MAX_TOKENS = 24_000
 
+# How long a provider may go silent before the request is given up on. Left
+# unset, every cloud client inherits httpx's "wait forever", so a connection
+# that dies without closing (a sleeping laptop, a network that moved, a proxy
+# dropping an idle stream) leaves the turn running with nothing ever arriving
+# and no way out but cancelling it. While the reply streams, this bounds the
+# gap *between* chunks rather than the turn: a long think or a long solve keeps
+# the stream moving and is unaffected, and the client retries a request that
+# never started. Local models are left alone; their client takes no such
+# argument, and a stalled daemon is a different failure.
+_PROVIDER_READ_TIMEOUT_S = 300.0
+_PROVIDER_TIMEOUTS: dict[str, Any] = {
+    # httpx's own shape, so a host that is simply unreachable fails on connect
+    # in seconds instead of waiting out the read budget.
+    "openai": httpx.Timeout(connect=15.0, read=_PROVIDER_READ_TIMEOUT_S, write=120.0, pool=60.0),
+    "anthropic": _PROVIDER_READ_TIMEOUT_S,
+    "google_genai": _PROVIDER_READ_TIMEOUT_S,
+}
+
 
 def _ollama_settings(model_id: str) -> dict[str, Any]:
     from jutul_agent import ollama_client
@@ -227,18 +246,26 @@ def _resolve_model_for_agent(model: Any) -> Any:
     profile nor a context setting (an instance resolves by provider). And
     models that can reason get it requested and made visible at construction
     (``_MODEL_SETTINGS``): without that the model reasons silently or, on
-    recent OpenAI models, not at all. Everything else (unknown providers,
-    models whose resolver declines, failures while probing) keeps the spec
-    string so deepagents builds it exactly as before; an already-built model
-    is passed through untouched.
+    recent OpenAI models, not at all. A cloud provider also gets its request
+    timeout here (``_PROVIDER_TIMEOUTS``), which is the only place it can be
+    set: the client is built once, inside the model, and a timeout applied
+    afterwards would never reach it. That makes an instance worth building even
+    for a model that wants no other argument. Everything else (unknown
+    providers, models whose resolver declines, failures while probing) keeps
+    the spec string so deepagents builds it exactly as before; an already-built
+    model is passed through untouched.
     """
     if not isinstance(model, str):
         return model
-    settings = _MODEL_SETTINGS.get(provider_of(model))
+    provider = provider_of(model)
+    settings = _MODEL_SETTINGS.get(provider)
     if settings is None:
         return model
     try:
-        kwargs = settings(model)
+        kwargs = dict(settings(model) or {})
+        timeout = _PROVIDER_TIMEOUTS.get(provider)
+        if timeout is not None:
+            kwargs.setdefault("timeout", timeout)
         if kwargs:
             from langchain.chat_models import init_chat_model
 
