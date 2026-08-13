@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { View } from "../store";
 import { renderWithStore } from "../test/util";
 import { framePool } from "./framePool";
-import { IframePanel, stageGeometry } from "./registry";
+import { ImagePanel, IframePanel, stageGeometry } from "./registry";
 
 // A freshly-registered live plot's Bonito route can take a couple of seconds
 // to start answering (see the comment in registry.tsx). A failed iframe
@@ -120,6 +120,46 @@ describe("IframePanel live readiness", () => {
       await Promise.resolve(); // the plot's readiness ping resolves, then it mounts
     });
     expect(fig.container.querySelector(".stage-frame")?.className).toBe("stage-frame");
+  });
+});
+
+describe("ImagePanel", () => {
+  const posterView: View = {
+    id: "v3",
+    url: "/sessions/s1/artifacts/mesh.png",
+    title: "poster",
+    kind: "plot",
+    nonce: 0,
+  };
+
+  it("reports a load for an image the browser had already decoded", () => {
+    // The canvas loader clears only from this panel, and `load` for a decoded
+    // image can fire before React attaches the handler. Without the mount check
+    // the poster sits fully rendered behind a permanent "Loading view…".
+    const complete = vi
+      .spyOn(HTMLImageElement.prototype, "complete", "get")
+      .mockReturnValue(true);
+    const onLoaded = vi.fn();
+    renderWithStore(<ImagePanel view={posterView} active reloadToken={0} onLoaded={onLoaded} />);
+    expect(onLoaded).toHaveBeenCalled();
+    complete.mockRestore();
+  });
+
+  it("waits for the load event when the image is still arriving", () => {
+    const complete = vi
+      .spyOn(HTMLImageElement.prototype, "complete", "get")
+      .mockReturnValue(false);
+    const onLoaded = vi.fn();
+    const { container } = renderWithStore(
+      <ImagePanel view={posterView} active reloadToken={0} onLoaded={onLoaded} />,
+    );
+    expect(onLoaded).not.toHaveBeenCalled();
+
+    act(() => {
+      container.querySelector("img")!.dispatchEvent(new Event("load"));
+    });
+    expect(onLoaded).toHaveBeenCalled();
+    complete.mockRestore();
   });
 });
 
