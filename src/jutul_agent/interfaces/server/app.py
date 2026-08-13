@@ -1371,6 +1371,18 @@ async def _serve_stream(websocket: WebSocket, manager: SessionManager, session_i
         return
 
     state = _StreamState(websocket, host)
+    # A turn started before this connection is still running (the user switched
+    # away and came back). It streams to the socket that started it, so nothing
+    # more will arrive here and the replay above stops wherever the trace had got
+    # to. Say so, or the conversation looks like it was cut off.
+    if host.busy:
+        await _safe_send(
+            websocket,
+            protocol.notice_to_wire(
+                "This session is still working on a turn you started earlier. Its "
+                "output is being recorded; reopen the session to see the rest."
+            ),
+        )
     # Re-surface an approval the session was paused on if an earlier connection
     # dropped while it was pending, so a reconnect can still answer it.
     await state.resync_pending()
