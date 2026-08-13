@@ -41,9 +41,20 @@ function withToken(url: string, token: number): string {
 }
 
 export function ImagePanel({ view, active, reloadToken, onLoaded }: PanelProps) {
+  // An image the browser has already decoded fires `load` as soon as `src` is set,
+  // which can be before React has attached `onLoad` — so the handler never runs and
+  // the canvas loader, which only clears from it, stays over a picture that is
+  // sitting right there. Seen on a resumed session: the poster complete and 3200px
+  // wide behind a permanent "Loading view…". Settling on mount when the element is
+  // already `complete` closes that gap; it can only ever clear a loader for content
+  // the browser has finished, so an image still arriving is untouched.
+  const settle = (img: HTMLImageElement | null) => {
+    if (img?.complete) onLoaded();
+  };
   return (
     <img
       className={active ? "active" : ""}
+      ref={settle}
       src={withToken(view.url, reloadToken)}
       alt={view.title}
       onLoad={onLoaded}
