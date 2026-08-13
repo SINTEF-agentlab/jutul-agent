@@ -65,6 +65,10 @@ export type ThreadItem =
       status: ToolStatus;
       output: string;
       note?: string;
+      // When the call started, so a card that is still running can say how long
+      // it has been running. Wall clock from this browser: the point is elapsed
+      // time on screen, not agreement with the server's clock.
+      startedAt?: number;
     }
   | { kind: "viz-chip"; id: string; viewId: string; title: string; viewKind: ViewKind }
   | { kind: "artifact-image"; id: string; url: string; title: string }
@@ -290,6 +294,7 @@ export function createSessionStore() {
               args: msg.args ?? null,
               status: "running",
               output: "",
+              startedAt: Date.now(),
             },
           ];
           exists = true;

@@ -6,7 +6,7 @@ import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState } from "re
 
 import { terminalSegments } from "../ansi";
 import { useController, useSel } from "../context";
-import { fmtNum } from "../format";
+import { fmtNum, formatElapsed } from "../format";
 import { KindIcon, KIND_LABEL, ChevronRight } from "../icons";
 import { tokenizeJulia } from "../julia";
 import { Markdown } from "../markdown";
@@ -223,19 +223,52 @@ function ToolBody({ name, args, policy }: { name: string | null; args: Record<st
 
 type ToolItem = Extract<ThreadItem, { kind: "tool" }>;
 
+/** Seconds since `startedAt`, re-rendered once a second while `active`.
+ *
+ * A tool that takes minutes (the first plot of a session compiles most of the
+ * Julia plotting stack) otherwise shows a spinner and nothing else, which reads
+ * as a hang. The clock is the difference between "stuck" and "still going".
+ */
+function useElapsed(startedAt: number | undefined, active: boolean): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active || startedAt == null) return;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [active, startedAt]);
+  if (startedAt == null || !active) return null;
+  return now - startedAt;
+}
+
 export const ToolCard = memo(function ToolCard({ item }: { item: ToolItem }) {
   const policy = toolPolicy(item.name);
   const [open, setOpen] = useState(!policy.collapsed);
   const preview = argPreview(item.args, item.name ?? undefined);
   const summary = item.note ? (preview ? `${preview} · ${item.note}` : item.note) : preview;
   const showOutput = item.output && policy.rawOutput !== false;
+  const running = item.status === "running";
+  const elapsed = useElapsed(item.startedAt, running);
   return (
     <details className="block tool" open={open}>
       <summary onClick={(e) => { e.preventDefault(); setOpen((o) => !o); }}>
         <span className="tool-name">{item.label || item.name}</span>
         {summary && <span className="tool-preview">{summary}</span>}
-        <span className={`chip-status ${item.status === "running" ? "running" : item.status === "error" ? "error" : ""}`}>
-          {item.status === "running" ? <span className="spinner" /> : item.status === "error" ? "error" : "done"}
+        <span className={`chip-status ${running ? "running" : item.status === "error" ? "error" : ""}`}>
+          {running ? (
+            <>
+              <span className="spinner" />
+              {/* Only once it is worth saying: under a couple of seconds a
+                  number that appears and vanishes is noise. */}
+              {elapsed != null && elapsed >= 2000 && (
+                <span className="elapsed">{formatElapsed(elapsed)}</span>
+              )}
+            </>
+          ) : item.status === "error" ? (
+            "error"
+          ) : (
+            "done"
+          )}
         </span>
       </summary>
       <div className="body">

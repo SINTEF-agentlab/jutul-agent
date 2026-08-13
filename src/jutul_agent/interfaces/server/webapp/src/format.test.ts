@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fmtNum, formatTokens, timeAgo } from "./format";
+import { fmtNum, formatElapsed, formatTokens, timeAgo } from "./format";
 
 describe("formatTokens", () => {
   it("compacts thousands", () => {
@@ -16,6 +16,20 @@ describe("fmtNum", () => {
     expect(fmtNum(3.14159)).toBe("3.142");
     expect(fmtNum(42)).toBe("42");
     expect(fmtNum("label")).toBe("label");
+  });
+});
+
+describe("formatElapsed", () => {
+  it("counts seconds, then minutes and seconds", () => {
+    expect(formatElapsed(0)).toBe("0s");
+    expect(formatElapsed(12_400)).toBe("12s");
+    expect(formatElapsed(59_999)).toBe("59s");
+    expect(formatElapsed(65_000)).toBe("1:05");
+    expect(formatElapsed(750_000)).toBe("12:30");
+  });
+
+  it("never counts backwards from a clock that jumped", () => {
+    expect(formatElapsed(-5000)).toBe("0s");
   });
 });
 

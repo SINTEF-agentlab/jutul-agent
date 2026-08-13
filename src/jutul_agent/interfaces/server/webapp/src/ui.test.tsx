@@ -1,5 +1,5 @@
 import { act, fireEvent, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Canvas } from "./components/Canvas";
 import { Thread } from "./components/Thread";
@@ -31,6 +31,29 @@ describe("Thread rendering", () => {
     expect(screen.getByText("On it.")).toBeInTheDocument();
     expect(screen.getByText("run_julia")).toBeInTheDocument();
     expect(screen.getByText("done")).toBeInTheDocument();
+  });
+
+  it("counts up on a tool that is still running, and stops when it finishes", () => {
+    vi.useFakeTimers();
+    try {
+      const { store, container } = renderWithStore(<Thread />);
+      drive(store, {
+        type: "tool",
+        event: "requested",
+        name: "setup_mesh",
+        label: "setup_mesh",
+        tool_call_id: "1",
+        args: {},
+      });
+      // Nothing yet: a number that flashes up and vanishes is noise.
+      expect(container.querySelector(".elapsed")).toBeNull();
+      act(() => void vi.advanceTimersByTime(65_000));
+      expect(container.querySelector(".elapsed")?.textContent).toBe("1:05");
+      drive(store, { type: "tool", event: "finished", name: "setup_mesh", tool_call_id: "1", content: "ok" });
+      expect(container.querySelector(".elapsed")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows the thinking indicator only while working", () => {

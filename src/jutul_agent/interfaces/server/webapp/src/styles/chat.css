@@ -146,6 +146,15 @@ details.block .body {
 .chip-status.running {
   background: var(--accent-soft);
   color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+/* Tabular figures so a ticking clock does not shift the chip's width. */
+.chip-status .elapsed {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
 }
 .chip-status.error {
   background: #ef44441f;
