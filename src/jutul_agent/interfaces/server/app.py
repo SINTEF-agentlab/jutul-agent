@@ -77,7 +77,7 @@ _LIVE_WS_OPEN_TIMEOUT = 120.0
 _LIVE_HTTP_TIMEOUT = {"connect": 5.0, "read": 300.0, "write": 30.0, "pool": 30.0}
 
 # A live plot's route id: a slot or ``plot-<hex>`` stem, optionally with the
-# popout suffix a replay appended. What ``popout_wrapper`` accepts — anything
+# popout suffix a replay appended. What ``popout_wrapper`` accepts; anything
 # else 404s rather than being echoed into a page.
 _ROUTE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:--pop\d+)?")
 
@@ -85,13 +85,16 @@ _ROUTE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:--pop\d+)?")
 def _fit_target(stage: list[int], authored: Any) -> list[int]:
     """The size a re-fit resizes a live figure to, for a ``stage``-sized panel.
 
-    The Python twin of the serve-time fit in ``jl._fig_size_block`` — one rule,
-    stated in full there: aspect clamped near the authored shape (letterbox
-    rather than distort), fitted inside the panel at full text size, scaled up
-    only as far as the squash floors demand. Anchoring to the *authored* size
-    (not the current one) makes refitting idempotent — floors never ratchet.
-    Without a recorded authored size the stage itself is the target.
+    The Python twin of the serve-time fit in ``jl._fig_size_block``, whose one
+    rule is stated in full there: aspect clamped near the authored shape
+    (letterbox rather than distort), fitted inside the panel at full text size,
+    then grown so neither dimension falls below the squash floor. The two
+    fractions are read from that module so the twins cannot drift apart.
+    Anchoring to the authored size, not the current one, makes refitting
+    idempotent. Without a recorded authored size the stage itself is target.
     """
+    from jutul_agent.agent import plot_julia_src as jl
+
     sw, sh = stage
     if not (isinstance(authored, (list, tuple)) and len(authored) == 2):
         return [sw, sh]
@@ -99,10 +102,12 @@ def _fit_target(stage: list[int], authored: Any) -> list[int]:
     if aw <= 0 or ah <= 0:
         return [sw, sh]
     ra = aw / ah
-    r = min(max(sw / sh, ra * 2 / 3), ra * 3 / 2)
+    r = min(max(sw / sh, ra * jl.FIT_ASPECT_FRACTION), ra / jl.FIT_ASPECT_FRACTION)
     w1 = min(sw, round(sh * r))
     h1 = round(w1 / r)
-    s = min(max(1.0, aw * 2 / (3 * w1), ah * 2 / (3 * h1)), 3.0)
+    s = min(
+        max(1.0, aw * jl.FIT_SQUASH_FLOOR / w1, ah * jl.FIT_SQUASH_FLOOR / h1), jl.FIT_MAX_SCALE
+    )
     return [round(w1 * s), round(h1 * s)]
 
 
@@ -132,7 +137,7 @@ def _sane_size(width: Any, height: Any) -> list[int] | None:
 
     Guards every place the browser reports a measurement (the canvas hint, a
     replot target): a missing field, a junk type, or a degenerate rectangle
-    yields ``None`` — callers then fall back to not resizing at all.
+    yields ``None``, and callers fall back to not resizing at all.
     """
     try:
         w, h = int(width), int(height)
@@ -146,8 +151,8 @@ def _sane_size(width: Any, height: Any) -> list[int] | None:
 # The popout wrapper page (see ``popout_wrapper``). Placeholders instead of an
 # f-string so the JS braces stay readable. The figure is embedded at its real
 # pixel size and CSS-scaled down to the window (never upscaled: a canvas grown
-# by CSS blurs). When the scaled figure covers the window poorly — the same
-# gate the inline canvas uses — the wrapper POSTs a re-fit and then stages the
+# by CSS blurs). When the scaled figure covers the window poorly (the same
+# gate the inline canvas uses) the wrapper POSTs a re-fit and then stages the
 # size the server *echoes*, never the size it asked for. Until a refit lands,
 # the scaled centered presentation is the always-correct fallback.
 _POPOUT_WRAPPER_HTML = """<!doctype html>
@@ -158,8 +163,8 @@ _POPOUT_WRAPPER_HTML = """<!doctype html>
 <style>
   /* `color-scheme` is what stops the white flash on a window resize, and no
      background declaration can substitute for it: while the window grows, the
-     browser fills the newly exposed area with the *window's* base canvas —
-     painted before any CSS applies — and that base is white until the page
+     browser fills the newly exposed area with the window's base canvas,
+     painted before any CSS applies, and that base is white until the page
      declares which schemes it supports. Declaring both, and painting the page
      in the matching system colour, makes base and page the same colour in
      either scheme, so there is nothing left to flash. */
@@ -193,7 +198,7 @@ _POPOUT_WRAPPER_HTML = """<!doctype html>
     timer = setTimeout(async () => {
       // The scaled figure leaves too much of the window unused (grown past it,
       // or a shape mismatch): have the kernel re-fit the live figure to the
-      // window, then stage the size it echoes — the floors may have held.
+      // window, then stage the size it echoes; the floors may have held.
       const s = Math.min(innerWidth / W, innerHeight / H, 1);
       const coverage = (W * s * H * s) / (innerWidth * innerHeight);
       if (coverage >= 0.75) return;
@@ -763,7 +768,7 @@ def create_app(
     async def popout_refit(session_id: str, route: str, w: int, h: int) -> Response:
         """Re-fit a popout's live figure to its window, in place: the same fit
         rule as everywhere else, anchored to the record's authored size. The
-        wrapper stages the *echoed* size this answers as JSON. Best-effort — a
+        wrapper stages the echoed size this answers as JSON. Best-effort: a
         missing session, route, or figure answers 204 and the wrapper's scaled
         presentation stands."""
         from jutul_agent.agent.plot_julia import _plot_id_of, refit_web
@@ -1644,8 +1649,8 @@ class _StreamState:
         delivers a fresh ``viz`` and the browser view revives in place. A popout
         serves an independent figure on its own route and answers with the URL of
         a scale-to-fit wrapper page hosting it, sized from the figure's echo.
-        The code replays in the current kernel state — variables may have changed
-        or be gone after a restart — so a failure is reported, not hidden.
+        The code replays in the current kernel state, where variables may have
+        changed or be gone after a restart, so a failure is reported, not hidden.
         """
         from jutul_agent.agent.plot_julia import replot_web
 
@@ -1695,7 +1700,7 @@ class _StreamState:
         if popout:
             if url:
                 # The popup gets a wrapper that stages the figure at its echoed
-                # size and scales it to the window — the same guarantee as the
+                # size and scales it to the window, the same guarantee as the
                 # inline canvas, so a later resize or fullscreen letterboxes
                 # instead of leaving the figure's layout behind the window's.
                 route_id = url.rsplit("/viz/", 1)[-1]
@@ -1723,7 +1728,7 @@ class _StreamState:
         The canvas sends this when its stage and a live view disagree on size.
         The target comes from the same rule that fits a fresh plot, anchored to
         the recorded *authored* size, and the kernel ``resize!``-es the routed
-        figure — camera and widget state untouched, no code re-run. The answer
+        figure, camera and widget state untouched, with no code re-run. The answer
         is a ``refit_done`` with the echoed size: the client stages what the
         figure became, not what it asked for. The eval is spawned, not awaited:
         during a running turn it queues on the kernel's eval lock and lands
@@ -1769,7 +1774,7 @@ class _StreamState:
 
         Deadlined for the same reason a re-fit is (see ``REFIT_TIMEOUT_S``):
         nobody waits on this, it holds the one kernel lock while it runs, and
-        the route cap already releases the figure if this never lands — so it
+        the route cap already releases the figure if this never lands, so it
         must not be able to leave the next turn waiting behind it."""
         route_id = self._popouts.pop(url, None)
         if route_id is None or self._busy():
@@ -1836,11 +1841,11 @@ class _StreamState:
 
         The client locks its composer for the duration and unlocks it only on an
         ``interrupt``, an ``error`` or a ``turn_end``. So a turn that raises
-        *outside* the guarded call below — while flushing artifacts, summarising
-        usage, delivering the end itself — would leave the browser waiting on a
-        turn no one is running, with the stop button equally inert (the task is
-        done, so there is nothing left to cancel). Only a reload frees it. The
-        end is therefore delivered from a ``finally``, once per turn.
+        outside the guarded call below (flushing artifacts, summarising usage,
+        delivering the end itself) would leave the browser waiting on a turn no
+        one is running, with the stop button equally inert: the task is done, so
+        there is nothing left to cancel, and only a reload frees it. The end is
+        therefore delivered from a ``finally``, once per turn.
         """
         self._side_output_id = self._latest_event_id()
         self._turn_ended = False
@@ -1862,7 +1867,7 @@ class _StreamState:
             await self._end_turn(protocol.turn_end_to_wire([]), error="the turn ended unexpectedly")
 
     async def _end_turn(self, wire: dict[str, Any], *, error: str | None = None) -> None:
-        """Tell the client the turn is over — at most once per turn.
+        """Tell the client the turn is over, at most once per turn.
 
         Every later call is a no-op, so the backstop in ``_run_turn`` is free to
         fire unconditionally: it only speaks for a turn that ended no other way.
@@ -2028,12 +2033,12 @@ class _StreamState:
         self._tool_delta_wire.clear()
 
     async def cancel_turn(self) -> None:
-        """Stop the running turn — and always answer, even when none is running.
+        """Stop the running turn, and always answer, even when none is running.
 
         The client's composer is locked until the server says a turn ended, so a
-        cancel that answers nothing leaves the only escape a page reload. That is
-        the case worth covering: if the client believes a turn is in flight and
-        the server does not, they disagree, and the client is the one stuck.
+        cancel that answers nothing leaves a page reload as the only escape. If
+        the client believes a turn is in flight and the server does not, the
+        client is the one stuck.
         """
         if self._busy():
             self._turn.cancel()  # type: ignore[union-attr]

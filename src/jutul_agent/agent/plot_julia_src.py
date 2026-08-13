@@ -117,7 +117,7 @@ FIG_SIZE_MARKER = "__JUTUL_FIG_SIZE__"
 # What ``plot_state_probe`` prints: whether the plotting backend and (web) the
 # live figure registry still exist in this kernel. The plot tool memoizes both
 # setups, but a kernel reset silently clears them while the Python session
-# keeps the memos — without a probe, every later plot in that session would
+# keeps the memos, so without a probe every later plot in that session would
 # serve into a kernel that no longer has a backend or a Bonito server.
 PLOT_STATE_MARKER = "__JUTUL_PLOT_STATE__"
 
@@ -134,23 +134,34 @@ def plot_state_probe(web: bool) -> str:
 
 # Printed before any fit or resize touches the figure: the size its code built
 # it at. A later re-fit (the panel changed shape under a live view) anchors its
-# squash floor to this, so refitting is idempotent — floors never ratchet.
+# squash floor to this, so refitting is idempotent and floors never ratchet.
 FIG_AUTHORED_MARKER = "__JUTUL_FIG_AUTHORED__"
 
 
 # The fit rule, shared verbatim with its Python twin (``app._fit_target``).
 # For authored size ``a`` and panel ``p``, in order: (1) the target aspect is
-# the panel's, clamped to within 2/3 to 3/2 of the authored aspect — a figure may
-# reshape toward its panel but never distort past that (a tall figure is not
-# stretched flat to fill a wide panel; it letterboxes at full size instead);
-# (2) that shape is fitted inside the panel at scale 1 — full-size text; (3) it
-# is scaled up (never down, capped at 3x) until neither dimension compresses
-# below 2/3 of its authored pixels — fixed-pixel controls collide past that
-# (measured with the reservoir explorer) — and the browser scales the overshoot
-# back down. For a panel shaped within the clamp (the common case) the figure
-# IS the panel: no bands, no distortion, no scaling.
-FIT_MIN_FRACTION = "2 / 3"
-FIT_MAX_SCALE = "3.0"
+# the panel's, clamped to within ``FIT_ASPECT_FRACTION`` of the authored aspect,
+# so a figure may reshape toward its panel but never distort past that (a tall
+# figure is not stretched flat to fill a wide panel; it letterboxes at full size
+# instead); (2) that shape is fitted inside the panel at scale 1, which is
+# full-size text; (3) it is scaled up (never down, capped at 3x) until neither
+# dimension falls below ``FIT_SQUASH_FLOOR`` of its authored pixels, and the
+# browser scales any overshoot back down. For a panel shaped within the clamp
+# and no smaller than the figure, which is the common case, the figure IS the
+# panel: no bands, no distortion, no scaling.
+FIT_ASPECT_FRACTION = 2 / 3
+# The two are separate concerns and only look alike. The aspect clamp bounds
+# *distortion*, which a figure tolerates well. This one bounds *compression*,
+# which it does not: a layout's text is authored in pixels and does not shrink
+# with the canvas, so a figure narrower than it was built for hangs its labels
+# out past the edge, where the canvas cuts them. Makie's own layout does not
+# report that (it measures blocks, not glyphs), so the overflow guard cannot
+# catch it either. Measured with the reservoir explorer, authored 1600 wide:
+# clipped at 1196, intact at 1611. Hence 1.0 - a figure may grow into a panel,
+# never shrink below the size its code chose; a smaller panel scales it down in
+# the browser, which keeps every label whole.
+FIT_SQUASH_FLOOR = 1.0
+FIT_MAX_SCALE = 3.0
 
 
 def _guarded_resize(makie: str, args: str, indent: str) -> str:
@@ -159,7 +170,7 @@ def _guarded_resize(makie: str, args: str, indent: str) -> str:
     Resizing re-lays the figure out and Makie pushes that to the screen the
     figure is displayed on. Once a view of it has gone (a closed popout, a
     released frame) that screen's Bonito session is closed, and the push throws
-    "Screen Session uninitialized" — *after* the viewport has already taken the
+    "Screen Session uninitialized", and does so *after* the viewport has taken the
     new size. Uncaught, that exception aborts the block before the size echo,
     so the caller reads a failed resize for one that in fact happened and stops
     trusting the figure's size from then on. The echo re-reads the viewport
@@ -173,7 +184,7 @@ def _overflow_guard(makie: str, authored_w: str, authored_h: str) -> str:
     """Julia to give a just-resized figure a canvas its layout fits inside.
 
     A layout whose block minimums (fixed-width labels, buttons, textboxes) sum
-    past a compressed figure's width hangs the excess out the right edge —
+    past a compressed figure's width hangs the excess out the right edge:
     Makie places it, the canvas clips it (the reservoir explorer's checkbox
     labels and sliders, measured live). Measure the union of the blocks'
     computed bboxes; if anything sticks out, widen the canvas and let the
@@ -183,8 +194,8 @@ def _overflow_guard(makie: str, authored_w: str, authored_h: str) -> str:
     Two steps, because two different things go wrong. A layout that is merely
     a few pixels short is fixed by adding the deficit (measured on the mesh
     figure: 7px over at 1067 wide, inside after one pass). A layout whose
-    controls sit in *fractional* columns with fixed-pixel contents can never
-    be fixed that way — growing the canvas moves those columns right just as
+    controls sit in fractional columns with fixed-pixel contents cannot be
+    fixed that way: growing the canvas moves those columns right just as
     fast, so adding the deficit creeps forever (measured on the explorer:
     1067 -> 1119 -> still outside). For that one the answer is not a bigger
     guess but the size the figure was authored at, where its layout is known
@@ -235,7 +246,7 @@ def _overflow_guard(makie: str, authored_w: str, authored_h: str) -> str:
 def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str:
     """Julia to apply an explicit figure size and echo the size the figure has.
 
-    An explicit ``size`` wins; otherwise ``fit`` — the panel's pixel size —
+    An explicit ``size`` wins; otherwise ``fit``, the panel's pixel size,
     applies the fit rule above, then the overflow guard. The echo reports the
     *resulting* size, not the request, so the recorded ``size_px`` is what the
     browser will receive even when the figure's own layout refused part of the
@@ -254,12 +265,12 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
             f"        local _pw, _ph = {int(fit[0])}, {int(fit[1])}\n"
             "        local _w0 = _vp.widths[1]\n"
             "        local _h0 = _vp.widths[2]\n"
-            f"        local _r = clamp(_pw / _ph, (_w0 / _h0) * {FIT_MIN_FRACTION},"
-            f" (_w0 / _h0) / ({FIT_MIN_FRACTION}))\n"
+            f"        local _r = clamp(_pw / _ph, (_w0 / _h0) * {FIT_ASPECT_FRACTION},"
+            f" (_w0 / _h0) / ({FIT_ASPECT_FRACTION}))\n"
             "        local _w1 = min(_pw, round(Int, _ph * _r))\n"
             "        local _h1 = round(Int, _w1 / _r)\n"
-            f"        local _s = clamp(max((_w0 * {FIT_MIN_FRACTION}) / _w1,"
-            f" (_h0 * {FIT_MIN_FRACTION}) / _h1), 1.0, {FIT_MAX_SCALE})\n"
+            f"        local _s = clamp(max((_w0 * {FIT_SQUASH_FLOOR}) / _w1,"
+            f" (_h0 * {FIT_SQUASH_FLOOR}) / _h1), 1.0, {FIT_MAX_SCALE})\n"
             "        local _wt = round(Int, _w1 * _s)\n"
             "        local _ht = round(Int, _h1 * _s)\n"
             "        if _wt != round(Int, _w0) || _ht != round(Int, _h0)\n"
@@ -800,7 +811,7 @@ def close_windows_call(key: str) -> str:
 def resize_web_fig_call(
     route: str, width: int, height: int, authored: list[int] | None = None
 ) -> str:
-    """Julia to resize a routed live figure in place — the robust direction:
+    """Julia to resize a routed live figure in place, the robust direction:
     a browser-side resize relies on the served page telling Julia, which is
     measurably unreliable, while a kernel-side ``resize!`` pushes the new
     layout to every connected view through Bonito's own observable traffic.

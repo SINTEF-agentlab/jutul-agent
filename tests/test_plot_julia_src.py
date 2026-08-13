@@ -37,6 +37,8 @@ from pathlib import Path
 
 from jutul_agent.agent.plot_julia_src import (
     FIG_SIZE_MARKER,
+    FIT_ASPECT_FRACTION,
+    FIT_SQUASH_FLOOR,
     PICK_EMPTY_BUFFER_GUARD,
     PICK_GUARD_MARKER,
     PREFER_OPEN_SCREEN_GUARD,
@@ -72,7 +74,7 @@ def _live_code() -> str:
 def test_live_call_never_lets_glmakie_draw_the_figure() -> None:
     # The first backend to draw a figure claims it (MakieOrg/Makie.jl#5228): a
     # GLMakie poster saves fine and the live WGLMakie render then dies inside
-    # the websocket handler, silently, so the browser spins forever — surface
+    # the websocket handler, silently, so the browser spins forever. Surface
     # plots are the trigger. The poster is Cairo's, whose computations WGLMakie
     # shares.
     code = _live_code()
@@ -83,7 +85,7 @@ def test_live_call_never_lets_glmakie_draw_the_figure() -> None:
 def test_live_call_still_closes_the_absorption_screens() -> None:
     # The user code runs under offscreen GLMakie so an internal display() cannot
     # pop a window; the screens that absorption opens are still closed once the
-    # figure is in hand — an invisible screen is a live GL context whose render
+    # figure is in hand: an invisible screen is a live GL context whose render
     # loop would otherwise run for the rest of the session.
     assert "GLMakie.closeall" in _live_code()
 
@@ -286,7 +288,7 @@ def test_live_call_echoes_the_figure_size_and_applies_a_requested_one() -> None:
 
 def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
     # With a panel fit (and no explicit size) the figure takes the panel's
-    # shape — aspect clamped near the authored one, scaled up only by the
+    # shape: aspect clamped near the authored one, scaled up only by the
     # squash floors. The rule lives in the generated Julia so the figure's
     # *authored* size (known only after the code ran) is what it works from.
     code = web_live_call(
@@ -297,8 +299,14 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
         fit=[990, 1230],
     )
     assert "local _pw, _ph = 990, 1230" in code
-    assert "clamp(_pw / _ph, (_w0 / _h0) * 2 / 3, (_w0 / _h0) / (2 / 3))" in code
-    assert "clamp(max((_w0 * 2 / 3) / _w1, (_h0 * 2 / 3) / _h1), 1.0, 3.0)" in code
+    # The aspect clamp bounds distortion; the squash floor bounds compression.
+    # Two separate concerns, so the generated code reads them from two constants.
+    aspect, floor = FIT_ASPECT_FRACTION, FIT_SQUASH_FLOOR
+    assert f"clamp(_pw / _ph, (_w0 / _h0) * {aspect}, (_w0 / _h0) / ({aspect}))" in code
+    assert f"clamp(max((_w0 * {floor}) / _w1, (_h0 * {floor}) / _h1), 1.0, 3.0)" in code
+    # A figure is never compressed below the size its code chose: fixed-pixel
+    # text does not shrink with the canvas, and the excess is clipped away.
+    assert floor >= 1.0
     # The overflow guard runs after the fit: a layout whose block minimums
     # exceed the compressed width grows back until nothing hangs outside.
     assert "computedbbox" in code
@@ -306,8 +314,8 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
     # A layout that only misses by a little is fixed by adding the deficit;
     # one whose controls sit in fractional columns can never be fixed that way
     # (growing moves them along), so the second pass goes to the authored size,
-    # where the layout is known to work. That size is also the ceiling — 3/2 of
-    # it is where a runaway layout stops — and a pass that cannot move breaks.
+    # where the layout is known to work. That size is also the ceiling (3/2 of
+    # it is where a runaway layout stops) and a pass that cannot move breaks.
     assert "_jaw" in code and "_jah" in code
     assert "_tw = _ox > 0 ? max(_gvp.widths[1], _aw) : _gvp.widths[1]" in code
     assert "1.5 * _aw" in code and "1.5 * _ah" in code
@@ -329,7 +337,7 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
 
 
 def test_size_block_echoes_the_authored_size_before_any_fit() -> None:
-    # Both echoes ship: the authored size (before any resize — what a later
+    # Both echoes ship: the authored size (before any resize, what a later
     # re-fit anchors its floors to) and the resulting size (what the browser
     # stages). The authored echo must come before the fit touches the figure.
     from jutul_agent.agent.plot_julia_src import FIG_AUTHORED_MARKER
@@ -364,7 +372,7 @@ def test_resize_call_resizes_the_routed_figure_and_echoes() -> None:
 def test_every_resize_survives_a_figure_whose_browser_session_died() -> None:
     # Resizing pushes the new layout to the screen the figure is displayed on,
     # and once a view of it has gone (a closed popout, a released frame) that
-    # push throws — after the viewport has already taken the new size. Uncaught,
+    # push throws, after the viewport has already taken the new size. Uncaught,
     # it would abort the block before the echo, so the caller reads a failure
     # for a resize that happened and stops trusting the figure's size. Every
     # resize is therefore wrapped, and the echo still runs.
