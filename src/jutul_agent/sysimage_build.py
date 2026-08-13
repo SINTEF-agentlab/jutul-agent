@@ -59,6 +59,10 @@ class BuildResult:
     packages: tuple[str, ...]
     verified: bool
     contained: int = 0
+    # Warm-up snippets that threw during the build. The image is still good;
+    # what it lost is the compiled coverage that snippet was there to bake, and
+    # the session pays for it at first use instead.
+    warmup_failures: tuple[str, ...] = ()
 
 
 def builder_env() -> Path:
@@ -261,7 +265,7 @@ def _guard_vscale_llvmcall(
     return patched
 
 
-def _warmup_script(snippets: Sequence[str]) -> str:
+def _warmup_script(snippets: Sequence[str], report: Path) -> str:
     """One Julia file running every warm-up snippet, each on its own fuse.
 
     The same ``warm_code`` a session runs in the background after start-up;
@@ -269,6 +273,12 @@ def _warmup_script(snippets: Sequence[str]) -> str:
     image. A snippet that throws costs only its own coverage, never the build
     or the other snippets' work: by this point the workload is an optimisation,
     worth a warning in the build log, not a discarded image.
+
+    A failure is also recorded in ``report``, one line per snippet, because the
+    warning alone scrolls past in the middle of a long build and what it costs
+    is invisible afterwards: the image still builds, still verifies, and is
+    simply much slower at the thing the snippet was there to make fast. The
+    build reads the file back and says so at the end.
     """
 
     parts = []
@@ -279,6 +289,12 @@ def _warmup_script(snippets: Sequence[str]) -> str:
             f"{snippet.strip()}\n"
             "catch err\n"
             f'    @warn "warm-up snippet {index} failed; the image loses its coverage" err\n'
+            "    try\n"
+            f'        open(raw"{report.as_posix()}", "a") do io\n'
+            f'            println(io, "snippet {index}: ", sprint(showerror, err))\n'
+            "        end\n"
+            "    catch\n"
+            "    end\n"
             "end\n"
         )
     return "\n".join(parts)
@@ -328,9 +344,11 @@ def build(
     candidate = destination.with_name(f"candidate-{os.getpid()}{image_suffix()}")
 
     execution_file = destination.with_name(f"warmup-{os.getpid()}.jl")
+    warmup_report = destination.with_name(f"warmup-{os.getpid()}.failed")
+    warmup_report.unlink(missing_ok=True)
     execution = ""
     if warmup_code:
-        execution_file.write_text(_warmup_script(warmup_code), encoding="utf-8")
+        execution_file.write_text(_warmup_script(warmup_code, warmup_report), encoding="utf-8")
         execution = f' precompile_execution_file = raw"{execution_file.as_posix()}",'
         print(
             f"Baking the warm-up workload into the image ({len(warmup_code)} "
@@ -378,6 +396,8 @@ def build(
     finally:
         candidate.unlink(missing_ok=True)
         execution_file.unlink(missing_ok=True)
+        warmup_failures = _read_warmup_failures(warmup_report)
+        warmup_report.unlink(missing_ok=True)
 
     seconds = time.monotonic() - started
     # Stamped last: the stamp is what promotes a file on disk to an image the
@@ -394,7 +414,18 @@ def build(
         packages=packages,
         verified=verify,
         contained=len(state.versions) + len(state.path_packages),
+        warmup_failures=warmup_failures,
     )
+
+
+def _read_warmup_failures(report: Path) -> tuple[str, ...]:
+    """The warm-up snippets that threw during the build, one line each."""
+
+    try:
+        text = report.read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    return tuple(line.strip() for line in text.splitlines() if line.strip())
 
 
 # Windows refuses to map a DLL whose in-memory span -- the PE header's

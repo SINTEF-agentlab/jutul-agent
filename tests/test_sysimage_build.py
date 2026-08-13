@@ -635,12 +635,60 @@ def test_the_warmup_workload_reaches_the_build(
     assert "import Foo\nFoo.warm()" in content
     assert "Bar.warm()" in content
     # Each snippet on its own fuse: a drifted workload costs coverage, not the build.
-    assert content.count("try\n") == 2
+    assert content.count("# --- warm-up snippet") == 2
     assert content.count("catch err") == 2
     # The workload script is scaffolding, not part of the installed image.
     path = seen["path"]
     assert isinstance(path, Path)
     assert not path.exists()
+
+
+def test_a_warmup_snippet_that_threw_is_reported_by_the_build(
+    tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The image is fine; the coverage it lost has to be said out loud."""
+
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+
+    def failing_warmup(argv, *, capture: bool = False):
+        script = argv[-1]
+        if "precompile_execution_file" in script:
+            # Stand in for the snippet's own `catch`: the build reads what the
+            # workload left behind, whatever ran it.
+            report = Path(_quoted_path(script, "precompile_execution_file"))
+            report.with_suffix(".failed").write_text(
+                "snippet 1: UndefRefError: access to undefined reference\n", encoding="utf-8"
+            )
+        return julia(argv, capture=capture)
+
+    monkeypatch.setattr(sysimage_build, "_run_julia", failing_warmup)
+
+    result = build(workspace=ws, julia_project=env, warmup_code=("Geo.warm()",))
+
+    assert result.warmup_failures == ("snippet 1: UndefRefError: access to undefined reference",)
+    # Scaffolding, like the workload script itself.
+    assert not list(ws.glob("**/*.failed"))
+
+
+def test_a_warmup_that_ran_clean_reports_nothing(tmp_path: Path, julia: _FakeJulia) -> None:
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+
+    result = build(workspace=ws, julia_project=env, warmup_code=("Geo.warm()",))
+
+    assert result.warmup_failures == ()
+
+
+def test_the_warmup_script_records_its_failures(tmp_path: Path) -> None:
+    report = tmp_path / "warmup.failed"
+    script = sysimage_build._warmup_script(("Geo.warm()",), report)
+
+    assert "Geo.warm()" in script
+    assert report.as_posix() in script
+    # Written by the same `catch` that keeps the failure from stopping the build.
+    assert script.count("catch err") == 1
+    assert "showerror" in script
 
 
 def test_without_a_workload_the_build_asks_for_none(tmp_path: Path, julia: _FakeJulia) -> None:
