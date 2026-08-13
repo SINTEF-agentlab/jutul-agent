@@ -275,3 +275,35 @@ async def test_warmup_is_dropped_once_the_loading_is_done() -> None:
     julia.drop_warmup()
     await asyncio.sleep(0)
     assert task.cancelling() or task.cancelled() or task.done()
+
+
+class _DyingJulia:
+    """A kernel stand-in that blocks, then dies the way a closing session kills it."""
+
+    def __init__(self) -> None:
+        self.gate = asyncio.Event()
+
+    async def eval(self, code: str, on_chunk: object = None) -> EvalResult:
+        await self.gate.wait()
+        raise RuntimeError("the Julia kernel exited unexpectedly")
+
+
+async def test_a_shielded_eval_that_dies_after_a_cancel_stays_quiet() -> None:
+    # Shielding keeps the eval alive past a cancel, which orphans it: when the
+    # kernel then goes away, an unretrieved failure is printed as a traceback by
+    # asyncio, and closing a session logs a KernelDied that means nothing.
+    inner = _DyingJulia()
+    task = start_warmup(inner, "JutulAgentJutulDarcy")
+    assert task is not None
+    await asyncio.sleep(0)  # let the warm-up reach its first eval
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    unhandled: list[dict] = []
+    asyncio.get_running_loop().set_exception_handler(lambda _loop, ctx: unhandled.append(ctx))
+    inner.gate.set()  # the orphaned eval now fails
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert unhandled == []
