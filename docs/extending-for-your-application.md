@@ -85,7 +85,7 @@ mysim_web = "mypackage.capability:my_capability"
 ```
 
 Installed capabilities are discovered automatically and composed into the agent
-alongside the base tools and the active simulator. Two further options exist for
+alongside the base tools and the active simulator. Further options exist for
 specific needs:
 
 - **UI-control tools** emit a `ui` command that your front end applies (move a
@@ -101,6 +101,40 @@ specific needs:
   Your capability's tools read them from `session.host_context` and
   `session.host_api`. See [the server interface](server-interface.md#embedding-the-host-applications-selection)
   for how both are kept current across sessions and while one is open.
+- **Branding** replaces what the bundled front ends call the session. Without it
+  they introduce the simulator, which is the wrong name when the user opened your
+  application. See below.
+
+## Name the welcome screen after your application
+
+By default the web welcome screen reads "What would you like to explore with
+JutulDarcy?" and offers the simulator's starter prompts. Add a `Branding` to your
+capability and it introduces your application and your workflow instead:
+
+```python
+from jutul_agent.agent.capabilities import Branding, Capability
+
+Capability(
+    name="mysim-web",
+    surfaces=("web", "tui"),
+    branding=Branding(
+        display_name="MyApp",
+        tagline="Build a model from what the app has selected, then analyse it.",
+        example_prompts=(
+            "Build the model with default values and show me the result.",
+            "What is in this dataset? List it before we build anything.",
+        ),
+    ),
+)
+```
+
+Every field is optional and falls back on its own: an empty `display_name` keeps
+the simulator's name, an empty `tagline` keeps the front end's standard blurb, and
+empty `example_prompts` keeps the simulator's. The web UI reads it from
+`GET /simulators` (top-level `branding`), before any session exists, so only
+installed capabilities can brand it; the tool specs and host context a request
+carries describe one launch, not the product. When several layers declare
+branding, later ones win field by field.
 
 ## Build your web app
 

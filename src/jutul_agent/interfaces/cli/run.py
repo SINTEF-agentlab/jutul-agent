@@ -320,6 +320,9 @@ async def _run_session(
             approval_mode=approval_mode,
             warmup_task=host.warmup_task,
             agent_factory=build,
+            # The real host, so the TUI sees the composed capabilities (and what
+            # they call the session) rather than a bare wrapper around the agent.
+            host=host,
         ).run_async()
         # Review the whole session once, after the TUI exits (cheaper than
         # per-turn, and the natural "we finished" point).

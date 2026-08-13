@@ -10,8 +10,10 @@ from langchain_core.tools import tool
 
 from jutul_agent.agent import builder
 from jutul_agent.agent.capabilities import (
+    Branding,
     Capability,
     HttpToolSpec,
+    collect_branding,
     collect_dependency_paths,
     collect_prompt_fragments,
     collect_skill_dirs,
@@ -61,6 +63,25 @@ def test_collect_helpers(session: Session) -> None:
     assert collect_subagents([cap], session) == [{"name": "sub"}]
     assert collect_prompt_fragments([cap]) == ["  FRAGMENT  "]
     assert collect_prompt_fragments([_cap(prompt_fragment="   ")]) == []
+
+
+# --- welcome-screen branding ----------------------------------------------
+
+
+def test_collect_branding_is_none_without_a_declaration() -> None:
+    assert collect_branding([_cap(), _cap()]) is None
+
+
+def test_collect_branding_merges_field_by_field_with_the_last_layer_winning() -> None:
+    # A later layer renames the session without having to restate the prompts
+    # the earlier one declared.
+    first = Capability(
+        name="ext",
+        branding=Branding(display_name="Demo", tagline="Old", example_prompts=("Do a thing.",)),
+    )
+    second = Capability(name="host", branding=Branding(display_name="Host", tagline="New"))
+    merged = collect_branding([first, second])
+    assert merged == Branding(display_name="Host", tagline="New", example_prompts=("Do a thing.",))
 
 
 # --- entry-point discovery ------------------------------------------------

@@ -16,6 +16,14 @@ export interface SimDetails {
   examples?: string[];
 }
 
+/** What an installed capability calls this UI, when it takes the simulator's place
+ *  on the welcome screen. Each field falls back to the simulator's own on its own. */
+export interface Branding {
+  display_name?: string;
+  tagline?: string;
+  examples?: string[];
+}
+
 export interface HistoryEntry {
   id: string;
   title: string;
@@ -28,6 +36,7 @@ export interface SimulatorsResponse {
   simulators: string[];
   default: string | null;
   details: Record<string, SimDetails>;
+  branding?: Branding | null;
 }
 
 export interface ModelsResponse {

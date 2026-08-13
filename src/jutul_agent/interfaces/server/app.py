@@ -338,6 +338,30 @@ def _request_extensions(
     return layers
 
 
+def _installed_branding() -> dict[str, Any] | None:
+    """What the installed extensions call the web UI, or ``None`` when unbranded.
+
+    Read from the entry points rather than from a session, because the welcome
+    screen is the first thing the page draws and no session exists yet. Only
+    installed capabilities can brand it; the per-session layers a host sends on
+    create describe one launch, not the product.
+    """
+    from jutul_agent.agent.capabilities import (
+        collect_branding,
+        discover_extensions,
+        select_for_surface,
+    )
+
+    branding = collect_branding(select_for_surface(discover_extensions(), "web"))
+    if branding is None:
+        return None
+    return {
+        "display_name": branding.display_name,
+        "tagline": branding.tagline,
+        "examples": list(branding.example_prompts),
+    }
+
+
 def create_app(
     manager: SessionManager | None = None,
     *,
@@ -472,7 +496,12 @@ def create_app(
                 "display_name": adapter.display_name,
                 "examples": list(adapter.example_prompts),
             }
-        return {"simulators": names, "default": default_sim, "details": details}
+        return {
+            "simulators": names,
+            "default": default_sim,
+            "details": details,
+            "branding": _installed_branding(),
+        }
 
     def _bound_sim(requested: str | None) -> str:
         """The simulator a new/resumed session must use.

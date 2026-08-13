@@ -28,21 +28,28 @@ const DEFAULT_EXAMPLES = [
   "Give me a quick tour of what this simulator can do.",
 ];
 
+const DEFAULT_TAGLINE =
+  "Ask a question or describe a task. The agent runs the simulator, writes and runs Julia, and shows results here.";
+
 function Welcome() {
   const sim = useSel((s) => s.sim);
   const details = useSel((s) => s.simDetails);
+  const branding = useSel((s) => s.branding);
   const busy = useSel((s) => s.busy);
   const controller = useController();
   const d = sim ? details[sim] : undefined;
-  const display = d?.display_name || sim;
-  const prompts = d?.examples && d.examples.length ? d.examples : DEFAULT_EXAMPLES;
+  // An installed capability speaks for the whole session, so it names the screen
+  // and sets its starter prompts ahead of the simulator underneath it.
+  const display = branding?.display_name || d?.display_name || sim;
+  const tagline = branding?.tagline || DEFAULT_TAGLINE;
+  const prompts =
+    (branding?.examples?.length && branding.examples) ||
+    (d?.examples?.length && d.examples) ||
+    DEFAULT_EXAMPLES;
   return (
     <div className="welcome">
       <h1>{display ? `What would you like to explore with ${display}?` : "What would you like to explore?"}</h1>
-      <p>
-        Ask a question or describe a task. The agent runs the simulator, writes and runs Julia, and
-        shows results here.
-      </p>
+      <p>{tagline}</p>
       <div className="examples">
         {prompts.map((t) => (
           <button key={t} className="example" disabled={busy} onClick={() => controller.send(t)}>

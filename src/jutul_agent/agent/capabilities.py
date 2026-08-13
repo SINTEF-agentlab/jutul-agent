@@ -34,6 +34,28 @@ SubagentFactory = Callable[["Session"], dict[str, Any]]
 
 
 @dataclass(frozen=True)
+class Branding:
+    """How a front end introduces the session on its welcome screen.
+
+    An application built on jutul-agent is what the user thinks they opened; the
+    simulator underneath is an implementation detail. Declaring branding on a
+    capability lets that application name itself and offer starter prompts for
+    its own workflow instead of the simulator's.
+
+    Every field is optional and each one falls back on its own: an empty
+    ``display_name`` keeps the simulator's name, an empty ``tagline`` keeps the
+    front end's standard blurb, and empty ``example_prompts`` keeps the
+    simulator's. ``example_prompts`` are phrased the way a user would type them,
+    short and runnable, and should follow the workflow the capability's prompt
+    describes.
+    """
+
+    display_name: str = ""
+    tagline: str = ""
+    example_prompts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Capability:
     """One layer's contributions to a session's agent.
 
@@ -71,6 +93,7 @@ class Capability:
     prompt_fragment: str = ""
     ui_actions: tuple[str, ...] = ()
     surfaces: tuple[str, ...] = ()
+    branding: Branding | None = None
 
 
 def select_for_surface(capabilities: Sequence[Capability], surface: str) -> list[Capability]:
@@ -115,6 +138,27 @@ def collect_subagents(capabilities: Sequence[Capability], session: Session) -> l
 
 def collect_prompt_fragments(capabilities: Sequence[Capability]) -> list[str]:
     return [cap.prompt_fragment for cap in capabilities if cap.prompt_fragment.strip()]
+
+
+def collect_branding(capabilities: Sequence[Capability]) -> Branding | None:
+    """The welcome-screen identity for these layers, field by field.
+
+    Later layers win per field, so an application layered on top of an extension
+    can rename the session without also having to restate its example prompts.
+    ``None`` when no layer declares anything, which is the unbranded run every
+    front end already handles.
+    """
+    declared = [cap.branding for cap in capabilities if cap.branding is not None]
+    if not declared:
+        return None
+    merged = Branding()
+    for branding in declared:
+        merged = Branding(
+            display_name=branding.display_name or merged.display_name,
+            tagline=branding.tagline or merged.tagline,
+            example_prompts=branding.example_prompts or merged.example_prompts,
+        )
+    return merged
 
 
 # Entry-point group an installed package publishes a Capability under.

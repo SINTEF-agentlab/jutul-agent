@@ -118,6 +118,7 @@ export class Controller {
     this.store.setState({
       sim: sims.default || names[0] || "jutuldarcy",
       simDetails: sims.details || {},
+      branding: sims.branding || null,
       model: models.default ?? null,
       models: models.models || [],
       credentials,
@@ -159,9 +160,10 @@ export class Controller {
     // Supersede any in-flight reenter: starting fresh (init or /new) must win over a
     // reconnect that is still trying to get back to the old session.
     this.reenterSeq++;
-    const { sim } = this.s;
+    const { sim, branding } = this.s;
+    const label = branding?.display_name || sim;
     this.store.setState({
-      meta: `starting ${sim}… (first run builds its environment, this can take a few minutes)`,
+      meta: `starting ${label}… (first run builds its environment, this can take a few minutes)`,
     });
     try {
       const { session_id } = await api.createSession({
