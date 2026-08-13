@@ -153,6 +153,22 @@ FIT_MIN_FRACTION = "2 / 3"
 FIT_MAX_SCALE = "3.0"
 
 
+def _guarded_resize(makie: str, args: str, indent: str) -> str:
+    """Julia to resize ``_fig``, tolerating a figure whose browser session died.
+
+    Resizing re-lays the figure out and Makie pushes that to the screen the
+    figure is displayed on. Once a view of it has gone (a closed popout, a
+    released frame) that screen's Bonito session is closed, and the push throws
+    "Screen Session uninitialized" — *after* the viewport has already taken the
+    new size. Uncaught, that exception aborts the block before the size echo,
+    so the caller reads a failed resize for one that in fact happened and stops
+    trusting the figure's size from then on. The echo re-reads the viewport
+    afterwards regardless, so the honest report survives the dead screen.
+    """
+
+    return f"{indent}try\n{indent}    {makie}.resize!(_fig, {args})\n{indent}catch\n{indent}end\n"
+
+
 def _overflow_guard(makie: str) -> str:
     """Julia to grow a just-resized figure until its layout fits its canvas.
 
@@ -198,8 +214,8 @@ def _overflow_guard(makie: str) -> str:
         "                ceil(Int, min(_gvp.widths[2] + 4 * max(_oy, 0), 1.5 * _h00)))\n"
         "            (_gw == round(Int, _gvp.widths[1]) &&\n"
         "                _gh == round(Int, _gvp.widths[2])) && break\n"
-        f"            {makie}.resize!(_fig, _gw, _gh)\n"
-        "        end\n"
+        + _guarded_resize(makie, "_gw, _gh", " " * 12)
+        + "        end\n"
         "    end\n"
     )
 
@@ -215,7 +231,7 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
 
     resize = ""
     if size is not None:
-        resize = f"    _M.resize!(_fig, {int(size[0])}, {int(size[1])})\n"
+        resize = _guarded_resize("_M", f"{int(size[0])}, {int(size[1])}", " " * 4)
     elif fit is not None:
         resize = (
             "    let _vp = _fig.scene.viewport[]\n"
@@ -230,8 +246,9 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
             f" (_h0 * {FIT_MIN_FRACTION}) / _h1), 1.0, {FIT_MAX_SCALE})\n"
             "        local _wt = round(Int, _w1 * _s)\n"
             "        local _ht = round(Int, _h1 * _s)\n"
-            "        (_wt != round(Int, _w0) || _ht != round(Int, _h0)) &&\n"
-            "            _M.resize!(_fig, _wt, _ht)\n"
+            "        if _wt != round(Int, _w0) || _ht != round(Int, _h0)\n"
+            + _guarded_resize("_M", "_wt, _ht", " " * 12)
+            + "        end\n"
             "    end\n" + _overflow_guard("_M")
         )
     return (
@@ -782,9 +799,10 @@ def resize_web_fig_call(route: str, width: int, height: int) -> str:
         '        "missing"\n'
         "    else\n"
         "        let _vp = _fig.scene.viewport[]\n"
-        f"            (round(Int, _vp.widths[1]) != {int(width)} ||"
-        f" round(Int, _vp.widths[2]) != {int(height)}) &&\n"
-        f"                WGLMakie.Makie.resize!(_fig, {int(width)}, {int(height)})\n"
+        f"            if round(Int, _vp.widths[1]) != {int(width)} ||"
+        f" round(Int, _vp.widths[2]) != {int(height)}\n"
+        + _guarded_resize("WGLMakie.Makie", f"{int(width)}, {int(height)}", " " * 16)
+        + "            end\n"
         "        end\n"
         + _overflow_guard("WGLMakie.Makie")
         + "        let _vp = _fig.scene.viewport[]\n"

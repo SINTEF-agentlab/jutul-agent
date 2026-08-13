@@ -32,6 +32,7 @@ reach the browser looking or behaving wrong rather than failing outright:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from jutul_agent.agent.plot_julia_src import (
@@ -354,6 +355,38 @@ def test_resize_call_resizes_the_routed_figure_and_echoes() -> None:
     assert code.index("resize!(_fig, 1200, 1000)") < code.index("computedbbox")
     assert code.index("computedbbox") < code.index(FIG_SIZE_MARKER)
     assert '"missing"' in code
+
+
+def test_every_resize_survives_a_figure_whose_browser_session_died() -> None:
+    # Resizing pushes the new layout to the screen the figure is displayed on,
+    # and once a view of it has gone (a closed popout, a released frame) that
+    # push throws — after the viewport has already taken the new size. Uncaught,
+    # it would abort the block before the echo, so the caller reads a failure
+    # for a resize that happened and stops trusting the figure's size. Every
+    # resize is therefore wrapped, and the echo still runs.
+    from jutul_agent.agent.plot_julia_src import resize_web_fig_call
+
+    sized = web_live_call(
+        user_code="lines(1:10)",
+        png_path=Path("/tmp/p.png"),
+        html_path=Path("/tmp/p.html"),
+        route="/viz/x",
+        size=[900, 600],
+    )
+    fitted = web_live_call(
+        user_code="lines(1:10)",
+        png_path=Path("/tmp/p.png"),
+        html_path=Path("/tmp/p.html"),
+        route="/viz/x",
+        fit=[990, 1230],
+    )
+    refit = resize_web_fig_call("/viz/res", 1200, 1000)
+    for code in (sized, fitted, refit):
+        for call in re.finditer(r"[\w.]*resize!\(_fig, [^)]*\)", code):
+            before = code[: call.start()]
+            # The nearest block opener before this resize is its own `try`.
+            assert before.rstrip().endswith("try"), code[call.start() - 120 : call.end()]
+        assert code.index("resize!") < code.index(FIG_SIZE_MARKER)
 
 
 def test_live_call_caps_the_route_registry() -> None:
