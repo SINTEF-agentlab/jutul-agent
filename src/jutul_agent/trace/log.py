@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -126,6 +127,22 @@ class TraceLog:
         long trace and is a reliable "last used" signal where a file mtime is not
         (WAL appends don't touch the main db file's mtime)."""
         row = self._conn.execute("SELECT timestamp FROM events ORDER BY id DESC LIMIT 1").fetchone()
+        return row[0] if row else None
+
+    def last_timestamp_of(self, kinds: Sequence[str]) -> str | None:
+        """ISO timestamp of the most recent event of any of ``kinds``, or None.
+
+        For "when was this last worked on", where reopening a session should not
+        count: a resume writes lifecycle events, which ``last_timestamp`` sees.
+        Uses the kind index.
+        """
+        if not kinds:
+            return None
+        holes = ",".join("?" * len(kinds))
+        row = self._conn.execute(
+            f"SELECT timestamp FROM events WHERE kind IN ({holes}) ORDER BY id DESC LIMIT 1",
+            tuple(kinds),
+        ).fetchone()
         return row[0] if row else None
 
     def close(self) -> None:

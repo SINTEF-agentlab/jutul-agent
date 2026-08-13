@@ -87,9 +87,17 @@ export class Controller {
         this.queuedPrompt = null;
       },
     );
+    // Re-read the session list when the tab comes back to the front: a host can
+    // be evicted while the tab is in the background, which clears a live marker
+    // this client is never told about.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void this.refreshHistory();
+    });
     // Keep the server's canvas-size hint fresh across window resizes, so a plot
     // made mid-turn is shaped for the panel as it is now, not as it was when
     // the turn started. Debounced: only the settled size matters.
+    //
+    // Both listeners live as long as the page does, so neither is torn down.
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     window.addEventListener("resize", () => {
       clearTimeout(resizeTimer);
@@ -628,6 +636,9 @@ export class Controller {
       host_api: hostApiUrl ?? undefined,
     });
     if (stale()) return;
+    // Liveness is already decided by the time the resume answers, so mark it now
+    // rather than after the replay below, which waits on the whole conversation.
+    void this.refreshHistory();
     if (!(reconnecting && body.kernel_restarted === false)) {
       // A from-disk resume or a switch to another session: rebuild from the record.
       // Lay the history down before opening the socket so a live frame can't
@@ -641,7 +652,6 @@ export class Controller {
     this.transport.open(body.session_id);
     this.flushQueuedPrompt();
     this.s.addSysNote(body.kernel_restarted === false ? REATTACHED_NOTE : RESTARTED_NOTE);
-    this.refreshHistory();
   }
 
   // Recover after the socket dropped (a network blip, sleep/wake, or a proxy idle
@@ -681,6 +691,11 @@ export class Controller {
     this.s.reset();
     this.store.setState({ sessionId: null });
     await this.startSession();
+    // The session just left keeps its place in the list but not its old ordering
+    // or its live marker, and its title may only have landed as it was left.
+    // Nothing else refreshes on this path, so without this the sidebar sat stale
+    // until the next turn ended.
+    this.refreshHistory();
   }
 
   async refreshHistory(): Promise<void> {

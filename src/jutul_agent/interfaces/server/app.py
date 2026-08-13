@@ -574,8 +574,21 @@ def create_app(
         Ordered by last activity (the most recently used first), from each trace's
         last event time, since that is what a user looks for — not when the session
         was first created.
+
+        Each entry also says whether the session is still ``live``: its host is in
+        memory, so its Julia kernel and REPL state survive a resume, where a session
+        that has been evicted replays from disk against a fresh Julia. Read from the
+        in-memory registry, so it costs no disk access and is only ever true for this
+        server process.
+
+        Deliberately not reported: whether a connection is attached. It is true of
+        the session you just left until its disconnect teardown finishes, so a
+        history refresh right after "New chat" would mark it as in use by someone
+        else, and one browser client is the normal case anyway.
         """
         from jutul_agent.session import derive_session_title, list_sessions
+
+        live_ids = set(manager.list_ids())
 
         # Consider every session, then sort by last activity and cap last — slicing
         # before the sort would order by creation and cut an old-but-recently-used
@@ -593,6 +606,7 @@ def create_app(
                     "started": info.started.isoformat(),
                     "last_active": last_active or info.started.isoformat(),
                     "sim": sim or default_sim,
+                    "live": info.session_id in live_ids,
                 }
             )
         sessions.sort(key=lambda s: s["last_active"], reverse=True)
@@ -1246,6 +1260,10 @@ def replay_events(
     return items
 
 
+# What counts as working on a session, for ordering the history list.
+_ACTIVITY_KINDS = (schema.MESSAGE_USER, schema.MESSAGE_ASSISTANT)
+
+
 def _session_overview(state_dir: Path) -> tuple[str | None, str | None, str | None]:
     """A persisted session's simulator, first user prompt, and last-activity time.
 
@@ -1263,7 +1281,11 @@ def _session_overview(state_dir: Path) -> tuple[str | None, str | None, str | No
             sim = start.get("simulator")
             content = user.get("content")
             first_prompt = content if isinstance(content, str) else None
-            return sim, first_prompt, log.last_timestamp()
+            # What was last *said*, not the last event of any kind: resuming a
+            # session writes lifecycle events, and counting those sent a chat to
+            # the top of the list just for being opened.
+            last = log.last_timestamp_of(_ACTIVITY_KINDS) or log.last_timestamp()
+            return sim, first_prompt, last
     except Exception:
         return None, None, None
 
@@ -1384,6 +1406,9 @@ class _StreamState:
         # Whether the running turn has already told the client it ended, so the
         # backstop in ``_run_turn`` never sends a second end.
         self._turn_ended = True
+        # Whether this turn has already nudged the client to re-read its session
+        # list; see ``_announce_history_once``.
+        self._announced = True
         # Held so the fire-and-forget titling task isn't garbage-collected mid-run.
         self._title_task: asyncio.Task[None] | None = None
         # High-water mark over trace event ids for side outputs (artifacts, ui),
@@ -1878,6 +1903,7 @@ class _StreamState:
         """
         self._side_output_id = self._latest_event_id()
         self._turn_ended = False
+        self._announced = False
         try:
             await self._drive(factory)
         except asyncio.CancelledError:
@@ -1974,7 +2000,24 @@ class _StreamState:
                 payload = event.payload.get("payload")
                 await _safe_send(self._ws, protocol.ui_command(action, payload))
 
+    async def _announce_history_once(self) -> None:
+        """Tell the client the session list changed, at most once per turn.
+
+        A session only becomes listable when its first prompt is on the trace, and
+        that append is the first thing ``run_prompt`` does, so by the time any
+        message of the turn reaches here the session has a title to show. Waiting
+        for the titling hook instead meant a new chat did not appear in the sidebar
+        until the whole turn had finished, which is minutes when the turn runs a
+        simulation.
+        """
+        if self._announced:
+            return
+        self._announced = True
+        with contextlib.suppress(Exception):
+            await _safe_send(self._ws, protocol.ui_command("history_changed", {}))
+
     async def _on_message(self, event: Any) -> None:
+        await self._announce_history_once()
         wire = protocol.to_wire(event)
         if wire is None:
             return

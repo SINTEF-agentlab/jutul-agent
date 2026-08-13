@@ -1261,7 +1261,185 @@ def test_history_endpoint_shape(tmp_path: Path) -> None:
         body = client.get("/sessions/history").json()
     assert isinstance(body.get("sessions"), list)
     for s in body["sessions"]:
-        assert {"id", "title", "started", "sim"} <= set(s)
+        assert {"id", "title", "started", "sim", "live"} <= set(s)
+
+
+def test_max_live_sessions_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Each live session pins a Julia process, so the cap is a memory decision that
+    # belongs to whoever runs the server, not to a constant in the source.
+    from jutul_agent.interfaces.server.manager import DEFAULT_MAX_LIVE
+
+    def cap() -> int:
+        return SessionManager()._max_live
+
+    monkeypatch.delenv("JUTUL_AGENT_MAX_LIVE_SESSIONS", raising=False)
+    assert cap() == DEFAULT_MAX_LIVE
+
+    monkeypatch.setenv("JUTUL_AGENT_MAX_LIVE_SESSIONS", "10")
+    assert cap() == 10
+
+    # A typo must not stop the server from starting, and neither must a value
+    # that would leave no room for the session being opened.
+    for bad in ("", "  ", "lots", "0", "-3", "3.5"):
+        monkeypatch.setenv("JUTUL_AGENT_MAX_LIVE_SESSIONS", bad)
+        assert cap() == DEFAULT_MAX_LIVE, bad
+
+    # An explicit argument still wins, which is what the tests here rely on.
+    monkeypatch.setenv("JUTUL_AGENT_MAX_LIVE_SESSIONS", "10")
+    assert SessionManager(max_live=2)._max_live == 2
+
+
+def test_opening_a_session_does_not_reorder_the_list(tmp_path: Path) -> None:
+    # Ordering is by when a chat was last worked on, so merely reopening one must
+    # not send it to the top. A resume writes lifecycle events, and counting every
+    # event kind made a session look freshly edited just for being clicked.
+    from jutul_agent.session import sessions_root
+    from jutul_agent.trace import TraceLog
+
+    root = sessions_root()
+    root.mkdir(parents=True, exist_ok=True)
+    older, newer = "2026-06-20-1000-aaaa", "2026-06-20-1100-bbbb"
+    for sid in (older, newer):  # appended in order, so `newer` speaks last
+        d = root / sid
+        d.mkdir()
+        with TraceLog(d / "trace.sqlite") as log:
+            log.append("session_start", {"session_id": sid, "simulator": "demo"})
+            log.append("message_user", {"content": f"work on {sid}"})
+
+    with _client(echo_agent, tmp_path) as client:
+
+        def order() -> list[str]:
+            return [s["id"] for s in client.get("/sessions/history").json()["sessions"]]
+
+        assert order() == [newer, older]
+
+        # Opening the older one grows its trace with lifecycle events, and leaves
+        # it where it was.
+        assert client.post(f"/sessions/{older}/resume", json={"sim": "demo"}).status_code == 200
+        with TraceLog(root / older / "trace.sqlite") as log:
+            log.append("session_end", {"session_id": older})
+        assert order() == [newer, older]
+
+        # Saying something in it does move it to the top.
+        with TraceLog(root / older / "trace.sqlite") as log:
+            log.append("message_assistant", {"content": "carrying on"})
+        assert order() == [older, newer]
+
+
+def test_live_marker_follows_the_kernel_budget(tmp_path: Path) -> None:
+    # Only DEFAULT_MAX_LIVE hosts (and so Julia kernels) are kept at once, so most
+    # of a long history can never be live: opening one evicts the oldest, which
+    # loses its marker. What must always hold is that the session you just clicked
+    # comes back live, whether or not it had been evicted.
+    from jutul_agent.session import sessions_root
+    from jutul_agent.trace import TraceLog
+
+    root = sessions_root()
+    root.mkdir(parents=True, exist_ok=True)
+
+    def on_disk(session_id: str) -> None:
+        d = root / session_id
+        d.mkdir(exist_ok=True)
+        with TraceLog(d / "trace.sqlite") as log:
+            log.append("session_start", {"session_id": session_id, "simulator": "demo"})
+            log.append("message_user", {"content": f"prompt {session_id}"})
+
+    manager = _manager(echo_agent, tmp_path, max_live=3)
+    with TestClient(create_app(manager)) as client:
+
+        def live() -> set[str]:
+            body = client.get("/sessions/history").json()["sessions"]
+            return {s["id"] for s in body if s["live"]}
+
+        ids = []
+        for _ in range(5):
+            sid = client.post("/sessions", json={"sim": "demo"}).json()["session_id"]
+            on_disk(sid)
+            ids.append(sid)
+
+        # Capped at the budget, oldest evicted first.
+        assert live() == set(ids[2:])
+        assert ids[0] not in live()
+
+        # Clicking the evicted one brings it back, on a fresh kernel.
+        body = client.post(f"/sessions/{ids[0]}/resume", json={"sim": "demo"}).json()
+        assert body["kernel_restarted"] is True
+        assert ids[0] in live()
+        assert len(live()) == 3  # still capped: reviving it evicted the next oldest
+
+        # Clicking one that is still live keeps it live, without restarting Julia.
+        body = client.post(f"/sessions/{ids[4]}/resume", json={"sim": "demo"}).json()
+        assert body["kernel_restarted"] is False
+        assert ids[4] in live()
+
+
+def test_history_changed_arrives_before_the_turn_ends(tmp_path: Path) -> None:
+    # A session is only listable once its first prompt is on the trace, and the
+    # nudge used to ride on the titling hook, which runs after the turn. A new
+    # chat therefore stayed out of the sidebar for as long as the turn took, which
+    # is minutes when it runs a simulation. It must land while the turn is going.
+    with _client(streaming_agent, tmp_path) as client:
+        sid = client.post("/sessions", json={"sim": "demo"}).json()["session_id"]
+        with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
+            ws.send_json({"type": "prompt", "text": "hi"})
+            events = _drain_turn(ws)
+
+    kinds = [e["type"] for e in events]
+    nudges = [
+        i
+        for i, e in enumerate(events)
+        if e["type"] == "ui" and e.get("action") == "history_changed"
+    ]
+    assert nudges, f"no history_changed in {kinds}"
+    # Strictly before the end of the turn, and only one per turn.
+    assert len(nudges) == 1
+    assert nudges[0] < kinds.index("turn_end")
+
+
+def test_history_marks_live_sessions(tmp_path: Path) -> None:
+    # The sidebar draws its dot from this, so it has to track the in-memory
+    # registry: live while the host is resident, and never for a session this
+    # server only knows from disk.
+    from jutul_agent.session import sessions_root
+    from jutul_agent.trace import TraceLog
+
+    root = sessions_root()
+    root.mkdir(parents=True, exist_ok=True)
+
+    def on_disk(session_id: str) -> None:
+        """A listable session directory, which is what /sessions/history reads."""
+        d = root / session_id
+        d.mkdir(exist_ok=True)
+        with TraceLog(d / "trace.sqlite") as log:
+            log.append("session_start", {"session_id": session_id, "simulator": "jutuldarcy"})
+            log.append("message_user", {"content": f"conversation {session_id}"})
+
+    stale = "2026-06-20-1835-dead"
+    on_disk(stale)
+
+    manager = _manager(echo_agent, tmp_path)
+    with TestClient(create_app(manager)) as client:
+        sid = client.post("/sessions", json={"sim": "jutuldarcy"}).json()["session_id"]
+        # The test manager keeps its state under tmp_path, so mirror the live
+        # session into the listed root: history joins the two by id.
+        on_disk(sid)
+
+        def entries() -> dict[str, dict]:
+            return {s["id"]: s for s in client.get("/sessions/history").json()["sessions"]}
+
+        assert entries()[sid]["live"] is True
+        assert entries()[stale]["live"] is False
+
+        # A connection attaching does not change it: the flag is about the host
+        # being resident, not about who is holding it.
+        host = manager.get(sid)
+        assert host is not None and host.attach()
+        assert entries()[sid]["live"] is True
+        host.detach()
+
+        # Dropped from the registry: only the on-disk conversation is left.
+        assert client.delete(f"/sessions/{sid}").json() == {"ok": True}
+        assert entries()[sid]["live"] is False
 
 
 def test_history_derives_title_when_none_stored(tmp_path: Path) -> None:

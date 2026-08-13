@@ -1,7 +1,9 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { api, type HistoryEntry } from "./api";
 import { Canvas } from "./components/Canvas";
+import { Sidebar } from "./components/Sidebar";
 import { Thread } from "./components/Thread";
 import type { ServerMessage } from "./protocol";
 import { renderWithStore } from "./test/util";
@@ -150,5 +152,105 @@ describe("approval", () => {
     fireEvent.click(screen.getByRole("button", { name: "approve" }));
     expect(store.getState().pending).toBeNull();
     expect(screen.queryByText(/Approve execute\?/)).toBeNull();
+  });
+});
+
+describe("session list live markers", () => {
+  const entry = (id: string, extra: Partial<HistoryEntry> = {}): HistoryEntry => ({
+    id,
+    title: `Session ${id}`,
+    started: "2026-01-01T00:00:00Z",
+    last_active: "2026-01-01T00:00:00Z",
+    sim: "jutuldarcy",
+    ...extra,
+  });
+
+  function renderList(history: HistoryEntry[]) {
+    const rendered = renderWithStore(<Sidebar collapsed={false} />);
+    act(() => rendered.store.getState().setHistory(history));
+    return rendered;
+  }
+
+  it("marks only the sessions the server calls live", () => {
+    const { container } = renderList([
+      entry("a", { live: true }),
+      entry("b"),
+      entry("c", { live: false }),
+    ]);
+    const items = container.querySelectorAll(".history-item");
+    expect(items.length).toBe(3);
+    expect(items[0].querySelector(".h-live")).not.toBeNull();
+    expect(items[1].querySelector(".h-live")).toBeNull();
+    expect(items[2].querySelector(".h-live")).toBeNull();
+  });
+
+  it("labels the marker for screen readers and on hover", () => {
+    const { container } = renderList([entry("a", { live: true })]);
+    const dot = container.querySelector(".h-live");
+    expect(dot?.getAttribute("aria-label")).toMatch(/Julia session intact/);
+    expect(dot?.getAttribute("title")).toBe(dot?.getAttribute("aria-label"));
+  });
+
+  it("keeps the title truncatable next to the marker", () => {
+    // The dot turned .h-title into a flex row, which cannot ellipsis a bare text
+    // node, so the title has to keep its own element.
+    const { container } = renderList([entry("a", { live: true })]);
+    expect(container.querySelector(".h-title-text")?.textContent).toBe("Session a");
+  });
+});
+
+describe("session list freshness", () => {
+  const listed = (id: string): HistoryEntry => ({
+    id,
+    title: `Session ${id}`,
+    started: "2026-01-01T00:00:00Z",
+    last_active: "2026-01-01T00:00:00Z",
+    sim: "jutuldarcy",
+    live: true,
+  });
+
+  it("re-reads the list when a new chat replaces the current session", async () => {
+    // newChat used to leave the sidebar showing whatever it had until the next
+    // turn ended, so the session just left kept a stale place and marker.
+    const { store, controller } = renderWithStore(<Sidebar collapsed={false} />);
+    const history = vi.spyOn(api, "history").mockResolvedValue([listed("a")]);
+    vi.spyOn(controller, "startSession").mockResolvedValue(undefined);
+    await act(() => controller.newChat());
+    expect(history).toHaveBeenCalled();
+    expect(store.getState().history.map((h) => h.id)).toEqual(["a"]);
+    vi.restoreAllMocks();
+  });
+
+  it("re-reads the list when the tab comes back to the front", async () => {
+    // A host can be evicted while the tab is in the background, which clears a
+    // live marker this client never hears about.
+    renderWithStore(<Sidebar collapsed={false} />);
+    const history = vi.spyOn(api, "history").mockResolvedValue([listed("a")]);
+    document.dispatchEvent(new Event("visibilitychange"));
+    await act(async () => {});
+    expect(history).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+});
+
+describe("switching sessions", () => {
+  it("marks the resumed session live without waiting for the replay", async () => {
+    // The refresh used to run after the conversation had been re-fetched and laid
+    // down, so on a long chat the dot appeared well after the click. Liveness is
+    // already settled once the resume answers.
+    const { controller } = renderWithStore(<Sidebar collapsed={false} />);
+    vi.spyOn(api, "resumeSession").mockResolvedValue({
+      session_id: "a",
+      kernel_restarted: true,
+    });
+    // A replay that never settles stands in for a slow one.
+    vi.spyOn(api, "messages").mockReturnValue(new Promise(() => {}));
+    const history = vi.spyOn(api, "history").mockResolvedValue([]);
+
+    void controller.resume("a");
+    await act(async () => {});
+
+    expect(history).toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });
