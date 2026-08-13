@@ -42,20 +42,26 @@ function withToken(url: string, token: number): string {
 
 export function ImagePanel({ view, active, reloadToken, onLoaded }: PanelProps) {
   // An image the browser has already decoded fires `load` as soon as `src` is set,
-  // which can be before React has attached `onLoad` — so the handler never runs and
-  // the canvas loader, which only clears from it, stays over a picture that is
-  // sitting right there. Seen on a resumed session: the poster complete and 3200px
-  // wide behind a permanent "Loading view…". Settling on mount when the element is
-  // already `complete` closes that gap; it can only ever clear a loader for content
-  // the browser has finished, so an image still arriving is untouched.
-  const settle = (img: HTMLImageElement | null) => {
-    if (img?.complete) onLoaded();
-  };
+  // possibly before React attaches `onLoad`, so the canvas loader (which clears
+  // only from this panel) needs a second route: check `complete` after mount. It
+  // can only ever clear a loader for content the browser has finished, so an image
+  // still arriving is untouched and reports through `onLoad` as before.
+  //
+  // The check belongs in an effect keyed on the src, so it runs once per image.
+  // Reporting a load re-renders the canvas, so a check that ran on every render
+  // (as a ref callback does, being reattached on each commit) would never settle.
+  const img = useRef<HTMLImageElement | null>(null);
+  const report = useRef(onLoaded);
+  report.current = onLoaded;
+  const src = withToken(view.url, reloadToken);
+  useEffect(() => {
+    if (img.current?.complete) report.current();
+  }, [src]);
   return (
     <img
       className={active ? "active" : ""}
-      ref={settle}
-      src={withToken(view.url, reloadToken)}
+      ref={img}
+      src={src}
       alt={view.title}
       onLoad={onLoaded}
       onError={onLoaded}
