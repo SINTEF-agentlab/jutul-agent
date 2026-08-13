@@ -153,8 +153,7 @@ def start_warmup(
         # Shielded: cancelling here is what kills the kernel, so a cancel that lands
         # mid-load has to leave the eval running and take effect at the next step.
         for essential in (bootstrap, HYPRE_THREADS_SETUP, GL_CONTEXT_WARMUP):
-            with contextlib.suppress(Exception):
-                await asyncio.shield(_eval(julia, essential))
+            await _shielded_eval(julia, essential)
         if abandonable is not None:
             abandonable.set()
         # Last, and only once the backends are up: a capability's snippets exist to
@@ -166,8 +165,20 @@ def start_warmup(
     return asyncio.create_task(_run(), name="julia-warmup")
 
 
-async def _eval(julia: Any, code: str) -> Any:
-    return await julia.eval(code)
+async def _shielded_eval(julia: Any, code: str) -> None:
+    """Run ``code`` so a cancel of the warm-up leaves it running, and quietly."""
+
+    with contextlib.suppress(Exception):
+        await asyncio.shield(_eval(julia, code))
+
+
+async def _eval(julia: Any, code: str) -> None:
+    # The failure is swallowed inside the shielded coroutine, not around the
+    # shield. A shield whose inner future ends in an exception hands it to the
+    # loop's exception handler even when the waiter is long gone, so a session
+    # closing mid-warm-up printed a KernelDied traceback that meant nothing.
+    with contextlib.suppress(Exception):
+        await julia.eval(code)
 
 
 # Pin HYPRE's OpenMP thread count for this session. JutulDarcy loads HYPRE (its
