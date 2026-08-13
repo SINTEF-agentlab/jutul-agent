@@ -280,6 +280,10 @@ def test_prepare_workspace_env_rebuilds_foreign_managed_env(
     env.mkdir(parents=True)
     (env / "Project.toml").write_text('[deps]\nJutulDarcy = "uuid"\n', encoding="utf-8")
     monkeypatch.setattr(env_setup, "_run_pkg", lambda *a, **k: None)
+    # The rebuild bootstraps with `precompile=True`, whose boot probe launches a
+    # real Julia. Stubbed, or this test waits on a subprocess it never asked for
+    # (it hung the Windows lane, where reading that pipe does not come back).
+    monkeypatch.setattr(env_setup, "verify_julia_runs", lambda _project: None)
 
     env_setup.prepare_workspace_env(_adapter(module_dir), workspace=workspace, julia_project=env)
 
