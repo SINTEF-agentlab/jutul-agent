@@ -30,6 +30,9 @@ export interface HistoryEntry {
   started: string;
   last_active: string;
   sim: string;
+  /** The session's host is still in memory, so a resume keeps its Julia REPL state.
+   * Optional: an older server does not send it, and absent must not read as live. */
+  live?: boolean;
 }
 
 export interface SimulatorsResponse {

@@ -5,6 +5,8 @@ import { useController, useSel } from "../context";
 import { timeAgo } from "../format";
 import { PlusIcon } from "../icons";
 
+const LIVE_LABEL = "Live: resumes with its Julia session intact";
+
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const history = useSel((s) => s.history);
   const sessionId = useSel((s) => s.sessionId);
@@ -36,10 +38,22 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
               title={s.title}
               onClick={() => controller.resume(s.id, s.sim)}
             >
-              <div className="h-title">{s.title || "Untitled session"}</div>
-              <div className="h-meta">
-                {s.sim} · {timeAgo(s.last_active || s.started)}
+              <div className="h-title">
+                {/* Its Julia is still running, so resuming picks up where it left
+                    off. Sessions without the dot replay against a fresh Julia. */}
+                {s.live && (
+                  <span
+                    className="h-live"
+                    title={LIVE_LABEL}
+                    aria-label={LIVE_LABEL}
+                    role="img"
+                  />
+                )}
+                <span className="h-title-text">{s.title || "Untitled session"}</span>
               </div>
+              {/* Just the time. The simulator is a property of the folder, not of
+                  the chat, and the top bar already names it. */}
+              <div className="h-meta">{timeAgo(s.last_active || s.started)}</div>
             </button>
           ))
         )}

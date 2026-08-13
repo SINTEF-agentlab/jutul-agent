@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -33,7 +34,29 @@ HostFactory = Callable[..., Awaitable[SessionHost]]
 # How many live sessions (and so Julia kernels) to keep at once. A single user
 # works in one session at a time; a few extra cover quickly flipping between
 # recent chats. The oldest beyond this are closed (and stay resumable on disk).
+#
+# The cap exists because each live session holds a Julia process, which for a
+# reservoir workload is one to two gigabytes resident before it simulates
+# anything. Raise it with JUTUL_AGENT_MAX_LIVE_SESSIONS when there is memory to
+# spare and you flip between more chats than this; the cost of being wrong is
+# only that a resume restarts Julia.
 DEFAULT_MAX_LIVE = 4
+
+
+def _configured_max_live() -> int:
+    """``DEFAULT_MAX_LIVE``, or the env override when it is a positive integer.
+
+    A bad value is ignored rather than fatal: the server starting with the default
+    beats it refusing to start over a typo in an optional tuning knob.
+    """
+    raw = os.environ.get("JUTUL_AGENT_MAX_LIVE_SESSIONS", "").strip()
+    if not raw:
+        return DEFAULT_MAX_LIVE
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_MAX_LIVE
+    return value if value > 0 else DEFAULT_MAX_LIVE
 
 
 class SessionBusyError(RuntimeError):
@@ -104,14 +127,14 @@ class SessionManager:
     """Registry of running ``SessionHost``s, keyed by session id."""
 
     def __init__(
-        self, *, host_factory: HostFactory | None = None, max_live: int = DEFAULT_MAX_LIVE
+        self, *, host_factory: HostFactory | None = None, max_live: int | None = None
     ) -> None:
         self._host_factory = host_factory or _default_host_factory
         # Insertion order is recency: a (re)registered host moves to the end, so
         # the front is the least recently created/resumed and is evicted first.
         self._hosts: OrderedDict[str, SessionHost] = OrderedDict()
         self._lock = asyncio.Lock()
-        self._max_live = max(1, max_live)
+        self._max_live = max(1, _configured_max_live() if max_live is None else max_live)
 
     async def create(
         self,

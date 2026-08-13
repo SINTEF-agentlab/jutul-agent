@@ -219,11 +219,28 @@
   background: var(--accent-soft);
 }
 .h-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: 0.86rem;
   color: var(--text);
+  min-width: 0;
+}
+/* The truncation lives on the text, not the row: a flex row cannot ellipsis a bare
+   text node, and the dot must keep its size while the title gives way. */
+.h-title-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+/* A live session: its host, and so its Julia, is still resident. */
+.h-live {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--live);
 }
 .h-meta {
   font-size: 0.72rem;
