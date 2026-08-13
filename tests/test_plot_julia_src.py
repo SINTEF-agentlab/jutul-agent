@@ -37,6 +37,8 @@ from pathlib import Path
 
 from jutul_agent.agent.plot_julia_src import (
     FIG_SIZE_MARKER,
+    FIT_ASPECT_FRACTION,
+    FIT_SQUASH_FLOOR,
     PICK_EMPTY_BUFFER_GUARD,
     PICK_GUARD_MARKER,
     PREFER_OPEN_SCREEN_GUARD,
@@ -297,8 +299,14 @@ def test_live_call_fit_targets_the_panel_with_a_squash_floor() -> None:
         fit=[990, 1230],
     )
     assert "local _pw, _ph = 990, 1230" in code
-    assert "clamp(_pw / _ph, (_w0 / _h0) * 2 / 3, (_w0 / _h0) / (2 / 3))" in code
-    assert "clamp(max((_w0 * 2 / 3) / _w1, (_h0 * 2 / 3) / _h1), 1.0, 3.0)" in code
+    # The aspect clamp bounds distortion; the squash floor bounds compression.
+    # Two separate concerns, so the generated code reads them from two constants.
+    aspect, floor = FIT_ASPECT_FRACTION, FIT_SQUASH_FLOOR
+    assert f"clamp(_pw / _ph, (_w0 / _h0) * {aspect}, (_w0 / _h0) / ({aspect}))" in code
+    assert f"clamp(max((_w0 * {floor}) / _w1, (_h0 * {floor}) / _h1), 1.0, 3.0)" in code
+    # A figure is never compressed below the size its code chose: fixed-pixel
+    # text does not shrink with the canvas, and the excess is clipped away.
+    assert floor >= 1.0
     # The overflow guard runs after the fit: a layout whose block minimums
     # exceed the compressed width grows back until nothing hangs outside.
     assert "computedbbox" in code

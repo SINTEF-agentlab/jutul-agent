@@ -140,17 +140,28 @@ FIG_AUTHORED_MARKER = "__JUTUL_FIG_AUTHORED__"
 
 # The fit rule, shared verbatim with its Python twin (``app._fit_target``).
 # For authored size ``a`` and panel ``p``, in order: (1) the target aspect is
-# the panel's, clamped to within 2/3 to 3/2 of the authored aspect — a figure may
-# reshape toward its panel but never distort past that (a tall figure is not
-# stretched flat to fill a wide panel; it letterboxes at full size instead);
-# (2) that shape is fitted inside the panel at scale 1 — full-size text; (3) it
-# is scaled up (never down, capped at 3x) until neither dimension compresses
-# below 2/3 of its authored pixels — fixed-pixel controls collide past that
-# (measured with the reservoir explorer) — and the browser scales the overshoot
-# back down. For a panel shaped within the clamp (the common case) the figure
-# IS the panel: no bands, no distortion, no scaling.
-FIT_MIN_FRACTION = "2 / 3"
-FIT_MAX_SCALE = "3.0"
+# the panel's, clamped to within ``FIT_ASPECT_FRACTION`` of the authored aspect,
+# so a figure may reshape toward its panel but never distort past that (a tall
+# figure is not stretched flat to fill a wide panel; it letterboxes at full size
+# instead); (2) that shape is fitted inside the panel at scale 1, which is
+# full-size text; (3) it is scaled up (never down, capped at 3x) until neither
+# dimension falls below ``FIT_SQUASH_FLOOR`` of its authored pixels, and the
+# browser scales any overshoot back down. For a panel shaped within the clamp
+# and no smaller than the figure, which is the common case, the figure IS the
+# panel: no bands, no distortion, no scaling.
+FIT_ASPECT_FRACTION = 2 / 3
+# The two are separate concerns and only look alike. The aspect clamp bounds
+# *distortion*, which a figure tolerates well. This one bounds *compression*,
+# which it does not: a layout's text is authored in pixels and does not shrink
+# with the canvas, so a figure narrower than it was built for hangs its labels
+# out past the edge, where the canvas cuts them. Makie's own layout does not
+# report that (it measures blocks, not glyphs), so the overflow guard cannot
+# catch it either. Measured with the reservoir explorer, authored 1600 wide:
+# clipped at 1196, intact at 1611. Hence 1.0 - a figure may grow into a panel,
+# never shrink below the size its code chose; a smaller panel scales it down in
+# the browser, which keeps every label whole.
+FIT_SQUASH_FLOOR = 1.0
+FIT_MAX_SCALE = 3.0
 
 
 def _guarded_resize(makie: str, args: str, indent: str) -> str:
@@ -238,12 +249,12 @@ def _fig_size_block(size: list[int] | None, fit: list[int] | None = None) -> str
             f"        local _pw, _ph = {int(fit[0])}, {int(fit[1])}\n"
             "        local _w0 = _vp.widths[1]\n"
             "        local _h0 = _vp.widths[2]\n"
-            f"        local _r = clamp(_pw / _ph, (_w0 / _h0) * {FIT_MIN_FRACTION},"
-            f" (_w0 / _h0) / ({FIT_MIN_FRACTION}))\n"
+            f"        local _r = clamp(_pw / _ph, (_w0 / _h0) * {FIT_ASPECT_FRACTION},"
+            f" (_w0 / _h0) / ({FIT_ASPECT_FRACTION}))\n"
             "        local _w1 = min(_pw, round(Int, _ph * _r))\n"
             "        local _h1 = round(Int, _w1 / _r)\n"
-            f"        local _s = clamp(max((_w0 * {FIT_MIN_FRACTION}) / _w1,"
-            f" (_h0 * {FIT_MIN_FRACTION}) / _h1), 1.0, {FIT_MAX_SCALE})\n"
+            f"        local _s = clamp(max((_w0 * {FIT_SQUASH_FLOOR}) / _w1,"
+            f" (_h0 * {FIT_SQUASH_FLOOR}) / _h1), 1.0, {FIT_MAX_SCALE})\n"
             "        local _wt = round(Int, _w1 * _s)\n"
             "        local _ht = round(Int, _h1 * _s)\n"
             "        if _wt != round(Int, _w0) || _ht != round(Int, _h0)\n"

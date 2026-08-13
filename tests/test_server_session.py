@@ -951,14 +951,20 @@ def test_fit_target_is_the_panel_shape_scaled_only_by_the_floors() -> None:
     # the panel at full text size, scaled up only by the squash floors.
     from jutul_agent.interfaces.server.app import _fit_target
 
-    # A panel shaped within the clamp: the target IS the panel — no bands.
-    assert _fit_target([1200, 800], [1000, 900]) == [1200, 800]
-    # A wide figure in a narrow panel: aspect clamped at 2/3 of the authored
-    # aspect, then the width floor (2/3 of 1600) scales the target up.
-    assert _fit_target([700, 901], [1600, 800]) == [1067, 800]
+    # A panel at least as big as the figure, shaped within the clamp: the
+    # target IS the panel — no bands.
+    assert _fit_target([1200, 900], [1000, 800]) == [1200, 900]
+    # A panel shorter than the figure: the floor keeps the authored height and
+    # the browser scales the result down.
+    assert _fit_target([1200, 800], [1000, 900]) == [1350, 900]
+    # A wide figure in a narrow panel: the aspect clamp reshapes it toward the
+    # panel, but the squash floor keeps it at its authored width. The browser
+    # scales it down instead, which is what keeps every label whole; a
+    # compressed canvas hangs fixed-pixel text out past its edge.
+    assert _fit_target([700, 901], [1600, 800]) == [1600, 1200]
     # A tall figure in a flat panel: widened only to 3/2 of its aspect —
     # full height, mild side bands, never stretched flat.
-    assert _fit_target([1600, 900], [800, 1000]) == [1080, 900]
+    assert _fit_target([1600, 900], [800, 1000]) == [1200, 1000]
     # The cap: a huge authored figure cannot demand an absurd canvas.
     assert _fit_target([500, 400], [4000, 3000]) == [1500, 1200]
     # No authored size recorded (or junk): the stage itself is the target.
@@ -967,9 +973,9 @@ def test_fit_target_is_the_panel_shape_scaled_only_by_the_floors() -> None:
 
 
 async def test_refit_anchors_its_floor_to_the_authored_size(tmp_path: Path) -> None:
-    # A wide-authored figure re-fitted for a narrow panel keeps the squash
-    # floor (2/3 of the *authored* width — not of whatever it was last resized
-    # to, so repeated refits never ratchet) and matches the panel's aspect.
+    # A wide-authored figure re-fitted for a narrow panel keeps its *authored*
+    # width, not whatever it was last resized to, so repeated refits never
+    # ratchet it narrower; the panel only decides its shape.
     from jutul_agent.trace import schema
 
     st, ws, session = _plot_state(tmp_path)
@@ -991,19 +997,18 @@ async def test_refit_anchors_its_floor_to_the_authored_size(tmp_path: Path) -> N
     await st.handle({"type": "refit", "record": "artifacts/wide.png", "width": 700, "height": 901})
     await asyncio.gather(*st._refits)
     call = session.julia.calls[-1]
-    # The aspect clamp holds at 2/3 of the authored aspect and the width floor
-    # (2/3 of 1600, not of the last size_px) scales the target up to meet it.
-    assert "resize!(_fig, 1067, 800)" in call
+    # The aspect clamp reshapes it toward the panel (4:3, from 2:1) and the
+    # squash floor then holds the authored 1600 width rather than the 1067 the
+    # panel would allow. The browser scales the result down.
+    assert "resize!(_fig, 1600, 1200)" in call
     done = next(m for m in ws.sent if m["type"] == "refit_done")
-    assert (done["width"], done["height"]) == (1067, 800)
+    assert (done["width"], done["height"]) == (1600, 1200)
 
 
 async def test_refit_widens_a_tall_figure_only_to_the_distortion_bound(tmp_path: Path) -> None:
     # A portrait-authored figure re-fitted for a wide flat panel widens only to
-    # 3/2 of its authored aspect: full height at full text size, mild side
-    # bands — never stretched flat, and never the old inflate-then-shrink
-    # (a height floored at the authored aspect made re-fits produce a bigger
-    # canvas scaled back down: smaller text, same letterbox).
+    # 3/2 of its authored aspect, and keeps its authored height: full height at
+    # full text size with mild side bands, never stretched flat.
     from jutul_agent.trace import schema
 
     st, ws, session = _plot_state(tmp_path)
@@ -1025,9 +1030,9 @@ async def test_refit_widens_a_tall_figure_only_to_the_distortion_bound(tmp_path:
     await st.handle({"type": "refit", "record": "artifacts/tall.png", "width": 1600, "height": 900})
     await asyncio.gather(*st._refits)
     call = session.julia.calls[-1]
-    assert "resize!(_fig, 1080, 900)" in call
+    assert "resize!(_fig, 1200, 1000)" in call
     done = next(m for m in ws.sent if m["type"] == "refit_done")
-    assert (done["width"], done["height"]) == (1080, 900)
+    assert (done["width"], done["height"]) == (1200, 1000)
 
 
 async def test_refit_queues_behind_a_running_turn_without_blocking(tmp_path: Path) -> None:

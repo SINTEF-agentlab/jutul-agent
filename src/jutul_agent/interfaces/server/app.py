@@ -87,11 +87,14 @@ def _fit_target(stage: list[int], authored: Any) -> list[int]:
 
     The Python twin of the serve-time fit in ``jl._fig_size_block`` — one rule,
     stated in full there: aspect clamped near the authored shape (letterbox
-    rather than distort), fitted inside the panel at full text size, scaled up
-    only as far as the squash floors demand. Anchoring to the *authored* size
-    (not the current one) makes refitting idempotent — floors never ratchet.
-    Without a recorded authored size the stage itself is the target.
+    rather than distort), fitted inside the panel at full text size, then grown
+    so neither dimension falls below the squash floor. The two fractions are
+    read from that module so the twins cannot drift apart. Anchoring to the
+    *authored* size (not the current one) makes refitting idempotent — floors
+    never ratchet. Without a recorded authored size the stage itself is target.
     """
+    from jutul_agent.agent import plot_julia_src as jl
+
     sw, sh = stage
     if not (isinstance(authored, (list, tuple)) and len(authored) == 2):
         return [sw, sh]
@@ -99,10 +102,12 @@ def _fit_target(stage: list[int], authored: Any) -> list[int]:
     if aw <= 0 or ah <= 0:
         return [sw, sh]
     ra = aw / ah
-    r = min(max(sw / sh, ra * 2 / 3), ra * 3 / 2)
+    r = min(max(sw / sh, ra * jl.FIT_ASPECT_FRACTION), ra / jl.FIT_ASPECT_FRACTION)
     w1 = min(sw, round(sh * r))
     h1 = round(w1 / r)
-    s = min(max(1.0, aw * 2 / (3 * w1), ah * 2 / (3 * h1)), 3.0)
+    s = min(
+        max(1.0, aw * jl.FIT_SQUASH_FLOOR / w1, ah * jl.FIT_SQUASH_FLOOR / h1), jl.FIT_MAX_SCALE
+    )
     return [round(w1 * s), round(h1 * s)]
 
 
