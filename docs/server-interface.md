@@ -296,16 +296,17 @@ source code in the session's kernel, busy-guarded like a turn. The code is
 looked up in the trace; code a client sends is never executed. Optional
 `width`/`height` give a target rectangle the client measured (the stage on a
 regenerate, the popup window on a popout): the replayed figure is re-fitted to
-it, and the `viz` reports the figure's *resulting* size — a figure whose own
+it, and the `viz` reports the figure's *resulting* size, so a figure whose own
 layout refuses part of the resize is still presented truthfully. Without a
 `target` the figure re-serves on its own route and a fresh `viz` revives the
 view in place. That is the bundled UI's regenerate button, and also how a view
 comes back after a reload or a from-disk resume. With `target: "popout"` the
 figure serves as an independent copy on its own route and the server answers
 `popout_ready` with the URL of a wrapper page (`/popout/{session}?route=...`)
-that stages the figure at its real size and scales it to the window — the same
-presentation contract as the inline canvas, so resizing or fullscreening the
-popup letterboxes instead of mis-drawing; `{"type": "popout_closed", "url": ...}`
+that stages the figure at its real size and scales it to the window. That is
+the same presentation contract as the inline canvas, so resizing or
+fullscreening the popup letterboxes instead of mis-drawing. Sending
+`{"type": "popout_closed", "url": ...}`
 releases that figure when the window closes. Replaying on a still-running
 session is also how the bundled UI keeps plots alive across a sidebar session
 switch: replayed views whose frames it still holds stay live, everything else
@@ -314,24 +315,30 @@ falls back to the poster plus the regenerate button.
 The client can also volunteer the panel's size ahead of time with
 `{"type": "ui_event", "payload": {"kind": "canvas_size", "width": ..., "height": ...}}`
 (the bundled UI sends it with every prompt, before a regenerate, after a window
-resize settles, and after a split drag). A figure plotted — or replayed — with
+resize settles, and after a split drag). A figure plotted (or replayed) with
 no explicit size is then fitted to the panel by one rule, used everywhere a fit
 happens (serve, regenerate, refit, popout): the target aspect is the panel's,
-clamped to within 2/3–3/2 of the figure's authored aspect (reshape toward the
-panel, never distort past that — a tall figure letterboxes in a wide panel at
-full size instead of stretching flat); that shape is fitted inside the panel at
-scale 1 — full-size text; and it is scaled up (capped at 3x) only until neither
-dimension compresses below two thirds of its authored pixels, with the client
-scaling the overshoot back down. For a panel shaped within the clamp — the
-common case — the figure *is* the panel: no bands, no distortion, no scaling.
-After any fit or re-fit an overflow guard grows the figure until no layout
-block hangs outside the canvas (fixed-width controls can demand more than a
-compressed width offers), so the echoed size — never the requested one — is
-what the client stages.
+clamped to within 2/3 and 3/2 of the figure's authored aspect, so a figure
+reshapes toward its panel but never distorts past that bound. A tall figure
+letterboxes in a wide panel at full size instead of stretching flat. That shape
+is fitted inside the panel at scale 1, which keeps text at full size, and it is
+then scaled up (capped at 3x) until neither dimension falls below the figure's
+authored pixels, with the client scaling any overshoot back down. So a figure
+grows into a panel bigger than itself, and a smaller panel scales it down in
+the browser rather than compressing the canvas. That distinction matters: a
+layout's text is authored in pixels and does not shrink with the canvas, so a
+figure served narrower than it was built for hangs its labels out past the edge
+where they are clipped, and Makie's layout does not report it because it
+measures blocks, not glyphs. For a panel at least as big as the figure and
+shaped within the clamp, which is the common case, the figure *is* the panel:
+no bands, no distortion, no scaling. After any fit or re-fit an
+overflow guard grows the figure until no layout block hangs outside the canvas
+(fixed-width controls can demand more than a compressed width offers), so the
+size the client stages is always the echoed one and never the requested one.
 
-When a live view's panel no longer suits its figure — it grew past it, or
-changed shape enough that scaling leaves a large share of the panel unused —
-the front end should send
+A live view's panel can stop suiting its figure, either by growing past it or
+by changing shape enough that scaling leaves a large share of the panel unused.
+The front end should then send
 `{"type": "refit", "record": ..., "width": ..., "height": ...}` with the
 panel's size: the server re-runs the same fit rule a fresh plot gets (anchored
 to the figure's recorded authored size, so floors never ratchet), the kernel

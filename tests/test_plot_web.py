@@ -83,7 +83,7 @@ async def test_web_surface_serves_plot_live(tmp_path: Path) -> None:
 async def test_plot_setup_heals_after_a_kernel_reset(tmp_path: Path) -> None:
     # The tool memoizes the backend load and the Bonito server, but a kernel
     # reset (`reset_julia`) silently clears both while the Python session keeps
-    # the memos. A per-plot state probe must notice and redo the lost setup —
+    # the memos. A per-plot state probe must notice and redo the lost setup:
     # without it, every plot after a reset serves into a kernel with no
     # backend and no live-figure registry, forever.
     seen: list[str] = []
@@ -138,7 +138,8 @@ async def test_web_plot_without_size_fits_the_panel_hint(tmp_path: Path) -> None
     await _call(tool, {"code": "lines(1:3)", "slot": "a"})
     routed = next(c for c in seen if "Bonito.route!" in c)
     assert "local _pw, _ph = 800, 920" in routed
-    assert "clamp(_pw / _ph, (_w0 / _h0) * 2 / 3, (_w0 / _h0) / (2 / 3))" in routed
+    aspect = jl_src.FIT_ASPECT_FRACTION
+    assert f"clamp(_pw / _ph, (_w0 / _h0) * {aspect}, (_w0 / _h0) / ({aspect}))" in routed
 
     seen.clear()
     await _call(tool, {"code": "lines(1:3)", "slot": "b", "size": [640, 480]})
