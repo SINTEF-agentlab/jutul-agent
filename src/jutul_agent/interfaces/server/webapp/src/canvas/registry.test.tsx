@@ -134,14 +134,35 @@ describe("ImagePanel", () => {
 
   it("reports a load for an image the browser had already decoded", () => {
     // The canvas loader clears only from this panel, and `load` for a decoded
-    // image can fire before React attaches the handler. Without the mount check
-    // the poster sits fully rendered behind a permanent "Loading view…".
+    // image can fire before React attaches the handler, so the panel must also
+    // report from its own mount check.
     const complete = vi
       .spyOn(HTMLImageElement.prototype, "complete", "get")
       .mockReturnValue(true);
     const onLoaded = vi.fn();
     renderWithStore(<ImagePanel view={posterView} active reloadToken={0} onLoaded={onLoaded} />);
     expect(onLoaded).toHaveBeenCalled();
+    complete.mockRestore();
+  });
+
+  it("reports the decoded image once per src, not once per render", () => {
+    // Reporting a load re-renders the canvas, so a mount check that fires on every
+    // render would keep the canvas re-rendering for as long as the panel is up.
+    const complete = vi
+      .spyOn(HTMLImageElement.prototype, "complete", "get")
+      .mockReturnValue(true);
+    const onLoaded = vi.fn();
+    const { rerender } = renderWithStore(
+      <ImagePanel view={posterView} active reloadToken={0} onLoaded={onLoaded} />,
+    );
+    expect(onLoaded).toHaveBeenCalledTimes(1);
+    rerender(<ImagePanel view={posterView} active reloadToken={0} onLoaded={onLoaded} />);
+    rerender(<ImagePanel view={posterView} active={false} reloadToken={0} onLoaded={onLoaded} />);
+    expect(onLoaded).toHaveBeenCalledTimes(1);
+
+    // A reload is a new src, so that image reports its own load.
+    rerender(<ImagePanel view={posterView} active reloadToken={1} onLoaded={onLoaded} />);
+    expect(onLoaded).toHaveBeenCalledTimes(2);
     complete.mockRestore();
   });
 

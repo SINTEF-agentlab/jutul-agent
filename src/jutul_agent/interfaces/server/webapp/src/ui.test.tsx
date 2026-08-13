@@ -108,6 +108,32 @@ describe("canvas interaction", () => {
     expect(store.getState().canvasOpen).toBe(true);
     expect(store.getState().activeView).toBe("slot:fig");
   });
+
+  it("a resumed session's poster clears the loader without looping", () => {
+    // Resuming demotes a live figure to its PNG poster, and a poster the browser
+    // has already decoded reports its load from the panel's mount check. Since
+    // that report re-renders the canvas, the whole path has to settle rather than
+    // feed itself another report.
+    const complete = vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    const { store, container } = renderWithStore(<Canvas />);
+    act(() => store.getState().setSession("s1", ""));
+    act(() =>
+      store.getState().replay([
+        {
+          type: "viz",
+          url: "/sessions/s1/viz/abc",
+          kind: "plot",
+          slot: "fig",
+          title: "My figure",
+          live: true,
+          poster: "/sessions/s1/artifacts/fig.png",
+        },
+      ]),
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("/sessions/s1/artifacts/fig.png");
+    expect(container.querySelector(".canvas-loading")).toBeNull();
+    complete.mockRestore();
+  });
 });
 
 describe("approval", () => {

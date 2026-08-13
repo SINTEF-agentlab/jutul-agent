@@ -50,8 +50,14 @@ export function Canvas() {
 
   const tokenOf = (id: string) => (views[id]?.nonce ?? 0) + (backBump[id] ?? 0);
   const loadKey = (id: string, token: number) => `${sessionId}:${id}@${token}`;
+  // Recording a load is idempotent: a panel may report the same load more than once
+  // (an image settles from both its mount check and its `load` event), and a fresh
+  // set for a load already recorded would re-render the canvas for nothing.
   const markLoaded = (id: string, token: number) =>
-    setLoaded((prev) => new Set(prev).add(loadKey(id, token)));
+    setLoaded((prev) => {
+      const key = loadKey(id, token);
+      return prev.has(key) ? prev : new Set(prev).add(key);
+    });
 
   const active = activeView ? views[activeView] : null;
   const showLoading = !!active && !active.expired && !loaded.has(loadKey(active.id, tokenOf(active.id)));
