@@ -13,6 +13,7 @@ import re
 import socket
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
@@ -1262,6 +1263,59 @@ def test_history_endpoint_shape(tmp_path: Path) -> None:
     assert isinstance(body.get("sessions"), list)
     for s in body["sessions"]:
         assert {"id", "title", "started", "sim", "live"} <= set(s)
+
+
+async def test_disconnect_leaves_a_running_turn_alone() -> None:
+    # Switching sessions closes the socket, and the teardown used to cancel the
+    # turn with it: a simulation minutes in died because the user looked at
+    # another chat. The turn writes to the trace either way, so it is left to run.
+    from jutul_agent.interfaces.server.app import _StreamState
+
+    host = SimpleNamespace(set_busy=lambda _busy: None)
+    st = _StreamState(_FakeWS(), host)  # type: ignore[arg-type]
+
+    running = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def turn() -> None:
+        running.set()
+        await asyncio.sleep(0.05)
+        finished.set()
+
+    st._turn = asyncio.create_task(turn())
+    await running.wait()
+
+    await st.aclose()
+    assert not st._turn.cancelled()
+
+    await st._turn
+    assert finished.is_set()  # it ran to completion after the socket went away
+
+
+async def test_a_busy_session_is_never_evicted_or_deleted(tmp_path: Path) -> None:
+    # The turn outliving its socket is only safe if nothing tears the kernel down
+    # under it: the host is detached by then, so `attached` alone no longer covers
+    # it.
+    manager = _manager(echo_agent, tmp_path, max_live=2)
+    try:
+        working = await manager.create(sim="demo")
+        working.detach()  # the connection that started the turn has gone
+        working.set_busy(True)
+
+        # Opening two more would evict the oldest, which is the busy one.
+        for _ in range(2):
+            await manager.create(sim="demo")
+        assert working.session_id in manager.list_ids()
+
+        # And a delete that demands an idle session refuses it.
+        with pytest.raises(SessionBusyError):
+            await manager.close(working.session_id, require_idle=True)
+
+        # Once the turn ends it is an ordinary idle session again.
+        working.set_busy(False)
+        assert await manager.close(working.session_id, require_idle=True)
+    finally:
+        await manager.aclose()
 
 
 def test_max_live_sessions_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:

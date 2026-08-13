@@ -1904,6 +1904,9 @@ class _StreamState:
         self._side_output_id = self._latest_event_id()
         self._turn_ended = False
         self._announced = False
+        # Held for the whole turn so nothing evicts the session under it, whether
+        # or not a connection is still watching.
+        self._host.set_busy(True)
         try:
             await self._drive(factory)
         except asyncio.CancelledError:
@@ -1917,6 +1920,7 @@ class _StreamState:
                 await self._flush_side_outputs()
             await self._end_turn(protocol.turn_end_to_wire([]), error=str(exc))
         finally:
+            self._host.set_busy(False)
             # A turn that reached here without ending raised somewhere the client
             # cannot see; end it anyway rather than wedge the composer.
             await self._end_turn(protocol.turn_end_to_wire([]), error="the turn ended unexpectedly")
@@ -2120,12 +2124,22 @@ class _StreamState:
         await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
 
     async def aclose(self) -> None:
-        """Tear down on disconnect: cancel a running turn and any in-flight titling.
+        """Tear down on disconnect, leaving a running turn alone.
 
-        The titling task is a fire-and-forget model call; without this it would
-        keep running (and spend) after the connection is gone.
+        Switching sessions closes the socket, and cancelling here threw away
+        whatever the turn had reached: a simulation minutes in died because the
+        user looked at another chat. The turn is finite and writes everything it
+        produces to the trace, so it is left to finish and its results are there
+        on the way back. It also holds the session busy, which keeps the manager
+        from evicting the kernel out from under it.
+
+        The cost is that closing the tab no longer stops a turn either. That is
+        bounded by the one turn the user already asked for; use the stop button to
+        end it early.
+
+        The titling task is still cancelled: it is a fire-and-forget model call
+        with nothing to write, so without this it would spend for nobody.
         """
-        await self.cancel_turn()
         self._end_all_tool_streams()
         if self._title_task is not None and not self._title_task.done():
             self._title_task.cancel()
