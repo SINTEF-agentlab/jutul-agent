@@ -175,6 +175,18 @@ def build_for_workspace(
             f"  contains: {result.contained} packages "
             f"({len(result.packages)} direct dependencies and everything they load)"
         )
+        if result.warmup_failures:
+            # Said again, at the end, where it cannot be missed: the warning
+            # itself went by thousands of lines ago, and the image looks
+            # perfectly healthy afterwards: it is only slower at the work the
+            # snippet was there to bake, which is usually the first plot.
+            print(
+                f"  warning: {len(result.warmup_failures)} warm-up snippet(s) failed, so "
+                "what they cover is not baked in and a session compiles it at first use:",
+                file=sys.stderr,
+            )
+            for failure in result.warmup_failures:
+                print(f"    {failure}", file=sys.stderr)
     if config.sysimage is not True:
         write_workspace_config(dc_replace(config, sysimage=True), workspace=ws)
         print("  this folder now starts from it; `--no-sysimage` skips it for one run.")
