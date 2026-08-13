@@ -235,5 +235,10 @@ def _ground_rules() -> str:
         "what the workspace env already provides, use a stdlib alternative, or "
         "`Pkg.add` it when the task needs it.\n"
         "  - Folders the user adds to the session are available at their real "
-        "absolute path in every tool: the file tools, `execute`, and `run_julia`."
+        "absolute path in every tool: the file tools, `execute`, and `run_julia`.\n"
+        "  - Write maths as text the reader sees, not as LaTeX: no `\\frac`, "
+        "`\\times`, `\\mathrm` or `$...$`. Nothing renders it on either front end, "
+        "so it reaches the user as source. Use Unicode and plain notation instead "
+        "(`dFOPT/dm = 5.44e8 m^3`, `∂p/∂x`, `1.2e-13 m²`), and prefer a "
+        "sentence or a table to a formula."
     )
