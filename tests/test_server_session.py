@@ -1292,6 +1292,36 @@ async def test_disconnect_leaves_a_running_turn_alone() -> None:
     assert finished.is_set()  # it ran to completion after the socket went away
 
 
+def test_reattaching_to_a_busy_session_says_so(tmp_path: Path) -> None:
+    # The turn streams to the socket that started it, so a reconnect gets the
+    # replay and then silence. Without a word, a conversation that is still being
+    # written looks like it was cut off, which is how a surviving turn was read as
+    # a cancelled one.
+    manager = _manager(echo_agent, tmp_path)
+    with TestClient(create_app(manager)) as client:
+        sid = client.post("/sessions", json={"sim": "demo"}).json()["session_id"]
+        host = manager.get(sid)
+        assert host is not None
+
+        with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
+            ws.send_json({"type": "prompt", "text": "hi"})
+            _drain_turn(ws)
+        # Idle: nothing to explain.
+        with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
+            ws.send_json({"type": "prompt", "text": "again"})
+            first = _drain_turn(ws)[0]
+            assert first["type"] != "notice"
+
+        host.set_busy(True)
+        try:
+            with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
+                note = ws.receive_json()
+                assert note["type"] == "notice"
+                assert "still working" in note["text"]
+        finally:
+            host.set_busy(False)
+
+
 async def test_a_busy_session_is_never_evicted_or_deleted(tmp_path: Path) -> None:
     # The turn outliving its socket is only safe if nothing tears the kernel down
     # under it: the host is detached by then, so `attached` alone no longer covers
