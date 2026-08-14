@@ -352,20 +352,30 @@ def _run_pkg(project: Path, cmds: list[str], *, capture: bool = False, echo: boo
     if should_wrap_xvfb():
         argv = ["xvfb-run", "-a", "-s", "-screen 0 1280x1024x24", *argv]
 
+    # Precompiling this env is one of the two places a machine can run out of
+    # memory with nothing to show for it (the image build is the other), so it
+    # runs under the same memory-judged ceiling.
+    from jutul_agent.julia.precompile import julia_environment
+    from jutul_agent.juliakernel.kernel import describe_exit
+
+    env = julia_environment()
+
     if capture:
         # Best-effort callers (the launch-time self-heal) want a quiet run and a
         # short error, not a page of Julia backtrace on the terminal.
-        result = subprocess.run(argv, check=False, capture_output=True, text=True)
+        result = subprocess.run(argv, check=False, capture_output=True, text=True, env=env)
         if result.returncode != 0:
             tail = "\n".join((result.stdout + result.stderr).strip().splitlines()[-12:])
-            raise EnvSetupError(f"Julia exited with code {result.returncode}:\n{tail}")
+            raise EnvSetupError(f"Julia failed ({describe_exit(result.returncode)}):\n{tail}")
         return
 
     if echo:
         print(f"$ {' '.join(argv)}")
-    result = subprocess.run(argv, check=False)
+    result = subprocess.run(argv, check=False, env=env)
     if result.returncode != 0:
-        raise EnvSetupError(f"Julia exited with code {result.returncode}; see output above")
+        # Spelled out because the status that matters here carries no message of
+        # its own: a Julia killed for memory while precompiling prints nothing.
+        raise EnvSetupError(f"Julia failed ({describe_exit(result.returncode)}); see output above")
 
 
 # ---------------------------------------------------------------------------

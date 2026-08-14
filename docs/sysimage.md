@@ -87,6 +87,37 @@ The image is compiled for the machine that builds it. Pass
 `--cpu-target generic` (or another target) to build one that will run on
 different hardware, at some cost in speed.
 
+### Memory, and the step that precompiles everything
+
+A build's first act is to precompile the whole environment under
+`--pkgimages=no`. That flag makes Julia reject every cache holding native code,
+so nothing already precompiled counts: hundreds of packages are built again from
+scratch, in parallel, before the image itself is touched. It is the heaviest
+moment of a build in memory, and it happens whether or not we run it — if we did
+not, PackageCompiler would, from inside `create_sysimage`.
+
+We run it ourselves for two reasons. A failure there is then reported as what it
+is, rather than as PackageCompiler's `failed process:` and a dump of every
+environment variable on the machine. And the parallelism is ours to set: Julia
+sizes it from the core count alone (`CPU_THREADS/2 + 1` on Windows,
+`CPU_THREADS + 1` elsewhere, capped at 16), which on a many-core machine with
+ordinary memory oversubscribes RAM several times over. A machine that runs out
+here does not report an error — it dies with a native fault, `0xC0000005` on
+Windows or a `SIGKILL` from the Linux OOM killer, that says nothing about the
+cause.
+
+So the count is capped by memory instead, at roughly one worker per 4 GiB of
+RAM, never above Julia's own default. The same cap applies when `init` prepares
+an environment, which precompiles the same packages. To override it — on a
+machine that still runs out, or one that can take more — set it yourself:
+
+```console
+$ JULIA_NUM_PRECOMPILE_TASKS=2 jutul-agent sysimage build
+```
+
+A value you set is always kept. It reaches PackageCompiler's own precompile too,
+which inherits it.
+
 ### Windows and the image size limit
 
 Windows refuses to map a DLL whose in-memory span — the PE header's

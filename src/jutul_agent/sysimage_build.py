@@ -9,12 +9,16 @@ The shape of a build:
 1. ``PackageCompiler`` runs from an environment of its own under the state root,
    pointed at the workspace environment through ``project=``. It never becomes a
    dependency of the workspace, whose manifest is what the stamp describes.
-2. Every direct dependency of the project is baked, which is ``create_sysimage``'s
+2. The environment is precompiled first, under the same ``--pkgimages=no`` that
+   ``PackageCompiler`` would use, so the heaviest and most fragile step of a
+   build happens where it can be throttled and explained rather than inside a
+   subprocess we do not own. See :func:`_precompile_for_the_build`.
+3. Every direct dependency of the project is baked, which is ``create_sysimage``'s
    own default, so there is no package selection to get wrong.
-3. The image is built to a temporary name, then **verified before it is
+4. The image is built to a temporary name, then **verified before it is
    installed**: a system image that fails to start would otherwise break every
    surface at once, with no way in to fix it.
-4. Only then is it moved into place, and only then stamped. An image is never
+5. Only then is it moved into place, and only then stamped. An image is never
    trusted before it has been shown to work, and the stamp is what confers trust.
 """
 
@@ -357,6 +361,8 @@ def build(
 
     started = time.monotonic()
     try:
+        # Before PackageCompiler, so the step that fails hardest fails as ours.
+        _precompile_for_the_build(julia_project)
         _julia(
             [
                 "using PackageCompiler",
@@ -481,6 +487,62 @@ def _loader_size(candidate: Path) -> int:
     except (OSError, struct.error):
         pass
     return candidate.stat().st_size
+
+
+def _precompile_for_the_build(julia_project: Path) -> None:
+    """Precompile the environment the way ``create_sysimage`` is about to need it.
+
+    PackageCompiler's first act is a ``Pkg.precompile()`` under ``--pkgimages=no``
+    (its ``ensurecompiled``), and that flag rejects every cache holding native
+    code -- ``stale_cachefile`` returns "requires pkgimages" for all of them. So
+    the entire environment, hundreds of packages deep, is precompiled again from
+    scratch and in parallel before the build has baked anything. It is the
+    heaviest moment of a build in memory, and the one likeliest to take the
+    machine down with it.
+
+    Run here it is ours: the ceiling in
+    :func:`jutul_agent.julia.precompile.precompile_task_limit` applies, and a
+    failure is reported in terms of what happened. Left to PackageCompiler it
+    arrives as ``failed process:`` followed by a dump of the whole environment,
+    which says nothing about the cause and writes every variable on the machine
+    into the build log.
+
+    Not extra work: the caches are keyed by the same flag, so ``ensurecompiled``
+    finds this already done and returns.
+    """
+
+    from jutul_agent.julia.precompile import PRECOMPILE_TASKS_ENV_VAR
+
+    print("Precompiling the environment for the build (its heaviest step)...")
+    result = _run_julia(
+        [
+            "julia",
+            f"--project={julia_project}",
+            "--startup-file=no",
+            # The flag is the whole point; without it this precompiles a different
+            # set of caches than the ones PackageCompiler will look for.
+            "--pkgimages=no",
+            "-e",
+            "using Pkg; Pkg.precompile()",
+        ],
+    )
+    if result.returncode == 0:
+        return
+    if crashed(result.returncode):
+        raise SysimageBuildError(
+            f"precompiling the environment crashed ({describe_exit(result.returncode)}). "
+            "Julia reported no error of its own, which points at the machine rather "
+            "than the environment: this step compiles every package at once and is "
+            "the most memory-hungry moment of a build. Close what else is running "
+            f"and retry with fewer at a time by setting {PRECOMPILE_TASKS_ENV_VAR}=2 "
+            "in the environment."
+        )
+    raise SysimageBuildError(
+        f"precompiling the environment failed ({describe_exit(result.returncode)}); the "
+        "package that could not precompile is named in the output above. The image "
+        "cannot be built until it does: PackageCompiler precompiles the environment "
+        "before it bakes anything, so this fails there too."
+    )
 
 
 def _precompile_against(image: Path, julia_project: Path) -> None:
@@ -613,7 +675,25 @@ def _julia(cmds: list[str], *, project: Path, what: str) -> None:
     argv = ["julia", f"--project={project}", "--startup-file=no", "-e", "\n".join(cmds)]
     result = _run_julia(argv)
     if result.returncode != 0:
-        raise SysimageBuildError(f"{what} failed (Julia exited with {result.returncode})")
+        raise SysimageBuildError(f"{what} failed ({describe_exit(result.returncode)})")
+
+
+def describe_exit(code: int | None) -> str:
+    """How a Julia the build ran ended. The kernel's wording, so a crash reads the same."""
+
+    from jutul_agent.juliakernel.kernel import describe_exit as describe
+
+    return describe(code)
+
+
+def crashed(code: int | None) -> bool:
+    """Whether an exit status is a native fault rather than Julia reporting an error.
+
+    A signal (POSIX) or a status too large to be an exit code (Windows encodes the
+    fault there, e.g. ``0xC0000005``). Julia's own failures are 1.
+    """
+
+    return code is not None and (code < 0 or code > 0xFF)
 
 
 def _run_julia(argv: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
@@ -628,8 +708,15 @@ def _run_julia(argv: list[str], *, capture: bool = False) -> subprocess.Complete
     if should_wrap_xvfb():
         argv = ["xvfb-run", "-a", "-s", "-screen 0 1280x1024x24", *argv]
 
+    # The precompile ceiling travels by inheritance rather than on a command line:
+    # the process it matters most for is not one we launch, but the one
+    # PackageCompiler runs from inside ``create_sysimage``.
+    from jutul_agent.julia.precompile import julia_environment
+
     try:
-        return subprocess.run(argv, capture_output=capture, text=True, check=False)
+        return subprocess.run(
+            argv, capture_output=capture, text=True, check=False, env=julia_environment()
+        )
     except OSError as exc:
         raise SysimageBuildError(f"could not run julia: {exc}") from exc
 

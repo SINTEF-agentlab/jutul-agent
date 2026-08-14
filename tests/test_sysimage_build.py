@@ -51,6 +51,9 @@ class _FakeJulia:
     def __init__(self, *, verify_ok: bool = True, build_ok: bool = True) -> None:
         self.verify_ok = verify_ok
         self.build_ok = build_ok
+        # What the build's own `--pkgimages=no` precompile exits with; a test sets
+        # a native fault here to stand in for the machine running out of memory.
+        self.precompile_code = 0
         self.calls: list[list[str]] = []
         # What the "build" writes; a test can swap in real PE bytes.
         self.image = b"image"
@@ -58,6 +61,9 @@ class _FakeJulia:
     def __call__(self, argv, *, capture: bool = False):
         self.calls.append(list(argv))
         script = argv[-1]
+        # The flag, not the script: the post-build refresh runs the same code.
+        if "--pkgimages=no" in argv:
+            return subprocess.CompletedProcess(argv, self.precompile_code, "", "")
         if "create_sysimage" in script:
             if self.build_ok:
                 Path(_quoted_path(script, "sysimage_path")).write_bytes(self.image)
@@ -728,3 +734,66 @@ def test_the_command_bakes_capability_warm_code(
 
     assert cmd.build_for_workspace(object(), ws, env, config)
     assert received["warmup_code"] == ["Geo.warm()"]
+
+
+# ---------------------------------------------------------------------------
+# Precompiling the environment, which is where a build is most likely to die.
+
+
+def _precompiles(julia: _FakeJulia) -> list[list[str]]:
+    return [call for call in julia.calls if "--pkgimages=no" in call]
+
+
+def test_the_environment_is_precompiled_before_packagecompiler_can_do_it(
+    tmp_path: Path, julia: _FakeJulia
+) -> None:
+    """PackageCompiler's own `ensurecompiled` precompiles the whole environment
+    under `--pkgimages=no`, which rejects every native-code cache. Doing it first
+    is the same work, in a place where it can be throttled and explained."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+
+    build(workspace=ws, julia_project=env)
+
+    precompile = _precompiles(julia)[0]
+    assert "Pkg.precompile()" in precompile[-1]
+    assert f"--project={env}" in precompile
+    assert julia.calls.index(precompile) < next(
+        i for i, call in enumerate(julia.calls) if "create_sysimage" in call[-1]
+    )
+
+
+def test_a_crash_while_precompiling_is_reported_as_the_machine_not_the_build(
+    tmp_path: Path, julia: _FakeJulia
+) -> None:
+    """A native fault with no Julia error is what running out of memory looks
+    like on Windows. All the message can usefully carry is the knob that fixes it."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    julia.precompile_code = 0xC0000005
+
+    with pytest.raises(SysimageBuildError) as excinfo:
+        build(workspace=ws, julia_project=env)
+
+    message = str(excinfo.value)
+    assert "0xC0000005" in message and "memory" in message
+    # Named in the message itself: it is the only place the remedy appears.
+    assert "JULIA_NUM_PRECOMPILE_TASKS" in message
+    # And nothing was attempted past it: an hour of build time is not spent on an
+    # environment that has already shown it cannot precompile.
+    assert not any("create_sysimage" in call[-1] for call in julia.calls)
+    assert sysimage.read_stamp(ws) is None
+
+
+def test_a_package_that_cannot_precompile_is_not_described_as_a_crash(
+    tmp_path: Path, julia: _FakeJulia
+) -> None:
+    """Julia exiting 1 named the package itself; pointing at memory would be wrong."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    julia.precompile_code = 1
+
+    with pytest.raises(SysimageBuildError, match="could not precompile"):
+        build(workspace=ws, julia_project=env)
+
+    assert not any("create_sysimage" in call[-1] for call in julia.calls)
