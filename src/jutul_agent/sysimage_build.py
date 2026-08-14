@@ -696,9 +696,11 @@ def verify_image(image: Path, julia_project: Path, packages: tuple[str, ...]) ->
             hint = (
                 "\nThat is a crash while loading the image rather than an error "
                 "from it, so the file itself is bad rather than the environment "
-                "wrong. A build interrupted or short of disk is the usual cause. "
-                "The previous image (if any) is untouched, so an existing one "
-                "still works; retry the build with room to spare."
+                "wrong. It is not a short file: one that does not match its own "
+                "headers is refused before this. So the bytes are wrong rather "
+                "than missing, which a rebuild is the first thing to try against. "
+                "The previous image (if any) is untouched, so a folder that had "
+                "one keeps working meanwhile."
             )
         else:
             hint = ""
