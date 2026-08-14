@@ -118,6 +118,15 @@ $ JULIA_NUM_PRECOMPILE_TASKS=2 jutul-agent sysimage build
 A value you set is always kept. It reaches PackageCompiler's own precompile too,
 which inherits it.
 
+Disk is the other thing this step wants, and the one nothing reports running out
+of. The caches it writes are a second set — keyed by the flag, so they sit beside
+the ordinary ones rather than replacing them — and the image is then linked from
+a multi-GB object file. A real build has been measured taking a volume from 15 GB
+free to 4 GB before the image was written. A build says how much room it starts
+with for that reason, and an image that came out shorter than its own headers
+describe is refused rather than installed: a short file loads as an access
+violation deep in Julia's relocation pass, which reads as a broken machine.
+
 ### Windows and the image size limit
 
 Windows refuses to map a DLL whose in-memory span — the PE header's
