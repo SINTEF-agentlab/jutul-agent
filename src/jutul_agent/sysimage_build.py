@@ -343,6 +343,13 @@ def build(
     env = ensure_builder_env()
     destination = sysimage_path(workspace)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    # Said up front because the disk is the one resource a build can exhaust
+    # silently: PackageCompiler writes a multi-GB object file and links a
+    # multi-GB image from it, and a short write is only visible much later.
+    print(
+        f"Building into {destination.parent} "
+        f"({shutil.disk_usage(destination.parent).free / 2**30:.1f} GiB free)."
+    )
     # Built beside its destination so the final move is a rename within one
     # filesystem, and so a half-built image is never at the path the guard reads.
     candidate = destination.with_name(f"candidate-{os.getpid()}{image_suffix()}")
@@ -382,6 +389,9 @@ def build(
         )
         if not candidate.exists():
             raise SysimageBuildError("the build reported success but produced no image")
+        # Completeness before size: a truncated file has a valid header, so the
+        # size check would pass it and leave the load to fail without a reason.
+        _check_image_complete(candidate)
         _check_loadable_size(candidate)
         if verify:
             # Narrated because it is captured: starting Julia on a multi-GB image
@@ -464,6 +474,73 @@ def _check_loadable_size(candidate: Path) -> None:
         "included), or run without a system image until Julia ships "
         "compressed images (planned for 1.13)."
     )
+
+
+def _check_image_complete(candidate: Path) -> None:
+    """Refuse an image whose file is shorter than its own headers describe.
+
+    A build that exhausts the disk writes a truncated image, and nothing before
+    this notices: the headers go down first and stay valid, so ``SizeOfImage`` is
+    a believable number under the limit and :func:`_check_loadable_size` passes.
+    What fails is the *load*, inside Julia's relocation pass, as an access
+    violation with no message attached -- which reads as a broken machine rather
+    than a short file, an hour after the build began.
+
+    Judged on the section table alone, which is all but a few bytes of the file.
+    Conservative on purpose: this runs at the end of a very long build, so it may
+    miss a truncation that clips only the symbol table, but it can never refuse an
+    image that is sound.
+    """
+
+    if not on_windows():
+        return
+    expected = _pe_section_end(candidate)
+    if expected is None:
+        return
+    actual = candidate.stat().st_size
+    if actual >= expected:
+        return
+    free = shutil.disk_usage(candidate.parent).free
+    raise SysimageBuildError(
+        f"the built image is truncated: its headers describe {expected / 2**30:.2f} "
+        f"GiB of sections but the file is {actual / 2**30:.2f} GiB, so it was "
+        "discarded rather than installed. The usual cause is the disk filling "
+        f"while the image was being written ({free / 2**30:.1f} GiB free now); a "
+        "build needs room for the image and for the multi-GB object file it is "
+        "linked from. Free some space and rebuild."
+    )
+
+
+def _pe_section_end(candidate: Path) -> int | None:
+    """Where the last section's data ends in the file, or ``None`` if not a PE."""
+
+    import struct
+
+    try:
+        with candidate.open("rb") as f:
+            # Generous: the section table sits past the optional header, and a
+            # sysimage carries enough sections to run well past a single block.
+            head = f.read(8192)
+        if len(head) < 0x40 or head[:2] != b"MZ":
+            return None
+        (pe_off,) = struct.unpack_from("<I", head, 0x3C)
+        if head[pe_off : pe_off + 4] != b"PE\0\0":
+            return None
+        sections, optional_size = (
+            struct.unpack_from("<H", head, pe_off + 6)[0],
+            struct.unpack_from("<H", head, pe_off + 20)[0],
+        )
+        table = pe_off + 24 + optional_size
+        end = 0
+        for index in range(sections):
+            row = table + index * 40
+            raw_size, raw_pointer = struct.unpack_from("<II", head, row + 16)
+            # A BSS-style section holds no bytes and points nowhere.
+            if raw_size:
+                end = max(end, raw_pointer + raw_size)
+        return end or None
+    except (OSError, struct.error):
+        return None
 
 
 def _loader_size(candidate: Path) -> int:
@@ -605,13 +682,26 @@ def verify_image(image: Path, julia_project: Path, packages: tuple[str, ...]) ->
         # The loader-size check runs first, so this only fires if the real limit
         # is below WINDOWS_IMAGE_LIMIT; better a translated error than the
         # loader's.
-        hint = (
-            "\nThat error is the Windows loader refusing the DLL for its size, "
-            "not a broken build; WINDOWS_IMAGE_LIMIT is calibrated too high for "
-            "this machine."
-            if "not a valid Win32 application" in tail
-            else ""
-        )
+        if "not a valid Win32 application" in tail:
+            hint = (
+                "\nThat error is the Windows loader refusing the DLL for its size, "
+                "not a broken build; WINDOWS_IMAGE_LIMIT is calibrated too high for "
+                "this machine."
+            )
+        elif crashed(result.returncode):
+            # Verification is the first thing that ever loads the image, so a
+            # native fault here is the image itself and not the environment --
+            # which the message has to say, since the environment is what the
+            # sentence above is about and a crash prints nothing of its own.
+            hint = (
+                "\nThat is a crash while loading the image rather than an error "
+                "from it, so the file itself is bad rather than the environment "
+                "wrong. A build interrupted or short of disk is the usual cause. "
+                "The previous image (if any) is untouched, so an existing one "
+                "still works; retry the build with room to spare."
+            )
+        else:
+            hint = ""
         raise SysimageBuildError(
             "the system image was built but failed verification, so it was "
             f"discarded and the previous one (if any) is untouched.\nJulia said:\n{tail}{hint}"
