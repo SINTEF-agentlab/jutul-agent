@@ -54,6 +54,9 @@ class _FakeJulia:
         # What the build's own `--pkgimages=no` precompile exits with; a test sets
         # a native fault here to stand in for the machine running out of memory.
         self.precompile_code = 0
+        # The same for the create_sysimage step, whose out-of-memory death is a
+        # different one: a single process writing the image, not the precompile.
+        self.build_code: int | None = None
         self.calls: list[list[str]] = []
         # What the "build" writes; a test can swap in real PE bytes.
         self.image = b"image"
@@ -65,6 +68,8 @@ class _FakeJulia:
         if "--pkgimages=no" in argv:
             return subprocess.CompletedProcess(argv, self.precompile_code, "", "")
         if "create_sysimage" in script:
+            if self.build_code is not None:
+                return subprocess.CompletedProcess(argv, self.build_code, "", "")
             if self.build_ok:
                 Path(_quoted_path(script, "sysimage_path")).write_bytes(self.image)
             return subprocess.CompletedProcess(argv, 0 if self.build_ok else 1, "", "")
@@ -797,3 +802,35 @@ def test_a_package_that_cannot_precompile_is_not_described_as_a_crash(
         build(workspace=ws, julia_project=env)
 
     assert not any("create_sysimage" in call[-1] for call in julia.calls)
+
+
+def test_a_crash_writing_the_image_is_explained_as_its_own_step(
+    tmp_path: Path, julia: _FakeJulia
+) -> None:
+    """The other memory cliff, and the one no ceiling reaches: PackageCompiler
+    emits the object file from a single process. Same exit code as the precompile
+    crash, so the message has to distinguish them or it sends the wrong advice."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    julia.build_code = 0xC0000005
+
+    with pytest.raises(SysimageBuildError) as excinfo:
+        build(workspace=ws, julia_project=env)
+
+    message = str(excinfo.value)
+    assert "0xC0000005" in message and "single process" in message
+    # Parallelism is not a factor here, so naming that knob would mislead.
+    assert "JULIA_NUM_PRECOMPILE_TASKS" not in message
+
+
+def test_a_plain_build_failure_carries_no_memory_advice(tmp_path: Path, julia: _FakeJulia) -> None:
+    """Julia exiting 1 said what went wrong itself; guessing at memory over it
+    would bury the real error under advice that does not apply."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    julia.build_ok = False
+
+    with pytest.raises(SysimageBuildError) as excinfo:
+        build(workspace=ws, julia_project=env)
+
+    assert "single process" not in str(excinfo.value)
