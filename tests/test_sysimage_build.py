@@ -57,6 +57,9 @@ class _FakeJulia:
         # The same for the create_sysimage step, whose out-of-memory death is a
         # different one: a single process writing the image, not the precompile.
         self.build_code: int | None = None
+        # And for verification, where a native fault means the image will not
+        # load at all -- a different thing from Julia reporting it is wrong.
+        self.verify_code: int | None = None
         self.calls: list[list[str]] = []
         # What the "build" writes; a test can swap in real PE bytes.
         self.image = b"image"
@@ -74,6 +77,8 @@ class _FakeJulia:
                 Path(_quoted_path(script, "sysimage_path")).write_bytes(self.image)
             return subprocess.CompletedProcess(argv, 0 if self.build_ok else 1, "", "")
         if "sysimage-verify" in script:
+            if self.verify_code is not None:
+                return subprocess.CompletedProcess(argv, self.verify_code, "", "")
             return subprocess.CompletedProcess(
                 argv, 0 if self.verify_ok else 1, VERIFIED if self.verify_ok else "", "boom"
             )
@@ -834,3 +839,67 @@ def test_a_plain_build_failure_carries_no_memory_advice(tmp_path: Path, julia: _
         build(workspace=ws, julia_project=env)
 
     assert "single process" not in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# A file that is short of what its own headers describe.
+
+
+def test_a_truncated_image_is_refused_before_it_is_ever_loaded(
+    tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A short file keeps a valid header, so the size check passes it and the
+    failure lands in Julia's relocation pass as an access violation with nothing
+    attached. Naming it here costs a test; leaving it costs an hour and a guess."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    monkeypatch.setattr(sysimage_build, "on_windows", lambda: True)
+    monkeypatch.setattr(sysimage, "on_windows", lambda: True)
+
+    whole = tmp_path / "whole.dll"
+    write_pe(whole, data_size=0x2000)
+    julia.image = whole.read_bytes()[: sysimage_build._pe_section_end(whole) - 4096]
+
+    with pytest.raises(SysimageBuildError, match="truncated"):
+        build(workspace=ws, julia_project=env)
+
+    # Verification never ran: the image was refused before anything loaded it.
+    assert not julia.verified
+    assert not sysimage.sysimage_path(ws).exists()
+    assert sysimage.read_stamp(ws) is None
+    assert list(sysimage.sysimage_dir(ws).glob("candidate-*")) == []
+
+
+def test_a_whole_image_is_not_mistaken_for_a_short_one(tmp_path: Path) -> None:
+    """The check runs an hour into a build, so a false refusal is the worst
+    outcome it can have; the symbol tail beyond the sections must not trip it."""
+    image = tmp_path / "sys.dll"
+    write_pe(image, debug_sizes=(0x1000, 0x2000))
+
+    sysimage_build._check_image_complete(image)  # does not raise
+
+
+def test_a_file_that_is_not_a_pe_is_left_to_the_other_checks(tmp_path: Path) -> None:
+    not_pe = tmp_path / "sys.dll"
+    not_pe.write_bytes(b"image")
+
+    assert sysimage_build._pe_section_end(not_pe) is None
+    sysimage_build._check_image_complete(not_pe)  # does not raise
+
+
+def test_a_crash_loading_the_image_reads_as_the_image_not_the_environment(
+    tmp_path: Path, julia: _FakeJulia
+) -> None:
+    """What the control build hit: PackageCompiler finished, the file passed every
+    static check, and Julia faulted reading its relocations. The environment is
+    fine; saying only 'failed verification' points at the wrong thing."""
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+
+    julia.verify_code = 0xC0000005
+
+    with pytest.raises(SysimageBuildError) as excinfo:
+        build(workspace=ws, julia_project=env)
+
+    assert "the file itself is bad rather than the environment wrong" in str(excinfo.value)
+    assert not sysimage.sysimage_path(ws).exists()
