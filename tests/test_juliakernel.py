@@ -19,7 +19,7 @@ import pytest
 
 from jutul_agent.juliakernel import JuliaKernel, KernelConfig, OutputChunk
 from jutul_agent.juliakernel.connection import KernelConnection
-from jutul_agent.juliakernel.kernel import JuliaStartupError, _describe_exit, _thread_flag
+from jutul_agent.juliakernel.kernel import JuliaStartupError, _thread_flag, describe_exit
 
 _HAS_JULIA = shutil.which("julia") is not None
 needs_julia = pytest.mark.skipif(not _HAS_JULIA, reason="requires `julia` on PATH")
@@ -60,17 +60,17 @@ def test_thread_flag_always_reserves_an_interactive_thread() -> None:
 
 def test_exit_status_names_the_way_the_process_died() -> None:
     """A death has to be attributable: a crash and an OOM kill need different fixes."""
-    assert _describe_exit(None) == "exit status unknown"
-    assert _describe_exit(1) == "exit code 1"
+    assert describe_exit(None) == "exit status unknown"
+    assert describe_exit(1) == "exit code 1"
     # Windows encodes the fault in the status; the hex form is the searchable one.
-    assert "0xC0000005" in _describe_exit(0xC0000005)
+    assert "0xC0000005" in describe_exit(0xC0000005)
 
 
 @pytest.mark.skipif(not hasattr(signal, "SIGKILL"), reason="POSIX signals")
 def test_a_signalled_death_points_at_its_usual_cause() -> None:
-    assert "SIGKILL" in _describe_exit(-signal.SIGKILL)
-    assert "out-of-memory" in _describe_exit(-signal.SIGKILL)
-    assert "SIGSEGV" in _describe_exit(-signal.SIGSEGV)
+    assert "SIGKILL" in describe_exit(-signal.SIGKILL)
+    assert "out-of-memory" in describe_exit(-signal.SIGKILL)
+    assert "SIGSEGV" in describe_exit(-signal.SIGSEGV)
 
 
 async def test_startup_error_for_missing_julia() -> None:

@@ -147,7 +147,7 @@ def test_bootstrap_with_source_path_runs_pkg_develop(
     class _Result:
         returncode = 0
 
-    def _fake_run(argv, check=False):
+    def _fake_run(argv, **_kwargs):
         captured["argv"] = argv
         return _Result()
 

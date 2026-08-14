@@ -216,7 +216,7 @@ class JuliaKernel:
             with contextlib.suppress(TimeoutError):
                 async with asyncio.timeout(_EXIT_STATUS_TIMEOUT):
                     code = await proc.wait()
-        parts = [f"{exc}: {_describe_exit(code)}"]
+        parts = [f"{exc}: {describe_exit(code)}"]
         tail = self._conn.stderr_tail.decode("utf-8", "replace").strip() if self._conn else ""
         if tail:
             parts.append(f"Julia's last output:\n{tail[-_DEATH_TAIL_CHARS:]}")
@@ -466,8 +466,12 @@ class JuliaKernel:
         return cfg.julia_executable, args, env
 
 
-def _describe_exit(code: int | None) -> str:
+def describe_exit(code: int | None) -> str:
     """How the process ended, in the terms of whichever platform ended it.
+
+    Public because the kernel is not the only place that has to explain a dead
+    Julia: the system-image build reports one too, and a crash should read the
+    same way whichever of them saw it.
 
     POSIX reports a signal as a negative code; SIGKILL is called out because the
     common source of one nobody sent is the out-of-memory killer. Windows has no
