@@ -7,6 +7,8 @@ exists because the count that caused it came from Julia's core-based default.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from jutul_agent.julia import precompile
@@ -15,6 +17,7 @@ from jutul_agent.julia import precompile
 def test_the_ceiling_is_judged_by_memory_not_by_cores(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(precompile, "_total_memory_bytes", lambda: 16 * 2**30)
     monkeypatch.setattr(precompile.os, "cpu_count", lambda: 64)
+    monkeypatch.setattr(precompile.os, "name", "posix")
 
     # 16 GiB at 4 GiB a worker, not the 16 a 64-core machine would otherwise get.
     assert precompile.precompile_task_limit() == 4
@@ -60,6 +63,9 @@ def test_the_ceiling_travels_in_the_environment(monkeypatch: pytest.MonkeyPatch)
     """It has to be inherited, not passed: the process it matters most for is the
     one PackageCompiler launches from inside ``create_sysimage``."""
     monkeypatch.setattr(precompile, "_total_memory_bytes", lambda: 8 * 2**30)
+    # Pinned, or the ceiling on a one-core runner is Julia's default, not memory's.
+    monkeypatch.setattr(precompile.os, "cpu_count", lambda: 8)
+    monkeypatch.setattr(precompile.os, "name", "posix")
     monkeypatch.delenv(precompile.PRECOMPILE_TASKS_ENV_VAR, raising=False)
 
     assert precompile.julia_environment()[precompile.PRECOMPILE_TASKS_ENV_VAR] == "2"
@@ -86,6 +92,7 @@ def test_the_real_machine_reports_a_plausible_amount_of_memory() -> None:
     assert total > 2**30  # any machine that can build an image has over a GiB
 
 
+@pytest.mark.skipif(not hasattr(os, "sysconf"), reason="POSIX sysconf")
 def test_a_reading_that_fails_is_reported_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
     """A platform we cannot read must cost the ceiling, never the build."""
 
@@ -96,3 +103,12 @@ def test_a_reading_that_fails_is_reported_not_raised(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(precompile.os, "name", "posix")
 
     assert precompile._total_memory_bytes() is None
+
+
+def test_windows_is_read_through_its_own_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The branch is not an optimisation: ``os.sysconf`` does not exist on Windows,
+    so reaching it there would be an ``AttributeError`` rather than a fallback."""
+    monkeypatch.setattr(precompile.os, "name", "nt")
+    monkeypatch.setattr(precompile, "_windows_total_memory_bytes", lambda: 7 * 2**30)
+
+    assert precompile._total_memory_bytes() == 7 * 2**30
