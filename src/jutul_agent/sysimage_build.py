@@ -378,6 +378,7 @@ def build(
             ],
             project=env,
             what="building the system image",
+            crash_hint=LINK_CRASH_HINT,
         )
         if not candidate.exists():
             raise SysimageBuildError("the build reported success but produced no image")
@@ -665,17 +666,39 @@ def _julia_string_vector(names: list[str]) -> str:
     return "[" + ", ".join(f'"{name}"' for name in names) + "]"
 
 
-def _julia(cmds: list[str], *, project: Path, what: str) -> None:
+# The second place a build can exhaust a machine, and the one no ceiling reaches:
+# PackageCompiler emits the image's object file from a single process, whose peak
+# is the whole image at once. Measured on Windows at 16 GB working set and 17.5 GB
+# committed for one process, with the pagefile grown past 25 GB; the CI lane needs
+# 16 GB of swap on top of 16 GB of RAM for the same step. Parallelism is not a
+# factor here, so the advice has to be different from the precompile's.
+LINK_CRASH_HINT = (
+    "That step writes the whole image from a single process, so its peak is the "
+    "image's own size and no parallelism setting reaches it. It needs several GB "
+    "of memory beyond what the machine is using: close what else is running, and "
+    "on Windows raise the pagefile (System > About > Advanced system settings > "
+    "Performance > Advanced > Virtual memory) rather than expecting RAM alone to "
+    "cover it."
+)
+
+
+def _julia(cmds: list[str], *, project: Path, what: str, crash_hint: str | None = None) -> None:
     """Run Julia in ``project``, streaming its output; raise with context on failure.
 
     Streamed rather than captured because these are the long steps: a build with
-    no output for twenty minutes reads as a hang.
+    no output for twenty minutes reads as a hang. ``crash_hint`` is added only for
+    a native fault, where Julia itself printed nothing to go on and the step is
+    the whole explanation.
     """
 
     argv = ["julia", f"--project={project}", "--startup-file=no", "-e", "\n".join(cmds)]
     result = _run_julia(argv)
-    if result.returncode != 0:
-        raise SysimageBuildError(f"{what} failed ({describe_exit(result.returncode)})")
+    if result.returncode == 0:
+        return
+    message = f"{what} failed ({describe_exit(result.returncode)})"
+    if crash_hint and crashed(result.returncode):
+        message = f"{message}. {crash_hint}"
+    raise SysimageBuildError(message)
 
 
 def describe_exit(code: int | None) -> str:
