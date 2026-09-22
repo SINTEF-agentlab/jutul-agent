@@ -54,11 +54,11 @@ jutul-agent = "jutul_agent.__main__:main"
 
 [project.optional-dependencies]
 eval = [
-    # Validated against 0.3.238; <0.4 guards the framework's next breaking line.
-    "inspect-ai>=0.3.238,<0.4",
+    # GPT-6 support landed in 0.3.263; <0.4 guards the next breaking line.
+    "inspect-ai>=0.3.263,<0.4",
     # Floors the agent bridge enforces on the patched client libraries.
-    "openai>=2.40.0",
-    "anthropic>=0.105.0",
+    "openai>=3.1.0",
+    "anthropic>=1.0.0",
 ]
 
 [dependency-groups]
@@ -117,7 +117,7 @@ exclude = ["src/jutul_agent/interfaces/server/webapp"]
 # reproducible result for the loose ranges above (CI installs it with
 # `uv sync --locked`). To move forward: bump the date, run `uv lock`, run the
 # tests, and commit the updated lock.
-exclude-newer = "2026-07-31T00:00:00Z"
+exclude-newer = "2026-09-05T00:00:00Z"
 
 [tool.ruff]
 line-length = 100

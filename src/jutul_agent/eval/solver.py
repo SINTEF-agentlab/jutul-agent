@@ -68,10 +68,11 @@ def _bridge_model() -> Any:
     - Gemini targets use the google client: Gemini 3 requires its
       ``thought_signature`` to be replayed with function calls, and only the
       google-format round-trip preserves it.
-    - Everything else uses the Anthropic client, because langchain-anthropic
-      issues the plain ``messages.create`` calls the bridge understands
-      (langchain-openai wraps every call in ``with_raw_response``, which the
-      bridge's patched client does not produce).
+    - OpenAI targets use the Responses client so encrypted reasoning items
+      survive tool-call replay. An Anthropic-shaped bridge replaces those
+      opaque items with signatures, which OpenAI cannot decrypt on the next turn.
+    - Other providers use the Anthropic client, whose plain ``messages.create``
+      calls the bridge understands.
 
     Streaming is disabled because the bridge rejects streaming requests; the
     agent's event stream still works, the HTTP call just resolves in one piece.
@@ -84,9 +85,12 @@ def _bridge_model() -> Any:
 
         _gemini_compat.apply()
         spec = "google_genai:inspect"
+    elif provider == "openai":
+        spec = "openai:inspect"
     else:
         spec = "anthropic:inspect"
-    return init_chat_model(spec, disable_streaming=True, api_key="inspect-agent-bridge")
+    options = {"use_responses_api": True} if provider == "openai" else {}
+    return init_chat_model(spec, disable_streaming=True, api_key="inspect-agent-bridge", **options)
 
 
 # The bridge annotates assistant text with internal capsules that must not

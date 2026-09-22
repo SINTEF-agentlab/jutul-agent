@@ -737,6 +737,23 @@ details.block .body {
   max-height: min(60vh, 28rem);
   overflow-y: auto;
 }
+.model-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.model-head button {
+  color: var(--accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  text-transform: none;
+}
+.model-head button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
 .model-provider {
   font-family: var(--mono);
   font-size: 0.72rem;

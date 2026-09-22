@@ -15,6 +15,40 @@ describe("plot popout placeholder", () => {
   });
 });
 
+describe("model catalog refresh", () => {
+  it("adds API-listed models to the picker after startup", async () => {
+    const staticModel = { id: "openai:gpt-5.4-mini", label: "gpt-5.4-mini", provider: "openai" };
+    const liveModel = {
+      id: "openai:gpt-6-luna",
+      label: "gpt-6-luna",
+      provider: "openai",
+      note: "API-listed · tool support unverified",
+    };
+    const spies = [
+      vi.spyOn(api, "simulators").mockResolvedValue({
+        simulators: ["jutuldarcy"], default: "jutuldarcy", details: {},
+      }),
+      vi.spyOn(api, "models").mockResolvedValue({
+        default: staticModel.id, providers: ["openai"], models: [staticModel],
+      }),
+      vi.spyOn(api, "credentials").mockResolvedValue([]),
+      vi.spyOn(api, "liveModels").mockResolvedValue({ models: [staticModel, liveModel] }),
+    ];
+    const store = createSessionStore();
+    const controller = new Controller(store);
+    const start = vi.spyOn(controller, "startSession").mockResolvedValue();
+    const history = vi.spyOn(controller, "refreshHistory").mockResolvedValue();
+    const context = vi.spyOn(controller, "refreshContextWindow").mockResolvedValue();
+
+    try {
+      await controller.init();
+      await vi.waitFor(() => expect(store.getState().models).toContainEqual(liveModel));
+    } finally {
+      for (const spy of [...spies, start, history, context]) spy.mockRestore();
+    }
+  });
+});
+
 describe("session startup failures", () => {
   it("shows the server refusal and leaves the composer idle", async () => {
     const create = vi

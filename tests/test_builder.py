@@ -111,8 +111,14 @@ def test_resolve_model_for_agent_enables_openai_reasoning(
     model = _resolve_model_for_agent("openai:gpt-5.4-mini")
     assert isinstance(model, BaseChatModel)
     assert getattr(model, "reasoning", None) == {"effort": "medium", "summary": "auto"}
+    assert getattr(model, "use_responses_api", None) is True
     profile = _harness_profile_for_model(model, None)
     assert profile.general_purpose_subagent.enabled is False
+    # New reasoning models work before the provider's static profile catches up.
+    newer = _resolve_model_for_agent("openai:gpt-6-luna")
+    assert isinstance(newer, BaseChatModel)
+    assert getattr(newer, "reasoning", None) == {"effort": "medium", "summary": "auto"}
+    assert getattr(newer, "use_responses_api", None) is True
     # Non-reasoning models are built too (for the request timeout) but are not
     # asked to reason, and neither are the -chat hybrids, whose profile keeps
     # temperature support and whose API rejects reasoning.effort.

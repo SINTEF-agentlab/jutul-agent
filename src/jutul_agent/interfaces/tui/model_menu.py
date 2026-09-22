@@ -24,8 +24,8 @@ from jutul_agent.models import (
     PROVIDERS,
     RECOMMENDED_OLLAMA_LOCAL,
     ModelInfo,
+    discover_available_models,
     discover_models,
-    is_known_model,
     provider_of,
 )
 from jutul_agent.ollama_client import PullProgress
@@ -115,6 +115,7 @@ class ModelMenu(ModalScreen[ModelChoice | None]):
         super().__init__()
         self._current = current
         self._recent: list[str] = load_recent_models()
+        self._catalog = discover_models()
         # Ollama ships no static profiles, so its models are discovered from the
         # daemon by a worker after mount; empty until (and unless) it answers.
         self._ollama: list[ModelInfo] = []
@@ -135,7 +136,16 @@ class ModelMenu(ModalScreen[ModelChoice | None]):
     def on_mount(self) -> None:
         self._populate("")
         self.query_one("#model-filter", Input).focus()
-        self.run_worker(self._discover_ollama(), exclusive=True)
+        self.run_worker(self._discover_ollama())
+        self.run_worker(self._discover_cloud())
+
+    async def _discover_cloud(self) -> None:
+        """Refresh API-listed models without holding up the picker."""
+        import asyncio
+
+        self._catalog = await asyncio.to_thread(discover_available_models)
+        if self.is_mounted:
+            self._populate(self.query_one("#model-filter", Input).value)
 
     async def _discover_ollama(self) -> None:
         """Merge locally-installed Ollama models into the catalog, best-effort."""
@@ -157,7 +167,7 @@ class ModelMenu(ModalScreen[ModelChoice | None]):
         sections: list[tuple[str, list[ModelInfo]]] = []
         if self._recent:
             sections.append(("Recent", [ModelInfo(mid, mid) for mid in self._recent]))
-        catalog = discover_models()
+        catalog = self._catalog
         for provider, info in PROVIDERS.items():
             if info.local:
                 continue  # Ollama handled below as local + cloud
@@ -187,7 +197,9 @@ class ModelMenu(ModalScreen[ModelChoice | None]):
         needle = raw.lower()
 
         # Free-text row: any provider:model not already in the catalog.
-        if ":" in raw and not is_known_model(raw):
+        if ":" in raw and not any(
+            model.id == raw for models in self._catalog.values() for model in models
+        ):
             options.add_option(Option(Text.assemble(("Use ", "bold"), (raw, "bold cyan")), id=raw))
 
         first_enabled: int | None = None
