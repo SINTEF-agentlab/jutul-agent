@@ -23,6 +23,7 @@ uv sync --extra eval
 
 uv run jutul-agent eval --list
 uv run jutul-agent eval canary
+uv run jutul-agent eval --all --model <provider/model>
 uv run jutul-agent eval canary guardrails --model <provider/model>,<provider/model>
 uv run jutul-agent eval canary --epochs 5 --epochs-reducer mean,pass_at_2
 ```

@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.types import Command
 
 from jutul_agent.agent.tool_output import is_interrupt_payload, normalize_tool_output
@@ -142,6 +142,21 @@ class TurnRunner:
             for interrupt in getattr(task, "interrupts", ()) or ()
         ]
         return _dedup_interrupts(raw)
+
+    async def add_user_action(self, content: str) -> None:
+        """Append a user-side action to the checkpointed conversation.
+
+        Some UI actions change the shared runtime outside a normal agent turn
+        (for example, replaying a plot's recorded Julia code). Recording the
+        action as a human message lets the next turn reason from what actually
+        happened without asking the model to answer the action itself.
+        """
+        update_state = getattr(self._agent, "aupdate_state", None)
+        if update_state is None:
+            raise RuntimeError("the agent does not support checkpoint updates")
+        await update_state(self._config, {"messages": [HumanMessage(content=content)]})
+        if self._trace is not None:
+            self._trace.append(MESSAGE_USER, {"content": content})
 
     async def _run(
         self,

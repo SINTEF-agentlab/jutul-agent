@@ -53,6 +53,28 @@ function credentialRequiredOf(e: unknown): CredentialPrompt | null {
   };
 }
 
+/** A useful server-provided refusal when one exists, with a stable fallback for
+ * transport errors and non-string structured responses. */
+function failureMessage(e: unknown, fallback: string): string {
+  if (e instanceof ApiError && typeof e.detail === "string" && e.detail.trim()) {
+    return e.detail;
+  }
+  if (e instanceof Error && e.message.trim()) return e.message;
+  return fallback;
+}
+
+/** Fill the synchronous placeholder shown while a live plot is replayed.
+ *
+ * Plot titles can originate in model-produced artifact metadata. Keep them in
+ * DOM text properties rather than interpolating them into HTML, so a title is
+ * always a title and can never become markup in the app's origin. */
+export function preparePopoutDocument(doc: Document, title: string): void {
+  doc.title = title;
+  doc.body.style.cssText =
+    "margin:0;display:grid;place-items:center;height:100vh;font:14px system-ui;color:#556";
+  doc.body.textContent = "Preparing an independent view…";
+}
+
 export class Controller {
   readonly transport: Transport;
   private notifyAsked = false;
@@ -70,6 +92,10 @@ export class Controller {
   // Bumped per reenter so a superseding one (e.g. a sidebar switch during a reconnect)
   // makes the older flow bail instead of the two clobbering each other's socket.
   private reenterSeq = 0;
+  // Session setup may spend minutes reconciling and precompiling its Julia env.
+  // A prompt sent during that window is queued for the same request, not allowed
+  // to start a second environment preparation concurrently.
+  private starting = false;
   // What to do once a missing API key is saved: re-run the action the key blocked
   // (start the session, or apply the model switch). Cleared when the modal closes.
   private keyRetry: (() => void) | null = null;
@@ -165,6 +191,8 @@ export class Controller {
   }
 
   async startSession(): Promise<void> {
+    if (this.starting) return;
+    this.starting = true;
     // Supersede any in-flight reenter: starting fresh (init or /new) must win over a
     // reconnect that is still trying to get back to the old session.
     this.reenterSeq++;
@@ -193,12 +221,12 @@ export class Controller {
         this.s.openApiKeys(required);
         return;
       }
-      this.store.setState({ meta: "could not start a session" });
-      if (this.queuedPrompt) {
-        this.queuedPrompt = null;
-        this.store.setState({ busy: false, working: false });
-        this.s.addSysNote("Could not start a session.", "warn");
-      }
+      const message = failureMessage(e, "Could not start a session.");
+      this.queuedPrompt = null;
+      this.store.setState({ meta: "could not start a session", busy: false, working: false });
+      this.s.addSysNote(message, "warn");
+    } finally {
+      this.starting = false;
     }
   }
 
@@ -255,10 +283,7 @@ export class Controller {
       this.s.addSysNote("The popout window was blocked; allow popups for this site.", "warn");
       return;
     }
-    popup.document.write(
-      `<title>${view.title}</title><body style="margin:0;display:grid;place-items:center;` +
-        `height:100vh;font:14px system-ui;color:#556">Preparing an independent view…</body>`,
-    );
+    preparePopoutDocument(popup.document, view.title);
     const queue = this.pendingPopouts.get(view.record) ?? [];
     queue.push(popup);
     this.pendingPopouts.set(view.record, queue);
@@ -396,6 +421,7 @@ export class Controller {
     }
     this.queuedPrompt = msg.text;
     if (this.s.sessionId) void this.reconnect();
+    else if (!this.starting) void this.startSession();
   }
 
   stop(): void {
@@ -608,9 +634,9 @@ export class Controller {
     if (sim) this.store.setState({ sim });
     try {
       await this.reenter(id);
-    } catch {
+    } catch (e) {
       this.store.setState({ meta: "could not resume" });
-      this.s.addSysNote("Could not resume that session.", "warn");
+      this.s.addSysNote(failureMessage(e, "Could not resume that session."), "warn");
     }
   }
 

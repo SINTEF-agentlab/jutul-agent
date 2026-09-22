@@ -105,6 +105,12 @@ def build_parser(prog: str = "jutul-agent eval") -> argparse.ArgumentParser:
         dest="list_suites",
         help="List available suites and exit.",
     )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_suites",
+        help="Run every built-in suite (cannot be combined with suite names).",
+    )
     return parser
 
 
@@ -123,8 +129,12 @@ def run(args: argparse.Namespace) -> int:
             print(f"{name:12} {title}")
         return 0
 
-    if not args.tasks:
-        print("error: name at least one suite (see --list).", file=sys.stderr)
+    if args.all_suites and args.tasks:
+        print("error: --all cannot be combined with suite names.", file=sys.stderr)
+        return 2
+    task_args = list(_available_suites()) if args.all_suites else args.tasks
+    if not task_args:
+        print("error: name at least one suite or pass --all (see --list).", file=sys.stderr)
         return 2
     model = args.model or _default_inspect_model()
 
@@ -139,7 +149,7 @@ def run(args: argparse.Namespace) -> int:
     import importlib
 
     resolved: list[Any] = []
-    for name in args.tasks:
+    for name in task_args:
         if Path(name).exists():
             resolved.append(name)
             continue

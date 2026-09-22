@@ -329,6 +329,25 @@ async def test_resumed_thread_restores_conversation(tmp_path: Path) -> None:
     resumed.finalize()
 
 
+async def test_user_action_is_appended_to_real_checkpoint_state(tmp_path: Path) -> None:
+    adapter = make_fake_adapter(tmp_path)
+    session = Session.create(julia=FakeJulia(), state_root=tmp_path, simulator=adapter)
+    agent, _ = build_agent(
+        session,
+        model=make_scripted_model([scripted_final("The plot is ready.")]),
+        checkpointer=MemorySaver(),
+    )
+    runner = TurnRunner(agent, thread_id=session.session_id, trace=session.trace)
+
+    await runner.run_prompt("Make a plot.")
+    await runner.add_user_action("I regenerated the plot from its recorded code.")
+
+    state = await agent.aget_state({"configurable": {"thread_id": session.session_id}})
+    contents = [str(getattr(message, "content", "")) for message in state.values["messages"]]
+    assert contents[-1] == "I regenerated the plot from its recorded code."
+    session.finalize()
+
+
 async def test_delete_is_interrupted_before_it_runs(tmp_path: Path) -> None:
     """A recursive delete must reach the human before it touches the filesystem.
 

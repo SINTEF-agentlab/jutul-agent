@@ -320,6 +320,31 @@ def test_prepare_workspace_env_leaves_user_root_project_alone(
     assert not (workspace / WARM_SOURCE_MARKER).exists()
 
 
+def test_prepare_workspace_env_does_not_resolve_user_project_missing_simulator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A simulator checkout has no Manifest entry for itself; launch stays read-only."""
+    module_dir = _make_template(tmp_path)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    root = workspace / "Project.toml"
+    original = 'name = "Foo"\nuuid = "uuid"\n\n[deps]\nBar = "bar-uuid"\n'
+    root.write_text(original, encoding="utf-8")
+    (workspace / "Manifest.toml").write_text("[deps.Bar]\n", encoding="utf-8")
+
+    installs: list[Path] = []
+    monkeypatch.setattr(
+        env_setup, "resolve_and_instantiate", lambda project, **kw: installs.append(project)
+    )
+
+    env_setup.prepare_workspace_env(
+        _adapter(module_dir), workspace=workspace, julia_project=workspace
+    )
+
+    assert installs == []
+    assert root.read_text(encoding="utf-8") == original
+
+
 def test_prepare_workspace_env_syncs_capability_dependencies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

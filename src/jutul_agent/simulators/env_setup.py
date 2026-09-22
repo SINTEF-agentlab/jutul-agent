@@ -612,6 +612,13 @@ def _ensure_simulator_installed(
     rebuild it from the template. Best-effort; on failure we warn and launch.
     """
 
+    # A simulator checkout is itself the active package and therefore normally
+    # has no entry for itself in its Manifest. More generally, a root project is
+    # user-owned: resolving it here would rewrite the user's Manifest on every
+    # launch, in direct violation of the workspace env ownership boundary.
+    if user_owns_root_project(ws):
+        return
+
     pkg = adapter.primary_package
     if manifest_has_package(julia_project, pkg):
         return
@@ -623,12 +630,8 @@ def _ensure_simulator_installed(
     try:
         # Resolve + install only; the warm-up bake is _ensure_env_warmed's job.
         resolve_and_instantiate(julia_project, precompile=False)
-    except EnvSetupError as exc:
-        # A user-owned root env is theirs to fix; only rebuild the managed env.
-        if not user_owns_root_project(ws):
-            _rebuild_managed_env(adapter, ws, sim_name, reason="could not be resolved")
-            return
-        _warn_rebuild(pkg, sim_name, exc)
+    except EnvSetupError:
+        _rebuild_managed_env(adapter, ws, sim_name, reason="could not be resolved")
 
 
 def _reconcile_env_template(

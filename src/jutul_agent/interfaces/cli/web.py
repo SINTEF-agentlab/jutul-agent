@@ -104,7 +104,9 @@ def _resolve_simulator(args: argparse.Namespace) -> str | None:
     return sim
 
 
-def _sysimage_ready(args: argparse.Namespace, ws: Path, config: WorkspaceConfig) -> bool:
+def _sysimage_ready(
+    args: argparse.Namespace, ws: Path, config: WorkspaceConfig, *, sim: str
+) -> bool:
     """Check the system image before binding the port, and explain if it fails.
 
     Every session this server creates goes through the same check, so a bad
@@ -117,13 +119,39 @@ def _sysimage_ready(args: argparse.Namespace, ws: Path, config: WorkspaceConfig)
     from jutul_agent import sysimage as sysimage_mod
     from jutul_agent.workspace import resolve_julia_project
 
-    decision = sysimage_mod.decide(
-        ws,
-        args.julia_project or resolve_julia_project(ws),
-        enabled=sysimage_mod.resolve_enabled(args.sysimage, workspace_enabled=config.sysimage),
-    )
+    project = args.julia_project or resolve_julia_project(ws)
+    enabled = sysimage_mod.resolve_enabled(args.sysimage, workspace_enabled=config.sysimage)
+    decision = sysimage_mod.decide(ws, project, enabled=enabled)
+
+    # A missing or already-stale image needs no potentially expensive environment
+    # preparation to explain it. A currently usable image does: preparation syncs
+    # bundled path packages into the managed environment, and that sync can be the
+    # very operation that makes the image stale after an upgrade. Do it before the
+    # server binds its port so the terminal refuses the launch instead of serving a
+    # browser application in which every session creation is doomed to fail.
+    if decision.usable:
+        from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
+        from jutul_agent.simulators import registry
+        from jutul_agent.simulators.env_setup import EnvSetupError, prepare_workspace_env
+
+        try:
+            prepare_workspace_env(
+                registry.get(sim),
+                workspace=ws,
+                julia_project=project,
+                sim_name=sim,
+                dependencies=collect_dependency_paths(discover_extensions()),
+            )
+        except EnvSetupError as exc:
+            print(f"error: could not prepare the Julia environment:\n{exc}", file=sys.stderr)
+            return False
+        decision = sysimage_mod.decide(ws, project, enabled=enabled)
+
     if decision.blocks:
-        print(f"\n{sysimage_mod.refusal(decision, command='jutul-agent web')}", file=sys.stderr)
+        print(
+            f"\n{sysimage_mod.refusal(decision, command='jutul-agent web')}",
+            file=sys.stderr,
+        )
         return False
     for note in decision.notes:
         print(f"note: {note}", file=sys.stderr)
@@ -167,7 +195,7 @@ def run(args: argparse.Namespace) -> int:
     model = args.model or config.model
     add_dirs = resolve_add_dirs(args.add_dir, ws)
 
-    if not _sysimage_ready(args, ws, config):
+    if not _sysimage_ready(args, ws, config, sim=sim):
         return 1
 
     print(
