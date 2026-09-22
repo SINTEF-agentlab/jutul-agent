@@ -659,9 +659,10 @@ def create_app(
         except KeyError as exc:  # unknown simulator
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except SysimageUnavailable as exc:
-            # The launch check already cleared the image, so reaching here means
-            # the environment moved while the server was up (a package installed
-            # or edited). The message explains itself; pass it through as-is.
+            # The CLI checked the prepared environment before starting the server,
+            # so reaching here normally means it moved while the server was up (a
+            # package was installed or edited). The message explains itself; pass
+            # it through as-is.
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         # The agent already carries the selection (it was built with the layer
         # above); this records it on the session, so it is persisted for a later
@@ -737,6 +738,11 @@ def create_app(
             )
         except (KeyError, FileNotFoundError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except SysimageUnavailable as exc:
+            # Match fresh-session creation: environment preparation can reveal
+            # that an image went stale while the server was running, and that is
+            # an actionable launch conflict rather than an internal server error.
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         # The resumed session read its own stored selection on the way up. Defer to
         # that when the request carried none: a front end running outside the host
         # application has nothing to say about the selection, and adopting its

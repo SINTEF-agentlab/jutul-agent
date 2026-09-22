@@ -114,6 +114,32 @@ async def test_turn_runner_emits_text_as_deltas() -> None:
     assert result.interrupts == []
 
 
+async def test_turn_runner_adds_user_action_to_checkpoint_and_trace(tmp_path: Path) -> None:
+    class UpdatingAgent:
+        def __init__(self) -> None:
+            self.updates: list[tuple[dict, dict]] = []
+
+        async def aupdate_state(self, config: dict, update: dict) -> None:
+            self.updates.append((config, update))
+
+    agent = UpdatingAgent()
+    log = TraceLog(tmp_path / "trace.sqlite")
+    try:
+        runner = TurnRunner(agent, thread_id="thread-1", trace=log)
+        await runner.add_user_action("I replayed the plot.")
+
+        config, update = agent.updates[0]
+        assert config == {"configurable": {"thread_id": "thread-1"}}
+        assert len(update["messages"]) == 1
+        assert isinstance(update["messages"][0], HumanMessage)
+        assert update["messages"][0].content == "I replayed the plot."
+        [event] = list(log.iter_events())
+        assert event.kind == "message_user"
+        assert event.payload == {"content": "I replayed the plot."}
+    finally:
+        log.close()
+
+
 async def test_turn_runner_streams_message_chunks() -> None:
     runner = TurnRunner(_chunk_message_agent(), thread_id="thread-1")
     seen: list[object] = []

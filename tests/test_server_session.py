@@ -146,6 +146,30 @@ def test_create_session_requires_credential(
         assert client.post("/sessions", json={"model": "ollama:qwen3"}).status_code == 200
 
 
+def test_disk_resume_reports_stale_sysimage_as_conflict(tmp_path: Path) -> None:
+    from jutul_agent import sysimage
+
+    async def unavailable_factory(**_kwargs) -> SessionHost:
+        raise sysimage.SysimageUnavailable(
+            sysimage.Decision(
+                status=sysimage.DIVERGENT,
+                reason="  edited since the image was built:\n    JutulAgentJutulDarcy",
+            ),
+            command="jutul-agent web",
+        )
+
+    manager = SessionManager(host_factory=unavailable_factory)
+    with TestClient(create_app(manager)) as client:
+        response = client.post(
+            f"/sessions/{default_session_id()}/resume",
+            json={"sim": "jutuldarcy"},
+        )
+
+    assert response.status_code == 409
+    assert "JutulAgentJutulDarcy" in response.json()["detail"]
+    assert "--no-sysimage" in response.json()["detail"]
+
+
 def test_set_model_prompts_for_missing_key_over_ws(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -874,7 +898,16 @@ def _plot_state(tmp_path: Path):
     poster = session.output_dir / "artifacts" / "res.png"
     poster.parent.mkdir(parents=True, exist_ok=True)
     poster.write_bytes(b"png")
-    host = SessionHost(session=session, agent=None)
+
+    class _CheckpointAgent:
+        def __init__(self) -> None:
+            self.updates: list[dict] = []
+
+        async def aupdate_state(self, _config: dict, update: dict) -> None:
+            self.updates.append(update)
+
+    agent = _CheckpointAgent()
+    host = SessionHost(session=session, agent=agent)
     ws = _FakeWS()
     return _StreamState(ws, host), ws, session  # type: ignore[arg-type]
 
@@ -891,6 +924,10 @@ async def test_replot_revive_reserves_route_and_revives_view(tmp_path: Path) -> 
     assert viz["record"] == "artifacts/res.png"
     assert (viz["width"], viz["height"]) == (1600, 900)
     assert ws.sent[-1]["type"] == "turn_end"
+    [update] = st._host.agent.updates
+    [note] = update["messages"]
+    assert "regenerated a plot" in note.content
+    assert "plot_reservoir(model, states)" in note.content
     # The replay served the figure and saved a fresh poster (the poster block runs).
     assert any("__JUTUL_WEB_FIGS__[" in c and "CairoMakie.save" in c for c in session.julia.calls)
 

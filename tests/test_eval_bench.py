@@ -237,6 +237,44 @@ def test_eval_cli_model_defaults_to_the_agent_default() -> None:
     assert ":" not in default.split("/", 1)[0]
 
 
+def test_eval_cli_accepts_all_suites_flag() -> None:
+    from jutul_agent.interfaces.cli import eval as eval_cmd
+
+    args = eval_cmd.build_parser().parse_args(["--all"])
+    assert args.all_suites is True
+    assert args.tasks == []
+
+
+def test_eval_cli_all_expands_every_builtin_suite(tmp_path: Path, monkeypatch) -> None:
+    import inspect_ai
+
+    from jutul_agent.interfaces.cli import eval as eval_cmd
+
+    captured: dict[str, object] = {}
+
+    def fake_eval(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(inspect_ai, "eval", fake_eval)
+    args = eval_cmd.build_parser().parse_args(
+        ["--all", "--model", "mockllm/model", "--log-dir", str(tmp_path)]
+    )
+
+    assert eval_cmd.run(args) == 0
+    tasks = captured["tasks"]
+    assert isinstance(tasks, list)
+    assert len(tasks) >= len(eval_cmd._available_suites())
+
+
+def test_eval_cli_rejects_all_with_named_suite(capsys) -> None:
+    from jutul_agent.interfaces.cli import eval as eval_cmd
+
+    args = eval_cmd.build_parser().parse_args(["canary", "--all"])
+    assert eval_cmd.run(args) == 2
+    assert "cannot be combined" in capsys.readouterr().err
+
+
 async def test_investigation_recorded_requires_a_linked_tree(tmp_path: Path) -> None:
     from jutul_agent.eval.scorers import investigation_recorded
 
