@@ -106,6 +106,7 @@ turn.
 | `POST` | `/sessions/{id}/upload` | Add a file to the session workspace (`uploads/<name>`) |
 | `GET` | `/sessions/{id}/context` | The context-usage panel as markdown (same figures as the TUI's `/context`) |
 | `GET` | `/models` | List the models that can be selected; also carries `protocol`, the wire-contract version |
+| `GET` | `/models/live` | Refresh the model list from configured provider APIs (best effort; API-listed tool support is unverified) |
 | `GET` | `/models/window` | The context window for a model, for a usage indicator |
 | `GET` | `/credentials` | Which providers have keys, and whether a shell variable shadows a saved one |
 | `POST` | `/credentials` | Save a provider API key (used by the missing-key prompt) |

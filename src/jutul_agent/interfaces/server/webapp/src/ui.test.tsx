@@ -1,8 +1,9 @@
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { api, type HistoryEntry } from "./api";
 import { Canvas } from "./components/Canvas";
+import { Composer } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
 import { Thread } from "./components/Thread";
 import type { ServerMessage } from "./protocol";
@@ -13,6 +14,28 @@ function drive(store: { getState: () => { handle: (m: ServerMessage) => void } }
     for (const m of msgs) store.getState().handle(m);
   });
 }
+
+describe("model picker", () => {
+  it("retries a failed live refresh without reloading the chat", async () => {
+    const staticModel = { id: "openai:gpt-5.4-mini", label: "gpt-5.4-mini", provider: "openai" };
+    const newModel = { id: "openai:gpt-6-luna", label: "gpt-6-luna", provider: "openai" };
+    const live = vi.spyOn(api, "liveModels")
+      .mockResolvedValueOnce({ models: [] })
+      .mockResolvedValueOnce({ models: [staticModel, newModel] });
+    const { store } = renderWithStore(<Composer />);
+    act(() => store.setState({ models: [staticModel], model: staticModel.id }));
+
+    const composer = screen.getByPlaceholderText("Message jutul-agent…");
+    fireEvent.change(composer, { target: { value: "/model" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    await waitFor(() => expect(live).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("gpt-6-luna")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh list" }));
+    await waitFor(() => expect(screen.getByText("gpt-6-luna")).toBeInTheDocument());
+    live.mockRestore();
+  });
+});
 
 describe("Thread rendering", () => {
   it("shows the welcome screen when empty", () => {

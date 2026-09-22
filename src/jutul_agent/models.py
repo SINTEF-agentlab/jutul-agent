@@ -1,11 +1,10 @@
 """Model catalog and provider metadata.
 
-The in-app selector is built by *discovery*: ``discover_models()`` reads the
-tool-calling models each installed provider package ships in its bundled
-``data/_profiles.py`` (the same metadata LangChain uses), so new models appear
-when the provider package updates; no hardcoded list to maintain. Ollama has
-no static profiles and is discovered from the daemon by the selector. Any
-``provider:model`` string ``init_chat_model`` accepts also works via free-text.
+The in-app selector starts with the tool-calling profiles installed with each
+provider package and refreshes from configured providers' live model lists.
+The live APIs report availability but not always tool capability, so those
+entries are labelled as unverified. Ollama is discovered from the daemon.
+Any ``provider:model`` string ``init_chat_model`` accepts also works via free-text.
 
 ``PROVIDERS`` holds the per-provider API-key variable and the pip package that
 supplies the LangChain integration.
@@ -14,6 +13,8 @@ supplies the LangChain integration.
 from __future__ import annotations
 
 import importlib.util
+import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
@@ -105,10 +106,8 @@ def resolve_model(
 def model_profile(model_id: str) -> dict:
     """The provider package's bundled profile for the model (``{}`` when unknown).
 
-    Profiles are the maintained capability source: keying decisions on them
-    means new models are covered by upgrading the provider package, never by
-    editing a list here. Reading one builds the model, which needs the provider
-    key; any failure (no key, offline, unknown model) reads as an empty profile.
+    Profiles are the maintained capability source. Reading one builds the model,
+    which needs the provider key; any failure reads as an empty profile.
     """
     try:
         from langchain.chat_models import init_chat_model
@@ -223,6 +222,83 @@ def discover_models() -> dict[str, list[ModelInfo]]:
         if names:
             grouped[name] = [ModelInfo(f"{name}:{m}", m) for m in names]
     return grouped
+
+
+def discover_available_models() -> dict[str, list[ModelInfo]]:
+    """Add models currently listed by configured provider APIs to the static catalog.
+
+    Bundled profiles lag new releases. A live list proves an ID is available to
+    the user's key, but not that it supports every agent tool; keep those entries
+    labelled accordingly and retain the bundled catalog if a provider is offline.
+    Called off the UI event loop, never on the session/turn hot path.
+    """
+    from jutul_agent.credentials import load_user_credentials
+
+    load_user_credentials()
+    grouped = {provider: list(models) for provider, models in discover_models().items()}
+    for provider, fetch in (
+        ("openai", _openai_available),
+        ("anthropic", _anthropic_available),
+        ("google_genai", _google_available),
+    ):
+        if not os.environ.get(PROVIDERS[provider].key_env_var or ""):
+            continue
+        try:
+            names = fetch()
+        except Exception:
+            continue  # catalog still works offline or with a restricted key
+        known = {model.id for model in grouped.get(provider, ())}
+        additions = [
+            ModelInfo(f"{provider}:{name}", name, "API-listed · tool support unverified")
+            for name in names
+            if f"{provider}:{name}" not in known
+        ]
+        if additions:
+            grouped[provider] = sorted(
+                [*grouped.get(provider, ()), *additions],
+                key=lambda model: model.label,
+                reverse=True,
+            )
+    return grouped
+
+
+def _openai_available() -> list[str]:
+    from openai import OpenAI
+
+    # The Models API does not publish tool capability. Restrict its broad list
+    # to conversational model families, excluding modality-specific endpoints.
+    excluded = ("audio", "image", "realtime", "transcribe", "tts", "search", "embedding")
+    with OpenAI(timeout=5, max_retries=0) as client:
+        return [
+            model.id
+            for model in client.models.list().data
+            if (re.match(r"^(?:gpt-\d|o\d)", model.id) and not any(x in model.id for x in excluded))
+        ]
+
+
+def _anthropic_available() -> list[str]:
+    from anthropic import Anthropic
+
+    with Anthropic(timeout=5, max_retries=0) as client:
+        return [
+            model.id
+            for model in client.models.list(limit=100).data
+            if model.id.startswith("claude-")
+        ]
+
+
+def _google_available() -> list[str]:
+    from google import genai
+    from google.genai import types
+
+    with genai.Client(http_options=types.HttpOptions(timeout=5_000)) as client:
+        return [
+            model.name.removeprefix("models/")
+            for model in client.models.list()
+            if model.name
+            and model.name.startswith("models/gemini-")
+            and "generateContent" in (model.supported_actions or ())
+        ]
 
 
 def is_known_model(model_id: str) -> bool:

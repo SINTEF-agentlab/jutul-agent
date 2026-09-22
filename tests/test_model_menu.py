@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import pytest
 from textual.app import App
 from textual.widgets import Input, OptionList, Static
 
 from jutul_agent.interfaces.tui.model_menu import ApiKeyModal, ModelMenu, OllamaPullModal
 from jutul_agent.ollama_client import PullProgress
+
+
+@pytest.fixture(autouse=True)
+def _offline_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    from jutul_agent import models
+    from jutul_agent.interfaces.tui import model_menu
+
+    monkeypatch.setattr(model_menu, "discover_available_models", models.discover_models)
 
 
 class _Host(App[None]):
@@ -28,6 +37,25 @@ async def test_model_menu_lists_discovered_models() -> None:
         # A discovered id is present; provider headers are non-selectable (id=None).
         assert "anthropic:claude-sonnet-4-6" in ids
         assert None in ids
+
+
+async def test_model_menu_adds_api_listed_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    from jutul_agent import models
+    from jutul_agent.interfaces.tui import model_menu
+
+    def catalog():
+        groups = {name: list(items) for name, items in models.discover_models().items()}
+        groups["openai"].insert(0, models.ModelInfo("openai:gpt-6-luna", "gpt-6-luna"))
+        return groups
+
+    monkeypatch.setattr(model_menu, "discover_available_models", catalog)
+    app = _Host()
+    async with app.run_test() as pilot:
+        app.push_screen(ModelMenu(current=None))
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "openai:gpt-6-luna" in _option_ids(app.screen)
 
 
 async def test_model_menu_shows_recommended_and_cloud_ollama(monkeypatch) -> None:

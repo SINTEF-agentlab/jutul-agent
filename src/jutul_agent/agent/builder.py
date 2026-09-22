@@ -14,6 +14,7 @@ This module wires everything ``create_deep_agent`` needs in one place:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,7 +47,6 @@ from jutul_agent.agent.memory import (
     ensure_memory_dir,
     make_remember_tool,
 )
-from jutul_agent.agent.openai_responses import enable_reasoning_item_grouping
 from jutul_agent.agent.plot_julia import (
     make_close_plots_tool,
     make_plot_julia_tool,
@@ -194,8 +194,15 @@ def _openai_settings(model_id: str) -> dict[str, Any] | None:
     # separates true reasoning models (which accept reasoning.effort) from
     # the -chat hybrids (which reject it).
     profile = model_profile(model_id)
-    if profile.get("reasoning_output") and profile.get("temperature") is False:
-        return {"reasoning": dict(_OPENAI_REASONING)}
+    name = model_id.partition(":")[2]
+    major = re.match(r"^gpt-(\d+)(?:[.-]|$)", name)
+    # Provider profiles lag new model releases. GPT-6+ reasoning models need
+    # the Responses API for function tools, even before their profile ships.
+    newer_reasoning = (
+        not profile and major is not None and int(major[1]) >= 6 and "-chat" not in name
+    )
+    if (profile.get("reasoning_output") and profile.get("temperature") is False) or newer_reasoning:
+        return {"reasoning": dict(_OPENAI_REASONING), "use_responses_api": True}
     return None
 
 
@@ -423,9 +430,6 @@ def build_agent(
     # The file tools run on real paths; on Windows, let deepagents' path validation
     # accept real ``C:\\...`` paths instead of rejecting them as "not virtual".
     enable_windows_real_paths()
-    # Keep every reasoning item langchain-openai replays addressable, so the API
-    # never rejects a turn that emitted two of them (see agent.openai_responses).
-    enable_reasoning_item_grouping()
 
     memory_dir = ensure_memory_dir(session.memory_dir(workspace_memory=workspace_memory_dir()))
     backend = build_backend(

@@ -7,6 +7,7 @@ from jutul_agent.models import (
     OLLAMA_CLOUD,
     PROVIDERS,
     RECOMMENDED_OLLAMA_LOCAL,
+    discover_available_models,
     discover_models,
     is_known_model,
     is_local,
@@ -72,6 +73,38 @@ def test_discovery_groups_real_models_by_provider() -> None:
 
 def test_discovery_includes_the_default_model() -> None:
     assert is_known_model(DEFAULT_MODEL)
+
+
+def test_live_discovery_adds_new_ids_without_replacing_profiles(monkeypatch) -> None:
+    from jutul_agent import models
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.setattr(models, "_openai_available", lambda: ["gpt-6-luna", "gpt-5.4-mini"])
+    monkeypatch.setattr(models, "_anthropic_available", lambda: ["claude-sonnet-5"])
+    monkeypatch.setattr(models, "_google_available", lambda: ["gemini-3.8-flash"])
+
+    catalog = discover_available_models()
+    assert {"openai:gpt-6-luna", "anthropic:claude-sonnet-5", "google_genai:gemini-3.8-flash"} <= {
+        model.id for group in catalog.values() for model in group
+    }
+    assert sum(model.id == "openai:gpt-5.4-mini" for model in catalog["openai"]) == 1
+    assert next(model for model in catalog["openai"] if model.id == "openai:gpt-6-luna").note
+
+
+def test_live_discovery_falls_back_to_profiles_when_provider_fails(monkeypatch) -> None:
+    from jutul_agent import models
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    def fail() -> list[str]:
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr(models, "_openai_available", fail)
+    assert discover_available_models() == discover_models()
 
 
 def test_is_known_model_rejects_free_text() -> None:

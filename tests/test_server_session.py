@@ -88,6 +88,25 @@ def test_models_endpoint(tmp_path: Path) -> None:
     assert body["protocol"] == protocol.PROTOCOL_VERSION
 
 
+def test_live_models_endpoint_uses_provider_catalog(tmp_path: Path, monkeypatch) -> None:
+    from jutul_agent import models
+
+    info = models.ModelInfo("openai:gpt-6-luna", "gpt-6-luna", "API-listed")
+    monkeypatch.setattr(models, "discover_available_models", lambda: {"openai": [info]})
+    with _client(echo_agent, tmp_path) as client:
+        body = client.get("/models/live").json()
+    assert body == {
+        "models": [
+            {
+                "id": "openai:gpt-6-luna",
+                "label": "gpt-6-luna",
+                "provider": "openai",
+                "note": "API-listed",
+            }
+        ]
+    }
+
+
 def test_models_endpoint_reports_the_launch_default_model(tmp_path: Path) -> None:
     # /models reports the server's actual default so the UI seeds the right model: the
     # launch --model when set, else the catalog default. Otherwise the UI would show

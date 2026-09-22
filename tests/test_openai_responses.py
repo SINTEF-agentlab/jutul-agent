@@ -1,19 +1,9 @@
-"""Responses-API reasoning items survive being replayed.
-
-The shim is exercised through the real ``langchain_openai`` request builder:
-what matters is not the intermediate block shape but whether every reasoning
-item a ``function_call`` cites actually reaches the wire. The fixture is the
-failing shape observed live: one response carrying two back-to-back reasoning
-items, the second cited by the tool call that follows.
-"""
+"""Responses-API reasoning items survive being replayed by langchain-openai."""
 
 from __future__ import annotations
 
-import pytest
 from langchain_core.messages import AIMessage
 from langchain_openai.chat_models.base import _construct_responses_api_input
-
-from jutul_agent.agent.openai_responses import enable_reasoning_item_grouping
 
 _FIRST = "rs_first00000000"
 _SECOND = "rs_second0000000"
@@ -54,27 +44,7 @@ def _reasoning_ids(items: list[dict]) -> list[str]:
     return [i["id"] for i in items if i.get("type") == "reasoning"]
 
 
-@pytest.fixture
-def shim() -> None:
-    enable_reasoning_item_grouping()
-
-
-def test_upstream_still_merges_reasoning_across_item_ids() -> None:
-    """The upstream bug, pinned. Asserted against the unwrapped helper, since the
-    shim is a process-global install another test may already have done."""
-    from langchain_openai.chat_models import _compat
-
-    upstream = getattr(_compat._implode_reasoning_blocks, "__wrapped__", None)
-    upstream = upstream or _compat._implode_reasoning_blocks
-    reasoning = [b for b in _turn().content if b["type"] == "reasoning"]
-
-    assert [item["id"] for item in upstream(reasoning)] == [_FIRST], (
-        "langchain-openai no longer merges reasoning blocks across item ids; "
-        "agent/openai_responses.enable_reasoning_item_grouping is obsolete."
-    )
-
-
-def test_every_cited_reasoning_item_reaches_the_wire(shim: None) -> None:
+def test_every_cited_reasoning_item_reaches_the_wire() -> None:
     items = _items(_turn())
     assert _reasoning_ids(items) == [_FIRST, _SECOND]
     # Each item keeps its own replayable payload; the summaries stay split by item.
@@ -86,7 +56,7 @@ def test_every_cited_reasoning_item_reaches_the_wire(shim: None) -> None:
     assert [i.get("type") for i in items] == ["reasoning", "reasoning", "function_call"]
 
 
-def test_parts_of_one_reasoning_item_still_merge(shim: None) -> None:
+def test_parts_of_one_reasoning_item_still_merge() -> None:
     """No regression: same-id blocks are one item with one summary per part."""
     message = AIMessage(
         content=[
@@ -100,9 +70,3 @@ def test_parts_of_one_reasoning_item_still_merge(shim: None) -> None:
     items = _items(message)
     assert _reasoning_ids(items) == [_FIRST]
     assert [b["text"] for b in items[0]["summary"]] == ["a", "b", "c"]
-
-
-def test_installing_the_shim_twice_does_not_stack(shim: None) -> None:
-    enable_reasoning_item_grouping()
-    enable_reasoning_item_grouping()
-    assert _reasoning_ids(_items(_turn())) == [_FIRST, _SECOND]

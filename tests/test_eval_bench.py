@@ -29,6 +29,7 @@ from jutul_agent.eval.scorers import (  # noqa: E402
 from jutul_agent.eval.solver import (  # noqa: E402
     STORE_TRACE_DB,
     STORE_WORKSPACE,
+    _bridge_model,
     _final_text,
 )
 from jutul_agent.simulators import registry  # noqa: E402
@@ -118,6 +119,15 @@ def test_final_text_takes_the_last_assistant_message() -> None:
     ]
     assert _final_text(messages) == "the answer is\n105"
     assert _final_text([HumanMessage(content="only user")]) == ""
+
+
+def test_openai_eval_uses_native_responses_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
+    from jutul_agent.eval import solver
+
+    monkeypatch.setattr(solver, "get_model", lambda: "openai/gpt-6-sol")
+    model = _bridge_model()
+    assert model.model_name == "inspect"
+    assert model.use_responses_api is True
 
 
 def test_runconfig_hashes_the_tunable_inputs() -> None:

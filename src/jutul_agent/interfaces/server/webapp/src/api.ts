@@ -109,6 +109,8 @@ export const api = {
   models: () =>
     getJSON<ModelsResponse>("/models", { default: null, providers: [], models: [] }),
 
+  liveModels: () => getJSON<{ models: ModelInfo[] }>("/models/live", { models: [] }),
+
   credentials: async (): Promise<CredentialInfo[]> => {
     const data = await getJSON<{ path: string; providers: CredentialInfo[] }>("/credentials", {
       path: "",

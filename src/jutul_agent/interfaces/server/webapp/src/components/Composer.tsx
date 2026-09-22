@@ -14,12 +14,12 @@ export function Composer() {
   const pending = useSel((s) => s.pending);
   const models = useSel((s) => s.models);
   const model = useSel((s) => s.model);
-  const addSysNote = useSel((s) => s.addSysNote);
 
   const [value, setValue] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
   const [modelOpen, setModelOpen] = useState(false);
   const [modelIndex, setModelIndex] = useState(0);
+  const [refreshingModels, setRefreshingModels] = useState(false);
 
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -58,8 +58,12 @@ export function Composer() {
 
   // Keep the highlighted model in view as the arrow keys move through the list.
   useEffect(() => {
-    if (modelOpen) activeModelRef.current?.scrollIntoView({ block: "nearest" });
+    if (modelOpen) activeModelRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [modelIndex, modelOpen]);
+
+  useEffect(() => {
+    setModelIndex((i) => Math.min(i, Math.max(0, models.length - 1)));
+  }, [models.length]);
 
   // Dismiss the model picker on an outside click.
   useEffect(() => {
@@ -73,13 +77,19 @@ export function Composer() {
 
   const focus = () => textarea.current?.focus();
 
-  const openModelMenu = () => {
-    if (!models.length) {
-      addSysNote("No selectable models found. Usage: /model <provider:model>.");
-      return;
+  const refreshModels = async () => {
+    setRefreshingModels(true);
+    try {
+      await controller.refreshAvailableModels();
+    } finally {
+      setRefreshingModels(false);
     }
+  };
+
+  const openModelMenu = () => {
     setModelIndex(Math.max(0, models.findIndex((m) => m.id === model)));
     setModelOpen(true);
+    void refreshModels();
     focus();
   };
 
@@ -142,7 +152,7 @@ export function Composer() {
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        return chooseModel(models[modelIndex].id);
+        return chooseModel(models[Math.min(modelIndex, models.length - 1)].id);
       }
       return;
     }
@@ -195,7 +205,13 @@ export function Composer() {
     <footer className="composer-wrap">
       {modelOpen ? (
         <div className="slash-menu model-menu">
-          <div className="slash-head">Switch model</div>
+          <div className="slash-head model-head">
+            <span>Switch model</span>
+            <button type="button" onClick={() => void refreshModels()} disabled={refreshingModels}>
+              {refreshingModels ? "Refreshing…" : "Refresh list"}
+            </button>
+          </div>
+          {!models.length ? <div className="model-provider">No selectable models found.</div> : null}
           {models.map((m, i) => {
             const firstOfProvider = i === 0 || models[i - 1].provider !== m.provider;
             return (
@@ -207,7 +223,7 @@ export function Composer() {
                   onClick={() => chooseModel(m.id)}
                 >
                   <span className="slash-name">{m.label}</span>
-                  <span className="slash-desc">{m.id}</span>
+                  <span className="slash-desc">{m.id}{m.note ? ` · ${m.note}` : ""}</span>
                 </div>
               </div>
             );

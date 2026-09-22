@@ -432,6 +432,19 @@ def create_app(
             "protocol": protocol.PROTOCOL_VERSION,
         }
 
+    @app.get("/models/live")
+    def list_live_models() -> dict[str, Any]:
+        """Refresh the selector from provider APIs without delaying page startup."""
+        from jutul_agent.models import discover_available_models
+
+        return {
+            "models": [
+                {"id": info.id, "label": info.label, "provider": provider, "note": info.note}
+                for provider, infos in discover_available_models().items()
+                for info in infos
+            ]
+        }
+
     @app.get("/models/window")
     def model_window(model: str | None = None) -> dict[str, Any]:
         """The context window for a model (for the % indicator), or null if unknown.

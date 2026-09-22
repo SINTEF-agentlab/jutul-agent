@@ -157,6 +157,7 @@ export class Controller {
       models: models.models || [],
       credentials,
     });
+    void this.refreshAvailableModels();
     this.refreshHistory();
     this.refreshContextWindow();
     this.watchHostContext();
@@ -182,6 +183,11 @@ export class Controller {
 
   async refreshCredentials(): Promise<void> {
     this.s.setCredentials(await api.credentials());
+  }
+
+  async refreshAvailableModels(): Promise<void> {
+    const available = await api.liveModels();
+    if (available.models.length) this.store.setState({ models: available.models });
   }
 
   async refreshContextWindow(): Promise<void> {
@@ -517,6 +523,7 @@ export class Controller {
       return e instanceof Error ? e.message : String(e);
     }
     await this.refreshCredentials();
+    void this.refreshAvailableModels();
     return null;
   }
 
