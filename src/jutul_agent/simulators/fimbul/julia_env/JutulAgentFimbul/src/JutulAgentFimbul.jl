@@ -38,7 +38,9 @@ end
 function _warm_figure(build)
     dir = tempdir()
     GLMakie.activate!(visible = false)
-    fig = build()
+    output = build()
+    # Native plotters may wrap their Makie figure in an output object.
+    fig = hasproperty(output, :fig) ? output.fig : output
     GLMakie.save(joinpath(dir, "jutul_agent_native_warm.png"), fig)
     CairoMakie.activate!()
     CairoMakie.save(joinpath(dir, "jutul_agent_poster_warm.png"), fig)
