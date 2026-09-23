@@ -347,9 +347,9 @@ async def test_launch_defaults_reach_session_host_start(monkeypatch, tmp_path: P
 
     captured: dict[str, Any] = {}
 
-    async def fake_start(**kwargs: Any) -> str:
+    async def fake_start(**kwargs: Any) -> SimpleNamespace:
         captured.update(kwargs)
-        return "host"
+        return SimpleNamespace(session=SimpleNamespace())
 
     monkeypatch.setattr(manager_mod.SessionHost, "start", staticmethod(fake_start))
     monkeypatch.setattr("jutul_agent.simulators.registry.get", lambda name: f"adapter:{name}")
@@ -360,9 +360,10 @@ async def test_launch_defaults_reach_session_host_start(monkeypatch, tmp_path: P
             threads="3",
             add_dirs=(tmp_path / "extra",),
             ephemeral_memory=True,
+            base_path="/restricted",
         )
     )
-    await factory(
+    host = await factory(
         sim="demo",
         model=None,
         approval_mode=None,
@@ -376,6 +377,7 @@ async def test_launch_defaults_reach_session_host_start(monkeypatch, tmp_path: P
     assert captured["add_dirs"] == (tmp_path / "extra",)
     assert captured["julia_project"] == tmp_path / "proj"
     assert captured["prepare_env"] is False
+    assert host.session.base_path == "/restricted"
 
     await make_host_factory()(
         sim="demo",
@@ -906,6 +908,23 @@ def test_artifact_wire_events_replay_falls_back_to_poster() -> None:
         "width": 1600,
         "height": 900,
     }
+
+
+def test_artifact_wire_events_prefixes_base_path() -> None:
+    payloads = [
+        {
+            "path": "artifacts/scene.html",
+            "mime": "text/html",
+            "caption": "interactive",
+            "kind": "plot",
+            "poster": "artifacts/scene.png",
+            "live_url": "/live/sid/viz/scene",
+            "source_code": "lines(1:10)",
+        },
+    ]
+    (event,) = artifact_wire_events(payloads, "sid", base_path="/restricted")
+    assert event["url"] == "/restricted/live/sid/viz/scene"
+    assert event["poster"] == "/restricted/sessions/sid/artifacts/scene.png"
 
 
 def _plot_eval_handler(code: str):

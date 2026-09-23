@@ -3,6 +3,7 @@
 
 import type { HostContext } from "./hostContext";
 import type { ReplayMessage } from "./protocol";
+import { withBase } from "./basePath";
 
 export interface ModelInfo {
   id: string;
@@ -104,36 +105,43 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
 
 export const api = {
   simulators: () =>
-    getJSON<SimulatorsResponse>("/simulators", { simulators: [], default: null, details: {} }),
+    getJSON<SimulatorsResponse>(withBase("/simulators"), {
+      simulators: [],
+      default: null,
+      details: {},
+    }),
 
   models: () =>
-    getJSON<ModelsResponse>("/models", { default: null, providers: [], models: [] }),
+    getJSON<ModelsResponse>(withBase("/models"), { default: null, providers: [], models: [] }),
 
   liveModels: () => getJSON<{ models: ModelInfo[] }>("/models/live", { models: [] }),
 
   credentials: async (): Promise<CredentialInfo[]> => {
-    const data = await getJSON<{ path: string; providers: CredentialInfo[] }>("/credentials", {
-      path: "",
-      providers: [],
-    });
+    const data = await getJSON<{ path: string; providers: CredentialInfo[] }>(
+      withBase("/credentials"),
+      {
+        path: "",
+        providers: [],
+      },
+    );
     return data.providers;
   },
 
   setCredential: (provider: string, value: string) =>
-    postJSON<{ provider: string; env_var: string; path: string }>("/credentials", {
+    postJSON<{ provider: string; env_var: string; path: string }>(withBase("/credentials"), {
       provider,
       value,
     }),
 
   modelWindow: (model: string) =>
     getJSON<{ model: string; window: number | null }>(
-      `/models/window?model=${encodeURIComponent(model)}`,
+      withBase(`/models/window?model=${encodeURIComponent(model)}`),
       { model, window: null },
     ),
 
   history: async (limit = 40): Promise<HistoryEntry[]> => {
     const data = await getJSON<{ sessions: HistoryEntry[] }>(
-      `/sessions/history?limit=${limit}`,
+      withBase(`/sessions/history?limit=${limit}`),
       { sessions: [] },
     );
     return data.sessions;
@@ -141,7 +149,7 @@ export const api = {
 
   messages: async (id: string): Promise<ReplayMessage[]> => {
     const data = await getJSON<{ messages: ReplayMessage[] }>(
-      `/sessions/${id}/messages`,
+      withBase(`/sessions/${id}/messages`),
       { messages: [] },
     );
     return data.messages;
@@ -158,29 +166,33 @@ export const api = {
     model?: string;
     host_context?: HostContext;
     host_api?: string;
-  }) => postJSON<{ session_id: string }>("/sessions", body),
+  }) => postJSON<{ session_id: string }>(withBase("/sessions"), body),
 
   resumeSession: (
     id: string,
     body: { sim?: string; model?: string; host_context?: HostContext; host_api?: string },
-  ) => postJSON<{ session_id: string; kernel_restarted: boolean }>(`/sessions/${id}/resume`, body),
+  ) =>
+    postJSON<{ session_id: string; kernel_restarted: boolean }>(
+      withBase(`/sessions/${id}/resume`),
+      body,
+    ),
 
   deleteSession: (id: string) =>
-    fetch(`/sessions/${id}`, { method: "DELETE" }).catch(() => undefined),
+    fetch(withBase(`/sessions/${id}`), { method: "DELETE" }).catch(() => undefined),
 
   context: (id: string) =>
-    getJSON<{ markdown: string }>(`/sessions/${id}/context`, { markdown: "" }),
+    getJSON<{ markdown: string }>(withBase(`/sessions/${id}/context`), { markdown: "" }),
 
   uploadFile: async (id: string, file: File): Promise<{ path: string }> => {
     const fd = new FormData();
     fd.append("file", file);
-    const resp = await fetch(`/sessions/${id}/upload`, { method: "POST", body: fd });
+    const resp = await fetch(withBase(`/sessions/${id}/upload`), { method: "POST", body: fd });
     if (!resp.ok) throw new Error(await resp.text().catch(() => resp.statusText));
     return (await resp.json()) as { path: string };
   },
 
   transcriptUrl: (id: string, fmt: "html" | "md") =>
-    `/sessions/${id}/transcript?format=${fmt}`,
+    withBase(`/sessions/${id}/transcript?format=${fmt}`),
 
-  memoryUrl: (id: string) => `/sessions/${id}/memory`,
+  memoryUrl: (id: string) => withBase(`/sessions/${id}/memory`),
 };

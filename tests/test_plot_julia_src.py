@@ -58,6 +58,11 @@ def test_web_server_start_sets_a_site_relative_proxy_url() -> None:
     assert 'proxy_url = raw"/live/2026-01-01-0000-abcd/"' in code
 
 
+def test_web_server_start_includes_base_path_in_proxy_url() -> None:
+    code = web_server_start(12345, "2026-01-01-0000-abcd", base_path="/restricted")
+    assert 'proxy_url = raw"/restricted/live/2026-01-01-0000-abcd/"' in code
+
+
 def _live_code() -> str:
     return web_live_call(
         user_code="plot_reservoir(model, states[end])",

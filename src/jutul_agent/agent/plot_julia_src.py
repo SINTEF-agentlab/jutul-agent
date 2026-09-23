@@ -473,7 +473,7 @@ def web_render_call(
 _WRAP_STYLE = "position:fixed; inset:0; margin:0; padding:0; overflow:hidden;"
 
 
-def web_server_start(port: int, session_id: str) -> str:
+def web_server_start(port: int, session_id: str, *, base_path: str = "") -> str:
     """Julia to start the session's Bonito server once (idempotent), returning the
     actual port it is bound to.
 
@@ -490,12 +490,14 @@ def web_server_start(port: int, session_id: str) -> str:
     to connect" embed.
 
     ``proxy_url`` tells Bonito to write every URL it hands the browser (asset
-    links and the widget websocket) as ``/live/<session_id>/...`` instead of an
-    absolute ``127.0.0.1:<port>``, so they resolve through the app server's own
-    ``/live/...`` reverse proxy (see ``interfaces/server/app.py``) rather than a
-    raw port the browser may have no route to (an SSH/VS Code/Docker port
-    forward that only knows about the app's own port). This is the same
+    links and the widget websocket) as ``{base_path}/live/<session_id>/...``
+    instead of an absolute ``127.0.0.1:<port>``, so they resolve through the app
+    server's own ``/live/...`` reverse proxy (see ``interfaces/server/app.py``)
+    rather than a raw port the browser may have no route to (an SSH/VS Code/Docker
+    port forward that only knows about the app's own port). This is the same
     site-relative-prefix mechanism Bonito already uses for JupyterHub/Binder.
+    ``base_path`` is the public prefix (e.g. ``/restricted``) when an SSO wrapper
+    reverse-proxies the UI; empty means the server is at ``/``.
     """
 
     # ``global`` (not ``Main.X = ``) so the assignment defines the Main global even
@@ -506,12 +508,14 @@ def web_server_start(port: int, session_id: str) -> str:
     # Python releasing it and Julia binding), Bonito's `start` silently retries on
     # port+1, port+2, ... and updates `.port` to whatever it actually bound;
     # echoing the request instead would advertise a dead port nothing listens on.
+    prefix = (base_path or "").rstrip("/")
+    proxy = f"{prefix}/live/{session_id}/"
     return (
         "begin\n"
         "    import WGLMakie, Bonito\n"
         "    if !isdefined(Main, :__JUTUL_WEB_SERVER__)\n"
         f'        global __JUTUL_WEB_SERVER__ = Bonito.Server("127.0.0.1", {int(port)};\n'
-        f'            proxy_url = raw"/live/{session_id}/")\n'
+        f'            proxy_url = raw"{proxy}")\n'
         "        global __JUTUL_WEB_FIGS__ = Dict{String,Any}()\n"
         # Routes in least-to-most recently served order. A recapture with no slot
         # has to name a figure, and the dict above is unordered, so recency is
