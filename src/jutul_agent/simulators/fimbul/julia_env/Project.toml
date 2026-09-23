@@ -24,12 +24,10 @@ Bonito = "824d6782-a2ef-11e9-3a09-e5662e0c26f8"
 WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 JutulDarcy = "82210473-ab04-4dce-b31b-11573c4f8e0a"
 
-# Floor at the releases validated by the simulator smoke checks, so a stale env
-# cannot drift behind them (it fails to resolve and prompts a rebuild).
+# Minimum simulator release supported by the bundled skills. Fimbul resolves
+# the compatible JutulDarcy and Jutul versions through its own dependencies.
 [compat]
 Fimbul = "0.3.5"
-Jutul = "0.4.31"
-JutulDarcy = "0.3.11"
 
 # Both deps are jutul-agent's in-env Julia runtime, declared as relative `[sources]`
 # paths so they survive the copy into a workspace. JutulAgent is the shared,
