@@ -1,10 +1,7 @@
 name: Simulators
 
-# Per-simulator smoke tests against a live Julia env. Separate from the main CI
-# lane because instantiating simulator libraries is a multi-minute precompile.
-# Since the envs ship no committed Manifest and carry no version pins, every run
-# resolves the latest compatible upstream, so a green run here means jutul-agent
-# still works against current version of simulators.
+# Live Julia checks on every PR and push, always resolving the latest compatible
+# packages. Reuse compiled depots when the resolved dependencies and source match.
 on:
   # On PRs and pushes to main: did my change break a simulator?
   pull_request:
@@ -16,6 +13,23 @@ on:
   workflow_dispatch:
 
 jobs:
+  julia-kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+      # Base Julia only: no simulator depot to cache or precompile.
+      - name: Test JuliaKernel backend
+        run: uv run pytest tests/test_juliakernel.py -v
+
   smoke:
     name: ${{ matrix.simulator }}
     strategy:
@@ -25,6 +39,10 @@ jobs:
       matrix:
         simulator: [jutuldarcy, battmo, fimbul, mocca]
     runs-on: ubuntu-latest
+    env:
+      # GitHub-hosted runners can have different CPUs. A portable package-image
+      # target lets later runners reuse the compiled depot instead of rebuilding it.
+      JULIA_CPU_TARGET: generic
     steps:
       - uses: actions/checkout@v4
 
@@ -38,26 +56,32 @@ jobs:
         run: uv sync --locked
 
       - name: Set up Julia
+        id: julia
         uses: julia-actions/setup-julia@v2
         with:
           version: "1.12"
 
-      # Matrix-aware by default: each simulator gets its own depot cache, so a
-      # change to one env doesn't invalidate the others.
-      - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
+      # Restore the most recently prepared depot for this Julia version and
+      # simulator. Manifests are not cached: every run resolves current upstream.
+      - name: Restore Julia depot
+        id: depot
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.julia
+          key: julia-depot-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.julia.outputs.julia-version }}-${{ matrix.simulator }}-
 
       # The envs include GLMakie, which needs an OpenGL context even to
       # precompile; the runner is headless, so provide a virtual X server plus
-      # Mesa software GL (same recipe as the plot-integration lane).
+      # Mesa software GL for both warm packages and the JutulDarcy plot tests.
       - name: Install headless OpenGL (xvfb + Mesa)
         run: sudo apt-get update && sudo apt-get install -y xvfb xorg-dev mesa-utils libgl1 libgl1-mesa-dri
 
       # Sync the shared JutulAgent package into the template (it lives once in
       # julia_runtime/ and is copied in at bootstrap; an in-place instantiate must
       # do the same so the env's relative [sources] resolves). Then refresh the
-      # registry so a fresh resolve sees the latest releases and instantiate from
-      # Project + [sources]. Precompilation is split out as an explicit
+      # registry so every resolve sees the latest releases and instantiate
+      # from Project + [sources].
+      # Precompilation is split out as an explicit
       # Pkg.precompile(), which throws when a direct dependency fails — a bare
       # Pkg.instantiate() only auto-precompiles best-effort and exits 0 even if
       # GLMakie and the warm packages all failed, turning the lane green on a
@@ -74,8 +98,31 @@ jobs:
           withenv("JULIA_PKG_PRECOMPILE_AUTO" => "0") do; Pkg.instantiate(); end;
           Pkg.precompile()'
 
+      - name: Identify the compiled environment
+        id: resolved
+        env:
+          CACHE_KEY: ${{ steps.depot.outputs.cache-primary-key }}${{ hashFiles(format('src/jutul_agent/simulators/{0}/julia_env/**', matrix.simulator), 'src/jutul_agent/julia_runtime/**') }}
+        run: echo "key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+
+      # A Python/docs change resolves the same environment and saves nothing.
+      # New dependencies or Julia source produce one new archive, shared from
+      # main by subsequent PRs. Save before tests so a test failure does not
+      # discard a successfully compiled environment.
+      - name: Save Julia depot
+        if: steps.depot.outputs.cache-matched-key != steps.resolved.outputs.key
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.julia
+          key: ${{ steps.resolved.outputs.key }}
+
       - name: Smoke test (env loads + using ${{ matrix.simulator }})
         run: uv run pytest tests/test_simulators_smoke.py -k ${{ matrix.simulator }} -ra
+
+      # Reuse the same JutulDarcy installation and precompile cache for real
+      # GLMakie capture/view and native plotter coverage.
+      - name: Test plot integration
+        if: matrix.simulator == 'jutuldarcy'
+        run: uv run pytest tests/integration/test_julia_plot_integration.py -v
 
   # One real system image, end to end. Weekly and on demand only: the build is
   # over an hour of runner time, and what it guards against is upstream drift
