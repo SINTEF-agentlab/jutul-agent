@@ -196,6 +196,15 @@ _FIGURE_SHAPES = {
     "returns_figureaxisplot": "lines(1:3)",
     "returns_tuple": "fig = Figure(); ax = Axis(fig[1, 1]); (fig, ax, lines!(ax, 1:3))",
     "draws_then_nothing": "fig = Figure(); lines!(Axis(fig[1, 1]), 1:3); display(fig); nothing",
+    # A plotter that returns its figure inside a wrapper, the shape JutulDarcy's
+    # plot_reservoir has (Jutul's PlotExplorerOutput), mimicked with a NamedTuple so
+    # the case needs no simulator package. It leaves an *empty* figure current, so
+    # resolving it by the current_figure fallback instead of by the `fig` field
+    # captures nothing and the tool errors -- the wrapper has to be unwrapped.
+    "returns_wrapper": (
+        "f = Figure(); lines!(Axis(f[1, 1]), 1:3); current_figure!(Figure()); "
+        "(fig = f, lscene = nothing)"
+    ),
 }
 
 
