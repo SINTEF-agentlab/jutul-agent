@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "deepagents>=0.7.0",
+    "deepagents>=0.7.18",
     "python-dotenv>=1.0",
     # Provider packages we bundle so the selected models work out of the box
     # (langchain-anthropic arrives via deepagents). ollama covers local models;
@@ -121,7 +121,7 @@ cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true 
 # reproducible result for the loose ranges above (CI installs it with
 # `uv sync --locked`). To move forward: bump the date, run `uv lock`, run the
 # tests, and commit the updated lock.
-exclude-newer = "2026-09-05T00:00:00Z"
+exclude-newer = "2026-09-23T18:00:00Z"
 
 [tool.ruff]
 line-length = 100

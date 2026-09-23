@@ -214,7 +214,20 @@ def test_resolve_model_for_agent_enables_gemini_thoughts(
     model = _resolve_model_for_agent("google_genai:gemini-3.5-flash")
     assert isinstance(model, BaseChatModel)
     assert getattr(model, "include_thoughts", None) is True
-    # Legacy models the data marks non-reasoning are built without thoughts.
+    # Legacy model profiles can disappear as provider data is refreshed. Pin
+    # this branch with a supplied non-reasoning profile instead of a model ID.
+    from jutul_agent.agent import builder
+
+    actual_profile = builder.model_profile
+    monkeypatch.setattr(
+        builder,
+        "model_profile",
+        lambda model_id: (
+            {"reasoning_output": False}
+            if model_id == "google_genai:gemini-2.0-flash"
+            else actual_profile(model_id)
+        ),
+    )
     legacy = _resolve_model_for_agent("google_genai:gemini-2.0-flash")
     assert isinstance(legacy, BaseChatModel)
     assert getattr(legacy, "include_thoughts", None) is not True
