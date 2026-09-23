@@ -100,3 +100,7 @@ Just call them — no backend juggling. In an interactive session a live window
 opens for the user by default (`window=false` to suppress); pass `view=true` to
 inspect a plot yourself. For a custom 2D view, build inline against the live
 result object (probe `keys` / `propertynames` first).
+
+JutulDarcy's `plot_reservoir` defaults to its fancy 3D viewer and converted
+display units; use `fancy=false` or `convert_units=false` when a fixed-axis view
+or unconverted values are needed.

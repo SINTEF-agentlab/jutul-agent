@@ -19,10 +19,12 @@ Mocca = "eb14e3ba-90c8-11ed-0ecf-1dd2ea0d109c"
 Bonito = "824d6782-a2ef-11e9-3a09-e5662e0c26f8"
 WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
-# Floor at the release the skills are written against, so a stale env can't drift
-# behind them (it fails to resolve and the drift check prompts a rebuild). Bump it
-# when the skills are updated for a newer Mocca.
+# Floor at the releases validated by the simulator smoke checks, so a stale env
+# cannot drift behind them (it fails to resolve and prompts a rebuild).
+# Mocca 0.1.0 requires CairoMakie 0.14, which cannot resolve with Jutul
+# 0.4.30+ and its newer Makie.
 [compat]
+Jutul = "0.4.29"
 Mocca = "0.1.0"
 
 # Both deps are jutul-agent's in-env Julia runtime, declared as relative `[sources]`

@@ -357,6 +357,18 @@ async def test_launch_defaults_reach_session_host_start(monkeypatch, tmp_path: P
     assert captured["ephemeral_memory"] is True
     assert captured["add_dirs"] == (tmp_path / "extra",)
     assert captured["julia_project"] == tmp_path / "proj"
+    assert captured["prepare_env"] is False
+
+    await make_host_factory()(
+        sim="demo",
+        model=None,
+        approval_mode=None,
+        workspace=None,
+        resume=False,
+        session_id=None,
+        extensions=(),
+    )
+    assert captured["prepare_env"] is True
 
 
 async def test_start_wires_surface_and_capability_dependencies(monkeypatch, tmp_path: Path) -> None:

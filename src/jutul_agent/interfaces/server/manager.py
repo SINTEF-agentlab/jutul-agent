@@ -111,6 +111,7 @@ def make_host_factory(defaults: SessionLaunchDefaults | None = None) -> HostFact
             session_id=session_id,
             extensions=extensions,
             julia_project=launch.julia_project,
+            prepare_env=launch.julia_project is None,
             threads=launch.threads,
             add_dirs=launch.add_dirs,
             ephemeral_memory=launch.ephemeral_memory,
