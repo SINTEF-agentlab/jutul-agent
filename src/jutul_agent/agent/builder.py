@@ -32,7 +32,7 @@ from langchain.agents.middleware import TodoListMiddleware
 
 from jutul_agent.agent.added_dirs import add_dir
 from jutul_agent.agent.approval import ApprovalMode, interrupt_on_for_mode, parse_approval_mode
-from jutul_agent.agent.backend import RecursiveGrepBackend, WorkspaceShellBackend
+from jutul_agent.agent.backend import WorkspaceCompositeBackend, WorkspaceShellBackend
 from jutul_agent.agent.capabilities import (
     Capability,
     collect_prompt_fragments,
@@ -365,7 +365,7 @@ def build_backend(
     """
 
     ws = workspace or workspace_root()
-    backend = RecursiveGrepBackend(
+    backend = WorkspaceCompositeBackend(
         default=WorkspaceShellBackend(
             root_dir=ws,
             virtual_mode=False,

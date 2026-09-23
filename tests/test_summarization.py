@@ -32,7 +32,7 @@ async def test_compact_thread_round_trip(tmp_path: Path) -> None:
     session = Session.create(julia=FakeJulia(), state_root=tmp_path, simulator=adapter)
     # Substantial replies so the summary is meaningfully smaller than the turns
     # it replaces (a few words would summarize to something larger).
-    finals = [scripted_final(f"answer {i}: " + "detail " * 80) for i in range(6)]
+    finals = [scripted_final(f"answer {i}: " + "detail " * 80) for i in range(8)]
     ckpt = session.state_dir / "checkpoints.sqlite"
     async with AsyncSqliteSaver.from_conn_string(str(ckpt)) as saver:
         agent, backend = build_agent(session, model=make_scripted_model(finals), checkpointer=saver)
@@ -59,13 +59,31 @@ async def test_compact_thread_round_trip(tmp_path: Path) -> None:
         assert len(state.values["messages"]) == 12
         # ...and the compaction is recorded as an event the next turn applies.
         assert state.values["_summarization_event"]["cutoff_index"] == 4
+        history_id = state.values["_summarization_session_id"]
+        assert history_id
+
+        for i in range(6, 8):
+            await runner.run_prompt(f"question {i}")
+        again = await compact_thread(
+            agent,
+            thread_id=session.session_id,
+            model=make_scripted_model([scripted_final("SUMMARY of more work")]),
+            backend=backend,
+            trace=session.trace,
+        )
+        assert again is not None and again.offloaded
+        state = await agent.aget_state({"configurable": {"thread_id": session.session_id}})
+        assert state.values["_summarization_session_id"] == history_id
+        assert state.values["_summarization_event"]["cutoff_index"] == 8
 
     # The offloaded turns were written somewhere recoverable under the session.
     offloaded = list((session.state_dir / "conversation_history").glob("*.md"))
-    assert offloaded and any("question" in p.read_text(encoding="utf-8") for p in offloaded)
+    assert len(offloaded) == 1
+    history = offloaded[0].read_text(encoding="utf-8")
+    assert "question 0" in history and "question 2" in history
 
     events = [e for e in session.trace.iter_events() if e.kind == "context_compaction"]
-    assert len(events) == 1 and events[0].payload.get("manual") is True
+    assert sum(e.payload.get("manual") is True for e in events) == 2
     session.finalize()
 
 

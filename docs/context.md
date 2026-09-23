@@ -64,12 +64,13 @@ fire only when the cheaper ones are not enough:
   ~85% of the window, the older turns are replaced by a structured summary
   (session intent, key decisions, artifacts, next steps) while the newest turns
   stay verbatim. The summarized turns are offloaded to
-  `conversation_history/<thread>.md` first, so they remain recoverable, and the
-  summary embeds that path. This is deepagents' stock backend-recoverable
-  `SummarizationMiddleware`, installed by `create_deep_agent`, sized from the
-  model profile (which `builder._set_profile_window` points at the real loaded
-  window), and non-mutating; `TraceRecorder` records each compaction. We lean on
-  the stock middleware so upstream improvements arrive without porting.
+  `conversation_history/<internal-session-id>.md` first, so they remain
+  recoverable, and the summary embeds that path. This is deepagents' stock
+  backend-recoverable `SummarizationMiddleware`, installed by
+  `create_deep_agent`, sized from the model profile (which
+  `builder._set_profile_window` points at the real loaded window), and
+  non-mutating; `TraceRecorder` records each compaction. We lean on the stock
+  middleware so upstream improvements arrive without porting.
 
 `/context` shows measured usage by category (the last call's `usage_metadata`
 is exactly what the conversation costs to send) plus both the clearing and the

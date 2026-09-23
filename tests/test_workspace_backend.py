@@ -107,20 +107,10 @@ def test_depot_readonly_roots_guard_the_packages_dir(tmp_path: Path) -> None:
     assert _depot_readonly_roots(None) == ()
 
 
-def test_recursive_glob_normalizes_bare_extension() -> None:
-    from jutul_agent.agent.backend import _recursive_glob
-
-    assert _recursive_glob("*.jl") == "**/*.jl"
-    assert _recursive_glob("foo.jl") == "**/foo.jl"
-    assert _recursive_glob("**/*.jl") == "**/*.jl"  # already recursive
-    assert _recursive_glob("src/*.jl") == "src/*.jl"  # carries a path, left alone
-    assert _recursive_glob(None) is None
-
-
 def test_grep_with_extension_filter_recurses_into_subdirs(tmp_path: Path, source_dir: Path) -> None:
     # A type-filtered grep (glob="*.jl") must find matches in subdirectories. The
-    # deepagents default treats a bare glob as non-recursive, which silently hid
-    # package-extension code (e.g. plot_variable_graph in Jutul's src/ext/).
+    # upstream backend now handles bare globs recursively; this guards package
+    # extension code (e.g. plot_variable_graph in Jutul's src/ext/).
     deep = source_dir / "src" / "ext" / "graphmakie_ext.jl"
     deep.parent.mkdir(parents=True)
     deep.write_text("function plot_variable_graph(x) end\n", encoding="utf-8")
@@ -132,11 +122,7 @@ def test_grep_with_extension_filter_recurses_into_subdirs(tmp_path: Path, source
 
 
 def test_grep_forwards_search_options_to_the_composite(tmp_path: Path) -> None:
-    # Our grep override exists only to normalize `glob`, so it must pass the
-    # framework's other search arguments straight through. deepagents inspects
-    # the signature and silently degrades to trimming a fully materialized
-    # result when one is missing, so a narrowed override is invisible until a
-    # search on a big tree is unexpectedly slow.
+    # The upstream composite should cap searches without materializing all matches.
     for index in range(3):
         (tmp_path / f"a{index}.jl").write_text("using Jutul\n", encoding="utf-8")
 

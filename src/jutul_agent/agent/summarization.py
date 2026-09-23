@@ -15,7 +15,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from deepagents.middleware.summarization import SummarizationEvent, SummarizationMiddleware
+from deepagents.middleware.summarization import (
+    SUMMARIZATION_SESSION_ID_KEY,
+    SummarizationEvent,
+    SummarizationMiddleware,
+)
 from langchain_core.messages.utils import count_tokens_approximately
 
 from jutul_agent.trace import TraceLog
@@ -46,6 +50,7 @@ _ENGINE_METHODS: tuple[str, ...] = (
     "_aoffload_to_backend",
     "_build_new_messages_with_path",
     "_compute_state_cutoff",
+    "_get_session_id",
 )
 
 
@@ -118,7 +123,11 @@ async def compact_thread(
 
     to_summarize, to_keep = middleware._partition_messages(effective, cutoff)
     summary = await middleware._acreate_summary(to_summarize)
-    file_path = await middleware._aoffload_to_backend(backend, to_summarize)
+    # Upstream now scopes history files to an internal ID stored in agent state.
+    # Reuse it across manual and automatic compactions so each session appends to
+    # one history file without mixing histories from separate subagents.
+    history_session_id = middleware._get_session_id(values)
+    file_path = await middleware._aoffload_to_backend(backend, to_summarize, history_session_id)
     summary_msg = middleware._build_new_messages_with_path(summary, file_path)[0]
     state_cutoff = middleware._compute_state_cutoff(prior_event, cutoff)
     new_event: SummarizationEvent = {
@@ -126,7 +135,10 @@ async def compact_thread(
         "summary_message": summary_msg,
         "file_path": file_path,
     }
-    await aupdate_state(config, {"_summarization_event": new_event})
+    await aupdate_state(
+        config,
+        {"_summarization_event": new_event, SUMMARIZATION_SESSION_ID_KEY: history_session_id},
+    )
 
     freed = max(
         0,

@@ -3,8 +3,8 @@
 ``WorkspaceShellBackend`` is the real-path default: it reads and writes the real
 filesystem from the workspace, refuses writes into read-only roots (installed
 package source in the shared Julia depot), and blocks shell ``julia``.
-``RecursiveGrepBackend`` is the top-level composite, fixing a grep glob that
-otherwise silently skips subdirectories.
+``WorkspaceCompositeBackend`` is the top-level composite, handling Windows
+drive-absolute glob patterns.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from deepagents.backends.protocol import (
     EditResult,
     ExecuteResponse,
     GlobResult,
-    GrepResult,
     WriteResult,
 )
 
@@ -60,50 +59,12 @@ _READ_ONLY_MSG = (
 )
 
 
-def _recursive_glob(glob: str | None) -> str | None:
-    """Make a slash-free grep filter recursive.
-
-    deepagents matches a bare ``*.jl`` glob only against files directly in the
-    searched directory, so a type-filtered grep silently skips subdirectories
-    (e.g. a package's ``src/ext/``, where Julia keeps extension code). ripgrep and
-    the agent's expectation treat it as recursive, so rewrite ``*.jl`` to
-    ``**/*.jl``. Patterns that already carry a path (``src/*.jl``, ``**/*.jl``)
-    are left alone.
-    """
-
-    if glob and "/" not in glob:
-        return f"**/{glob}"
-    return glob
-
-
-class RecursiveGrepBackend(CompositeBackend):
-    """Top-level composite whose grep recurses on a bare ``*.ext`` filter.
-
-    See :func:`_recursive_glob`. Normalizing here, in the one backend the grep
-    tool calls, fixes every route the composite forwards to, since it passes the
-    same glob down to whichever sub-backend resolves the path.
-
-    It also rewrites a Windows drive-absolute ``glob`` pattern into a relative
+class WorkspaceCompositeBackend(CompositeBackend):
+    """Top-level composite that rewrites a Windows drive-absolute glob into a relative
     pattern plus a base path (see :func:`split_windows_glob`): ``pathlib``'s
     ``rglob`` rejects absolute patterns, so the absolute ``glob`` form the skills
     use silently matches nothing on Windows otherwise. A no-op off Windows.
-
-    The grep overrides forward ``**kwargs`` because only ``glob`` needs
-    normalizing: the middleware probes the signature for the search options it
-    supports (a match cap, say) and silently falls back to trimming the full
-    result set when an override doesn't accept them, so a fixed signature would
-    quietly disable bounded search on every new option the framework adds.
     """
-
-    def grep(
-        self, pattern: str, path: str | None = None, glob: str | None = None, **kwargs
-    ) -> GrepResult:
-        return super().grep(pattern, path=path, glob=_recursive_glob(glob), **kwargs)
-
-    async def agrep(
-        self, pattern: str, path: str | None = None, glob: str | None = None, **kwargs
-    ) -> GrepResult:
-        return await super().agrep(pattern, path=path, glob=_recursive_glob(glob), **kwargs)
 
     def glob(self, pattern: str, path: str | None = None) -> GlobResult:
         pattern, path = split_windows_glob(pattern, path)
