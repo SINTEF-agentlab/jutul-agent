@@ -13,7 +13,9 @@ uv run pre-commit install
 ```
 
 `uv sync` creates `.venv/` from `pyproject.toml` + `uv.lock`. Re-run it
-when those change. The `eval` extra adds Inspect AI for the bench.
+when dependencies change. The `eval` extra adds Inspect AI for the bench.
+`uv run` also refreshes the checkout's installed version when its Git commit or
+tags change; fetching a new release tag does not require a manual reinstall.
 
 ## Repository layout
 
@@ -108,7 +110,8 @@ pilot pass.
 
 The package version is derived from git tags by hatch-vcs, so a release is a
 tag rather than a manual version bump. A tag `vX.Y.Z` builds as version
-`X.Y.Z`; commits past the latest tag build as a `.devN` pre-release. The
+`X.Y.Z`; commits past it build as the next patch's `.devN` pre-release
+(for example, two commits after `v0.2.0` build as `0.2.1.dev2+g<hash>`). The
 runtime reads the version back through `importlib.metadata`
 (`jutul_agent.__version__`), and the update checker compares it against the
 latest release published on PyPI.
