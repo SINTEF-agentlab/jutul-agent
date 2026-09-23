@@ -82,14 +82,15 @@ calls never run under pytest. They are bench runs
 
 ## What CI runs
 
-- `ci.yml`: lint, the unit suite on Linux/macOS/Windows, the kernel
-  integration job, and the plot job (instantiates the JutulDarcy env under
-  xvfb, renders a real GLMakie figure).
-- `simulators.yml`: per-simulator env instantiate + smoke, on PRs and
-  weekly. The weekly schedule is the upstream-breakage canary, since envs
-  carry no version pins. Both instantiate steps use an explicit
-  `Pkg.precompile()` because best-effort auto-precompile exits 0 on
-  failure (see [development](development.md)).
+- `ci.yml`: lint and the full non-integration suite with two pytest workers
+  on Linux/macOS/Windows, on every PR and push to main; no Julia installation.
+- `simulators.yml`: live JuliaKernel, all four simulator smoke jobs, and
+  JutulDarcy plot tests on every PR and push. Weekly and manual runs repeat
+  them against current upstream releases, since the simulator envs carry no
+  version pins. JutulDarcy smoke and plot tests share one env setup and
+  precompile. The instantiate step uses explicit `Pkg.precompile()` because
+  best-effort auto-precompile can exit 0 on failure (see
+  [development](development.md)).
 
 ## Conventions for new tests
 

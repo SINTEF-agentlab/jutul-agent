@@ -43,12 +43,13 @@ ecosystem, built on Deep Agents.
 GitHub Actions workflows:
 
 - `ci.yml`: every push/PR. `lint` (ruff); `test` across Linux/Windows/macOS
-  (`pytest -m "not integration"`, no Julia); `julia-integration` (Linux only:
-  runs `test_juliakernel.py` against base Julia, which needs no env).
-- `simulators.yml`: per-simulator smoke matrix (`jutuldarcy`, `battmo`,
-  `fimbul`, `mocca`; Linux). On PR + push to `main`, a weekly Monday run
-  (catches upstream breakage), and manual dispatch. Each job instantiates the
-  env from `Project.toml` and runs `test_simulators_smoke.py`.
+  (`pytest -m "not integration" -n 2 --dist loadfile`, no Julia).
+- `simulators.yml`: runs JuliaKernel and all four simulator integration jobs
+  on every PR and push to `main`, plus weekly Monday and manual runs. The
+  JutulDarcy smoke job also runs real plot tests. Each smoke job instantiates
+  its env from current upstream, precompiles, and runs `test_simulators_smoke.py`.
+  Depots are cached by Julia version, simulator, resolved dependencies, and Julia
+  source; no Manifests are cached or committed for CI.
 - `deps-canary.yml`: weekly and manual only. Resolves the newest stack,
   ignoring the pin, and reports to the run summary without ever marking a
   commit red. It is the early warning for when the pin can move.

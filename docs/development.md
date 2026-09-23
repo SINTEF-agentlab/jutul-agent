@@ -54,22 +54,36 @@ is its own page: [testing](testing.md).
 
 ## CI
 
-Two workflows:
+Two test workflows:
 
-- `ci.yml`, on every PR: lint (ruff check + format), the unit suite on
-  Linux/macOS/Windows, a Julia kernel integration job, and a plot
-  integration job that instantiates the JutulDarcy env under xvfb and
-  renders a real GLMakie figure.
-- `simulators.yml`, on PRs and weekly: one job per simulator that
-  instantiates its env template against the latest compatible upstream
-  releases and smoke-tests that the package and the warm package load. The
-  weekly run is the canary for upstream breakage above the envs' validated
-  compatibility floors.
+- `ci.yml`, on every PR and push to main: lint (ruff check + format) and
+  the full non-integration suite on Linux/macOS/Windows. Two pytest workers
+  run test files in parallel; the workflow installs no Julia.
+- `simulators.yml`: runs the live JuliaKernel and all four simulator jobs
+  on every PR and push. The JutulDarcy job also runs GLMakie plot integration
+  tests, sharing its setup and precompile. Weekly and manually dispatched
+  runs check the same environments against the latest compatible upstream
+  releases. Every run resolves from `Project.toml` and `[sources]`, just like
+  a new user workspace; no CI lockfiles are maintained or cached.
 
-Both instantiate steps run an explicit `Pkg.precompile()`, which throws if
+Each simulator job runs an explicit `Pkg.precompile()`, which throws if
 a direct dependency fails to precompile. A bare `Pkg.instantiate()` only
 auto-precompiles best-effort and exits 0, which can leave a lane green
 while every env on the runner is broken.
+
+Simulator jobs restore the latest Julia depot for their simulator, OS,
+architecture, and exact Julia version, then instantiate and precompile normally.
+`JULIA_CPU_TARGET=generic` makes compiled package images portable across runner
+CPUs. After successful precompilation, the depot is saved under a key that hashes the
+resolved Manifest and bundled Julia source. If that key was restored, nothing is
+uploaded. Ordinary Python/docs changes therefore reuse the same archive; a new
+upstream dependency or changed Julia source saves a new one. Main's caches are
+available to PRs through GitHub's normal cache scoping.
+
+The cache contains installed packages and compiled code, not the env's Manifest.
+An upstream release can still trigger expensive precompilation, and an evicted
+cache needs rebuilding. This preserves testing against current upstream without
+lockfile updates, cache-specific dependency policies, or a cleanup workflow.
 
 ## The bench in the dev loop
 

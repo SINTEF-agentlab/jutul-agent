@@ -134,9 +134,10 @@ runtime with only a warning.
 
 ## 5. CI
 
-Add the simulator to the `simulators.yml` matrix. It instantiates the env
-template and runs the simulator's integration smoke on PRs and weekly, which
-catches upstream releases that break the template.
+Add the simulator to the matrix in `.github/workflows/simulators.yml`.
+Its env template and integration smoke then run on every PR and push, plus
+the weekly and manual full runs. The weekly run catches upstream releases
+that break the template.
 
 ## Trying it
 
