@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import errno
+import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -56,6 +60,100 @@ def test_prepare_workspace_env_serializes_same_workspace(
         for future in futures:
             future.result()
     assert peak == 1
+
+
+def test_bootstrap_and_prepare_share_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    active = 0
+    peak = 0
+    guard = threading.Lock()
+
+    def work(*_args, **_kwargs) -> None:
+        nonlocal active, peak
+        with guard:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.05)
+        with guard:
+            active -= 1
+
+    monkeypatch.setattr(env_setup, "_bootstrap_workspace_unlocked", work)
+    monkeypatch.setattr(env_setup, "_prepare_workspace_env_unlocked", work)
+    workspace = tmp_path / "ws"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(env_setup.bootstrap_workspace, _adapter(tmp_path), workspace=workspace),
+            pool.submit(
+                env_setup.prepare_workspace_env,
+                _adapter(tmp_path),
+                workspace=workspace,
+                julia_project=workspace,
+            ),
+        ]
+        for future in futures:
+            future.result()
+    assert peak == 1
+
+
+def test_workspace_env_lock_serializes_processes(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    ready = tmp_path / "ready"
+    acquired = tmp_path / "acquired"
+    script = (
+        "from pathlib import Path\n"
+        "import sys\n"
+        "from jutul_agent.simulators.env_setup import _workspace_env_lock\n"
+        "Path(sys.argv[2]).touch()\n"
+        "with _workspace_env_lock(Path(sys.argv[1])):\n"
+        "    Path(sys.argv[3]).touch()\n"
+    )
+    process = None
+    try:
+        with env_setup._workspace_env_lock(workspace):
+            process = subprocess.Popen(
+                [sys.executable, "-c", script, str(workspace), str(ready), str(acquired)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            deadline = time.monotonic() + 10
+            while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert ready.exists(), "child failed before attempting the lock"
+            time.sleep(0.2)
+            assert process.poll() is None
+            assert not acquired.exists()
+        _, stderr = process.communicate(timeout=10)
+        assert process.returncode == 0, stderr.decode(errors="replace")
+        assert acquired.exists()
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+
+
+@pytest.mark.parametrize("error", [errno.EACCES, errno.EAGAIN, errno.EBADF])
+def test_windows_lock_retries_only_contention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: int
+) -> None:
+    calls: list[int] = []
+
+    def locking(_fd: int, mode: int, _length: int) -> None:
+        calls.append(mode)
+        if mode == 1 and len(calls) == 1:
+            raise OSError(error, "lock failed")
+
+    monkeypatch.setattr(env_setup, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setitem(
+        sys.modules, "msvcrt", SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2, locking=locking)
+    )
+    if error != errno.EACCES:
+        with pytest.raises(OSError, match="lock failed"), env_setup._workspace_env_lock(tmp_path):
+            pass
+        assert calls == [1]
+    else:
+        with env_setup._workspace_env_lock(tmp_path):
+            pass
+        assert calls == [1, 1, 2]
+    assert (tmp_path / ".jutul-agent" / "env-prepare.lock").read_bytes() == b""
 
 
 def _make_template(tmp_path: Path) -> Path:

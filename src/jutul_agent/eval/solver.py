@@ -150,6 +150,7 @@ def _golden_env(adapter: Any, simulator: str) -> Path:
     """
     from jutul_agent.paths import state_home
     from jutul_agent.simulators.env_setup import (
+        _workspace_env_lock,
         bootstrap_workspace,
         prepare_workspace_env,
         update_env,
@@ -161,7 +162,8 @@ def _golden_env(adapter: Any, simulator: str) -> Path:
         golden.mkdir(parents=True, exist_ok=True)
         bootstrap_workspace(adapter, workspace=golden, precompile=True)
     elif simulator not in _ALIGNED_ENVS:
-        update_env(env)
+        with _workspace_env_lock(golden):
+            update_env(env)
     if simulator not in _ALIGNED_ENVS:
         prepare_workspace_env(adapter, workspace=golden, julia_project=env, sim_name=simulator)
     _ALIGNED_ENVS.add(simulator)
