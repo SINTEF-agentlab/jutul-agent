@@ -204,6 +204,8 @@ def test_eval_cli_lists_suites_and_rejects_unknown(capsys) -> None:
 def test_golden_env_realigns_a_cached_env_once_per_run(tmp_path: Path, monkeypatch) -> None:
     """A cached env is re-resolved on first use; a fresh build is not; and the
     golden is brought current (warm source + bake) exactly once per simulator."""
+    from contextlib import contextmanager
+
     from jutul_agent import paths
     from jutul_agent.eval import solver
     from jutul_agent.simulators import env_setup
@@ -212,6 +214,14 @@ def test_golden_env_realigns_a_cached_env_once_per_run(tmp_path: Path, monkeypat
     updated: list[Path] = []
     built: list[Path] = []
     aligned: list[Path] = []
+    locked: list[Path] = []
+
+    @contextmanager
+    def lock(workspace: Path):
+        locked.append(workspace)
+        yield
+
+    monkeypatch.setattr(env_setup, "_workspace_env_lock", lock)
     monkeypatch.setattr(env_setup, "update_env", updated.append)
     monkeypatch.setattr(
         env_setup,
@@ -235,6 +245,7 @@ def test_golden_env_realigns_a_cached_env_once_per_run(tmp_path: Path, monkeypat
     solver._golden_env(adapter=None, simulator="cached")
     solver._golden_env(adapter=None, simulator="cached")
     assert len(updated) == 1
+    assert locked == [tmp_path / "eval-envs" / "cached"]
     assert len(aligned) == 2  # fresh + cached, aligned once each, not on the repeat
 
 

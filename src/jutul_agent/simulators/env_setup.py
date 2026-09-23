@@ -13,6 +13,7 @@ the user owns that env, and we only run dev and instantiate on request.
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import subprocess
@@ -24,6 +25,7 @@ from collections.abc import Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
+from jutul_agent.paths import workspace_root
 from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.workspace import (
     PRECOMPILE_MARKER,
@@ -222,6 +224,21 @@ def bootstrap_workspace(
 
     Returns the path to the resolved Julia project.
     """
+    ws = workspace if workspace is not None else workspace_root()
+    with _workspace_env_lock(ws):
+        return _bootstrap_workspace_unlocked(
+            adapter, workspace=ws, source_path=source_path, precompile=precompile, force=force
+        )
+
+
+def _bootstrap_workspace_unlocked(
+    adapter: SimulatorAdapter,
+    *,
+    workspace: Path,
+    source_path: Path | None = None,
+    precompile: bool = False,
+    force: bool = False,
+) -> Path:
 
     try:
         bootstrap_julia_env(adapter.julia_env_template_path, workspace=workspace, force=force)
@@ -427,15 +444,14 @@ def _workspace_env_lock(workspace: Path):
         if os.name == "nt":
             import msvcrt
 
-            if path.stat().st_size == 0:
-                lock.write(b"\0")
-                lock.flush()
             lock.seek(0)
             while True:
                 try:
                     msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
                     break
-                except OSError:
+                except OSError as exc:
+                    if exc.errno != errno.EACCES:
+                        raise
                     time.sleep(0.2)
             try:
                 yield
@@ -461,7 +477,7 @@ def _prepare_workspace_env_unlocked(
 ) -> None:
     if not is_workspace_env_ready(workspace):
         # Implicit auto-bootstrap (without dev or precompile; those are init's job).
-        bootstrap_workspace(adapter, workspace=workspace)
+        _bootstrap_workspace_unlocked(adapter, workspace=workspace)
     elif not user_owns_root_project(workspace):
         foreign = _foreign_simulator(julia_project, adapter)
         if foreign is not None:
@@ -507,7 +523,7 @@ def _rebuild_managed_env(
         "from the template (one-time, can take a few minutes)..."
     )
     try:
-        bootstrap_workspace(adapter, workspace=ws, force=True, precompile=True)
+        _bootstrap_workspace_unlocked(adapter, workspace=ws, force=True, precompile=True)
     except EnvSetupError as exc:
         _warn_rebuild(adapter.primary_package, sim_name, exc)
 
