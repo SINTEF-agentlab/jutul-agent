@@ -45,7 +45,7 @@ class ModelInfo:
 # The agent's default model and the env var that overrides it. They live here, in a
 # light module, so the CLI (help text, version, doctor) can read them without
 # importing the agent builder, which pulls the whole LangChain/deepagents stack.
-DEFAULT_MODEL = "openai:gpt-5.6-terra"
+DEFAULT_MODEL = "openai:gpt-6-sol"
 MODEL_ENV_VAR = "JUTUL_AGENT_MODEL"
 
 
@@ -206,21 +206,24 @@ def discover_models() -> dict[str, list[ModelInfo]]:
     """Tool-calling models from installed provider packages, grouped by provider.
 
     Each non-local provider's ``data/_profiles.py`` is read and filtered to
-    models that support tool calling and text I/O. Providers are ordered as in
-    ``PROVIDERS``; models within a provider are sorted newest-ish first (reverse
+    models that support tool calling and text I/O. The configured default is
+    included even when its provider profile has not caught up. Providers are
+    ordered as in ``PROVIDERS``; models are sorted newest-ish first (reverse
     name order, which tracks the version-in-name scheme of the major providers).
     Cached for the process; call ``discover_models.cache_clear()`` to refresh.
     """
     grouped: dict[str, list[ModelInfo]] = {}
+    default_provider, _, default_name = DEFAULT_MODEL.partition(":")
     for name, info in PROVIDERS.items():
         if info.local:
             continue  # Ollama ships no profiles; the selector probes the daemon.
-        names = sorted(
-            (m for m, profile in _load_profiles(info.package).items() if _is_chat_capable(profile)),
-            reverse=True,
-        )
+        names = {
+            m for m, profile in _load_profiles(info.package).items() if _is_chat_capable(profile)
+        }
+        if name == default_provider:
+            names.add(default_name)
         if names:
-            grouped[name] = [ModelInfo(f"{name}:{m}", m) for m in names]
+            grouped[name] = [ModelInfo(f"{name}:{m}", m) for m in sorted(names, reverse=True)]
     return grouped
 
 

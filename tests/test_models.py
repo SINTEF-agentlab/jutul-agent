@@ -72,6 +72,7 @@ def test_discovery_groups_real_models_by_provider() -> None:
 
 
 def test_discovery_includes_the_default_model() -> None:
+    assert DEFAULT_MODEL == "openai:gpt-6-sol"
     assert is_known_model(DEFAULT_MODEL)
 
 
