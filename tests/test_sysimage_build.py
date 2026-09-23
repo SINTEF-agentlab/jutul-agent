@@ -181,6 +181,28 @@ def test_an_image_that_fails_verification_is_never_installed(
     assert list(sysimage.sysimage_dir(ws).glob("candidate-*")) == []
 
 
+def test_source_edit_during_build_does_not_install_stale_image(
+    tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = tmp_path / "ws"
+    env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
+    original = sysimage_build._run_julia
+
+    def editing(argv, *, capture: bool = False):
+        result = original(argv, capture=capture)
+        if "create_sysimage" in argv[-1]:
+            (env / "Manifest.toml").write_text(
+                (env / "Manifest.toml").read_text(encoding="utf-8").replace("1.0.0", "1.0.1"),
+                encoding="utf-8",
+            )
+        return result
+
+    monkeypatch.setattr(sysimage_build, "_run_julia", editing)
+    with pytest.raises(SysimageBuildError, match="changed during the build"):
+        build(workspace=ws, julia_project=env)
+    assert not sysimage.sysimage_path(ws).exists()
+
+
 def test_a_failed_build_leaves_the_previous_image_alone(tmp_path: Path, julia: _FakeJulia) -> None:
     """The reason a rebuild is safe to attempt on a machine that is about to demo."""
     ws = tmp_path / "ws"
@@ -492,6 +514,23 @@ def test_the_command_turns_the_folder_off_when_the_image_goes(
 
     assert cmd.run(cmd.build_parser().parse_args(["clear"])) == 0
     assert load_workspace_config(workspace).sysimage is False
+
+
+def test_failed_clear_keeps_the_folder_using_its_image(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from jutul_agent.interfaces.cli import sysimage as cmd
+    from jutul_agent.workspace import WorkspaceConfig, load_workspace_config, write_workspace_config
+
+    write_workspace_config(WorkspaceConfig(sysimage=True), workspace=workspace)
+
+    def locked(_workspace: Path) -> bool:
+        raise PermissionError("image is in use")
+
+    monkeypatch.setattr(sysimage, "clear", locked)
+    assert cmd.run(cmd.build_parser().parse_args(["clear"])) == 1
+    assert load_workspace_config(workspace).sysimage is True
+    assert "image is in use" in capsys.readouterr().err
 
 
 def test_the_build_and_the_status_agree_on_how_big_the_image_is(

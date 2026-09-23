@@ -366,6 +366,9 @@ def build(
             "snippet(s)); what it compiles, no session pays for again..."
         )
 
+    from jutul_agent.sysimage import read_env_state
+
+    build_state = read_env_state(julia_project)
     started = time.monotonic()
     try:
         # Before PackageCompiler, so the step that fails hardest fails as ours.
@@ -398,6 +401,8 @@ def build(
             # and rendering a figure takes long enough to read as a stall otherwise.
             print("Verifying the new image before installing it...")
             verify_image(candidate, julia_project, packages)
+        if read_env_state(julia_project) != build_state:
+            raise SysimageBuildError("the Julia environment changed during the build; build again")
         # Replace is atomic on both POSIX and Windows, so a session starting
         # during a rebuild sees either the old image or the new one. Windows
         # locks a loaded image against replacement (POSIX unlinks it and lets
@@ -419,10 +424,14 @@ def build(
     seconds = time.monotonic() - started
     # Stamped last: the stamp is what promotes a file on disk to an image the
     # guard will start from, so an interrupted build leaves nothing to trust.
-    write_stamp(workspace, julia_project, cpu_target=cpu_target, build_seconds=seconds)
+    write_stamp(
+        workspace,
+        julia_project,
+        cpu_target=cpu_target,
+        build_seconds=seconds,
+        state=build_state,
+    )
     _precompile_against(destination, julia_project)
-
-    from jutul_agent.sysimage import read_env_state
 
     state = read_env_state(julia_project)
     return BuildResult(

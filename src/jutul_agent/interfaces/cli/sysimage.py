@@ -75,9 +75,12 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     if args.action == "clear":
-        print(
-            "Removed the system image." if sysimage_mod.clear(ws) else "No system image to remove."
-        )
+        try:
+            removed = sysimage_mod.clear(ws)
+        except OSError as exc:
+            print(f"Could not remove the system image: {exc}", file=sys.stderr)
+            return 1
+        print("Removed the system image." if removed else "No system image to remove.")
         # Turned off in the same breath. A folder still set to use an image it no
         # longer has would refuse every launch until someone worked out why.
         if config.sysimage:

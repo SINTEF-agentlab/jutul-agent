@@ -24,7 +24,7 @@ describe("IframePanel live readiness", () => {
   });
 
   it("does not mount the iframe until the readiness ping succeeds", async () => {
-    const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError("network error")).mockResolvedValueOnce({});
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: false, status: 502 }).mockResolvedValueOnce({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
     const onLoaded = vi.fn();
     const { container } = renderWithStore(
@@ -33,7 +33,7 @@ describe("IframePanel live readiness", () => {
     expect(container.querySelector("iframe")).toBeNull();
 
     await act(async () => {
-      await Promise.resolve(); // let the first ping's rejection settle
+      await Promise.resolve(); // let the failed proxy response settle
     });
     expect(container.querySelector("iframe")).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -71,7 +71,7 @@ describe("IframePanel live readiness", () => {
   });
 
   it("re-probes when reloadToken changes", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({});
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
     const { container, rerender } = renderWithStore(
       <IframePanel view={plotView} active reloadToken={0} onLoaded={vi.fn()} />,
@@ -107,7 +107,7 @@ describe("IframePanel live readiness", () => {
     // resize clears the WebGL buffer, so a figure's frame must not be white:
     // it would strobe the panel white on every re-fit. A document's page is a
     // centered column with transparent margins and does want paper.
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
     const doc = renderWithStore(
       <IframePanel view={reportView} active reloadToken={0} onLoaded={vi.fn()} />,
     );
@@ -239,7 +239,7 @@ describe("IframePanel stage", () => {
   });
 
   it("a sized live plot renders at its design size inside a scaled frame", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
     const sized: View = { ...plotView, width: 1600, height: 900 };
     const { container } = renderWithStore(
       <IframePanel view={sized} active reloadToken={0} onLoaded={() => {}} />,
@@ -257,7 +257,7 @@ describe("IframePanel stage", () => {
   });
 
   it("a plot without a recorded size fills the stage", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
     const { container } = renderWithStore(
       <IframePanel view={plotView} active reloadToken={0} onLoaded={() => {}} />,
     );
@@ -269,7 +269,7 @@ describe("IframePanel stage", () => {
   });
 
   it("never first-mounts hidden; stays mounted once shown", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
     const sized: View = { ...plotView, width: 1600, height: 900 };
     const { container, rerender } = renderWithStore(
       <IframePanel view={sized} active={false} reloadToken={0} onLoaded={() => {}} />,
@@ -291,7 +291,7 @@ describe("IframePanel stage", () => {
 describe("IframePanel live views", () => {
   beforeEach(() => {
     framePool.clear();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
   });
   afterEach(() => {
     framePool.clear();

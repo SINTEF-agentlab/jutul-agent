@@ -163,8 +163,9 @@ still describes the environment. The check reads the manifest, hashes the source
 of path-tracked packages, and hashes `LocalPreferences.toml`, which is fast
 enough to run on every launch and needs no Julia. It has two possible outcomes:
 
-- **Out of date.** A package in the image has changed version, a path-tracked
-  package has been edited, or a preference has changed. The session does not
+- **Out of date.** A package in the image has changed version, been removed,
+  switched between registry and path tracking, or had its path source edited;
+  a changed preference also counts. The session does not
   start. What changed is printed, with the command that fixes it.
 - **Incomplete.** The environment has a package the image does not, installed
   after it was built. Nothing is wrong: it loads the ordinary way. This is a

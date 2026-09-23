@@ -78,6 +78,7 @@ class SessionHost:
         self._attached = False
         # Whether a turn is running; see the ``busy`` property.
         self._busy = False
+        self._active_turn: asyncio.Task[None] | None = None
         # Background Julia warm-up (load warm package, set GLMakie offscreen); held
         # so it can be cancelled on teardown. Set by ``start``.
         self._warmup_task: Any | None = None
@@ -102,6 +103,22 @@ class SessionHost:
         """Mark whether a turn is running, whoever is (or is no longer) watching."""
         self._busy = busy
 
+    def claim_turn(self, task: asyncio.Task[None]) -> bool:
+        """Reserve this host for one WebSocket turn, including after disconnect."""
+        if self.busy:
+            return False
+        self._active_turn = task
+        task.add_done_callback(self.release_turn)
+        return True
+
+    def release_turn(self, task: asyncio.Task[None]) -> None:
+        if self._active_turn is task:
+            self._active_turn = None
+
+    @property
+    def active_turn(self) -> asyncio.Task[None] | None:
+        return self._active_turn
+
     @property
     def busy(self) -> bool:
         """Whether a turn is in flight.
@@ -110,7 +127,7 @@ class SessionHost:
         started it: switching sessions closes the socket but leaves the work
         running, and nothing may tear the session down until it finishes.
         """
-        return self._busy
+        return self._busy or (self._active_turn is not None and not self._active_turn.done())
 
     @property
     def model(self) -> str | None:

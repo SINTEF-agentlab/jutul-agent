@@ -6,8 +6,8 @@ environment); this is its realism counterpart, the way
 :mod:`~jutul_agent.eval.tasks.search`. Each sample instantiates the simulator's
 Julia environment (``needs_env``), so the file tools, the read-only depot
 guard, and the loaded simulator stack are all present, and checks that the path
-model still holds with them in play: locate the installed package source at its
-real ``pkgdir`` path, then write a workspace file by a relative path. The first
+model still holds with them in play: inspect the installed package source at its
+real path, then write a workspace file by a relative path. The first
 run on a cold depot is slow, so this is the opt-in realism layer rather than
 part of the fast default::
 
@@ -30,7 +30,6 @@ from jutul_agent.eval.scorers import (
     no_interpreters_via_execute,
     no_unresolvable_path_in_julia,
     used_any_tool,
-    used_tools,
     workspace_file_exists,
 )
 from jutul_agent.eval.solver import jutul_agent_solver, load_eval_credentials
@@ -52,7 +51,7 @@ def filesystem_source() -> Task:
                 id=f"fss-{sim}-source-to-workspace",
                 input=(
                     f"The {package} package is installed in this environment. Find its "
-                    "source directory (the path `pkgdir` returns in `run_julia`), then "
+                    "source directory using the path supplied in the session context, then "
                     f"write that path to a new workspace file `notes/{package}_source.txt`. "
                     "Reply with the path you wrote."
                 ),
@@ -68,8 +67,7 @@ def filesystem_source() -> Task:
         scorer=[
             includes(),
             workspace_file_exists("notes/*_source.txt"),
-            used_tools(["run_julia"]),
-            used_any_tool(["write_file", "read_file", "grep", "glob", "ls"]),
+            used_any_tool(["read_file", "grep", "glob", "ls"]),
             no_unresolvable_path_in_julia(),
             no_interpreters_via_execute(),
         ],

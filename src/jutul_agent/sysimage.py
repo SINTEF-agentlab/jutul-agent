@@ -28,7 +28,6 @@ Two kinds of mismatch, and only one is dangerous:
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import os
@@ -119,6 +118,7 @@ class EnvState:
     versions: dict[str, str] = field(default_factory=dict)
     path_packages: dict[str, str] = field(default_factory=dict)
     preferences: str | None = None
+    resolved: bool = False
 
 
 def read_env_state(julia_project: Path) -> EnvState:
@@ -164,7 +164,9 @@ def read_env_state(julia_project: Path) -> EnvState:
             path_packages[name] = package_source_digest(root)
         elif isinstance(entry.get("version"), str):
             versions[name] = entry["version"]
-    return EnvState(versions=versions, path_packages=path_packages, preferences=preferences)
+    return EnvState(
+        versions=versions, path_packages=path_packages, preferences=preferences, resolved=True
+    )
 
 
 def _preferences_digest(julia_project: Path) -> str | None:
@@ -181,7 +183,7 @@ def _preferences_digest(julia_project: Path) -> str | None:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return None
-    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -230,6 +232,7 @@ def write_stamp(
     cpu_target: str,
     build_seconds: float,
     julia: str | None = None,
+    state: EnvState | None = None,
 ) -> None:
     """Record what the freshly built image describes. Written last, on purpose.
 
@@ -239,7 +242,7 @@ def write_stamp(
     something that reads as missing rather than as current.
     """
 
-    state = read_env_state(julia_project)
+    state = state or read_env_state(julia_project)
     payload = {
         "recipe": RECIPE_VERSION,
         "julia": julia or julia_version(),
@@ -283,8 +286,7 @@ def clear(workspace: Path) -> bool:
     directory = sysimage_dir(workspace)
     if not directory.exists():
         return False
-    with contextlib.suppress(OSError):
-        shutil.rmtree(directory)
+    shutil.rmtree(directory)
     return True
 
 
@@ -357,7 +359,11 @@ def decide(workspace: Path, julia_project: Path, *, enabled: bool) -> Decision:
     if displayless is not None:
         return displayless
 
-    divergences, notes = _compare(stamp, read_env_state(julia_project))
+    try:
+        state = read_env_state(julia_project)
+    except OSError as exc:
+        return Decision(status=UNUSABLE, reason=f"could not read package sources: {exc}")
+    divergences, notes = _compare(stamp, state)
     if divergences:
         return Decision(status=DIVERGENT, reason=_format_divergences(divergences), notes=notes)
     return Decision(
@@ -427,6 +433,19 @@ def _compare(stamp: dict, state: EnvState) -> tuple[list[tuple[str, list[str]]],
     if changed:
         divergences.append(("package versions changed", changed))
 
+    stamped_names = set(stamped_versions) | set(stamp.get("path_packages") or {})
+    current_names = set(state.versions) | set(state.path_packages)
+    if state.resolved:
+        removed = sorted(stamped_names - current_names)
+        if removed:
+            divergences.append(("packages removed since the image was built", removed))
+        switched = sorted(
+            (set(stamped_versions) & set(state.path_packages))
+            | (set(stamp.get("path_packages") or {}) & set(state.versions))
+        )
+        if switched:
+            divergences.append(("package source tracking changed", switched))
+
     stamped_sources = stamp.get("path_packages") or {}
     edited = [
         name
@@ -443,8 +462,7 @@ def _compare(stamp: dict, state: EnvState) -> tuple[list[tuple[str, list[str]]],
 
     # A package the environment has and the image does not is safe: it loads from
     # its own pkgimage, the way everything did before there was an image at all.
-    known = set(stamped_versions) | set(stamped_sources)
-    added = sorted((set(state.versions) | set(state.path_packages)) - known)
+    added = sorted(current_names - stamped_names)
     notes: tuple[str, ...] = ()
     if added:
         listed = ", ".join(added[:6]) + (f", and {len(added) - 6} more" if len(added) > 6 else "")
