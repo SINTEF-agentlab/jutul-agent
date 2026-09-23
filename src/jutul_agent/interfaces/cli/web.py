@@ -129,7 +129,7 @@ def _sysimage_ready(
     # very operation that makes the image stale after an upgrade. Do it before the
     # server binds its port so the terminal refuses the launch instead of serving a
     # browser application in which every session creation is doomed to fail.
-    if decision.usable:
+    if decision.usable and args.julia_project is None:
         from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
         from jutul_agent.simulators import registry
         from jutul_agent.simulators.env_setup import EnvSetupError, prepare_workspace_env

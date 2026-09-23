@@ -6,9 +6,10 @@ each plot it activates GLMakie (visible for an interactive window, offscreen
 otherwise), evaluates the user's expression, and hands the result to capture.
 
 capture resolves a Makie Figure from whatever the plotter produced: a returned
-Figure or FigureAxisPlot, a (fig, ax, plot) tuple, or, for plotters that open a
-window or call display and return an axis/screen/nothing, the figure Makie just
-drew (current_figure). It then saves that figure with GLMakie.
+Figure or FigureAxisPlot, a controller with a `fig` property, a (fig, ax, plot)
+tuple, or, for plotters that open a window or call display and return an
+axis/screen/nothing, the figure Makie just drew (current_figure). It then saves
+that figure with GLMakie.
 """
 
 module JutulAgentPlots
@@ -41,7 +42,8 @@ end
 
 """Resolve a Makie Figure from the value a plot expression evaluated to.
 
-A returned Figure, FigureAxisPlot, or (fig, ax, plot) tuple is used directly.
+A returned Figure, FigureAxisPlot, object with a `fig::Figure` property, or
+(fig, ax, plot) tuple is used directly.
 Otherwise we fall back to the figure Makie just drew (current_figure), which is how
 plotters that open a window or call display surface theirs. prev is current_figure()
 from before the expression ran: if the current figure is unchanged from prev,
@@ -51,6 +53,11 @@ saving a stale, unrelated figure under this slot."""
 function _as_figure(x, prev = nothing)
     x isa Makie.Figure && return x
     x isa Makie.FigureAxisPlot && return x.figure
+    # JutulDarcy's fancy reservoir plotter returns a controller with a `fig`.
+    if hasproperty(x, :fig)
+        fig = getproperty(x, :fig)
+        fig isa Makie.Figure && return fig
+    end
     if x isa Tuple && length(x) >= 1 && x[1] isa Makie.Figure   # plot_cell_data / plot_mesh
         return x[1]
     end

@@ -21,11 +21,12 @@ MultiComponentFlash = "35e5bd01-9722-4017-9deb-64a5d32478ff"
 Bonito = "824d6782-a2ef-11e9-3a09-e5662e0c26f8"
 WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
-# Floor at the release the skills are written against, so a stale env can't drift
-# behind them (it fails to resolve and the drift check prompts a rebuild). 0.3.8
-# adds HYPRE-by-default and `JutulDarcy.CaseValidation`, which the skills rely on.
+# Floor at the releases validated by the simulator smoke checks, so a stale env
+# cannot drift behind them (it fails to resolve and prompts a rebuild). This
+# baseline includes the fancy plotter returned by `plot_reservoir`.
 [compat]
-JutulDarcy = "0.3.8"
+Jutul = "0.4.31"
+JutulDarcy = "0.3.11"
 
 # Both deps are jutul-agent's in-env Julia runtime, declared as relative `[sources]`
 # paths so they survive the copy into a workspace. JutulAgent is the shared,

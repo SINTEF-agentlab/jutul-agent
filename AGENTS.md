@@ -14,6 +14,9 @@ ecosystem, built on Deep Agents.
   examples.
 - Keep Julia execution serialized unless the runtime explicitly supports
   concurrency.
+- Reuse a prepared Julia environment when its simulator and dependencies match;
+  pass it with `--julia-project` instead of setting up a new env for each task.
+  Refresh it when dependencies or the bundled Julia runtime change.
 - Prefer Deep Agents memory and skills for reusable guidance; keep custom
   Python focused on Julia execution, simulator inspection, and trace capture.
 

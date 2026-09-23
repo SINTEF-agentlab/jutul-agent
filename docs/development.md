@@ -61,8 +61,8 @@ Two workflows:
 - `simulators.yml`, on PRs and weekly: one job per simulator that
   instantiates its env template against the latest compatible upstream
   releases and smoke-tests that the package and the warm package load. The
-  weekly run is the canary for upstream breakage, since envs ship no
-  version pins.
+  weekly run is the canary for upstream breakage above the envs' validated
+  compatibility floors.
 
 Both instantiate steps run an explicit `Pkg.precompile()`, which throws if
 a direct dependency fails to precompile. A bare `Pkg.instantiate()` only

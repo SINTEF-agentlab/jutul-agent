@@ -42,7 +42,7 @@ changed per session in the UI.
 | `--sim <name>` | Simulator for this folder's sessions (persisted to the workspace config) |
 | `--approval-mode ask\|workspace\|auto` | Default human-in-the-loop policy for new sessions (change per session in the UI with `/approval-mode`) |
 | `--model <provider:model>` | Default model for new sessions (override per session with the UI model picker) |
-| `--julia-project <path>` | Override the resolved workspace Julia project |
+| `--julia-project <path>` | Use a prepared Julia project at this path; skip workspace env setup |
 | `--threads <N\|auto>` | Julia compute threads (default: physical cores minus one) |
 | `--add-dir <path>` | Add an extra folder the agent can read and edit (repeatable; also runtime `/add-dir`) |
 | `--ephemeral-memory` | Use a throwaway memory directory; nothing persists to workspace memory |
@@ -62,7 +62,7 @@ Launches the interactive terminal UI.
 |---|---|
 | `--sim <name>` | Active simulator. Required only if not in workspace config and not auto-detectable from a `Project.toml` |
 | `--model <provider:model>` | Model for this session. Precedence: this flag, workspace config, user config, `$JUTUL_AGENT_MODEL`, default |
-| `--julia-project <path>` | Override the resolved workspace Julia project |
+| `--julia-project <path>` | Use a prepared Julia project at this path; skip workspace env setup |
 | `--threads <N\|auto>` | Julia compute threads (default: physical cores minus one) |
 | `--add-dir <path>` | Add an extra folder for the agent (repeatable) |
 | `--continue` | Continue the most recent session in this workspace |

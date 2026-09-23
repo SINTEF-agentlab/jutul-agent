@@ -19,11 +19,11 @@ JutulAgentBattMo = "f9f14f6a-5be2-4b55-b75d-847ac964f0ff"
 Bonito = "824d6782-a2ef-11e9-3a09-e5662e0c26f8"
 WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
-# Floor at the release the skills are written against, so a stale env can't drift
-# behind them (it fails to resolve and the drift check prompts a rebuild). Bump it
-# when the skills are updated for a newer BattMo.
+# Floor at the releases validated by the simulator smoke checks, so a stale env
+# cannot drift behind them (it fails to resolve and prompts a rebuild).
 [compat]
-BattMo = "0.2.8"
+BattMo = "0.2.9"
+Jutul = "0.4.31"
 
 # Both deps are jutul-agent's in-env Julia runtime, declared as relative `[sources]`
 # paths so they survive the copy into a workspace. JutulAgent is the shared,

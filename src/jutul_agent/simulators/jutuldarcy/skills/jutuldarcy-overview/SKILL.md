@@ -134,6 +134,10 @@ Just call them — no backend juggling, no need to return a `Figure`. In an
 interactive session a live window opens for the user by default (`window=false` to
 suppress); pass `view=true` to inspect a plot yourself.
 
+`plot_reservoir` now opens the fancy 3D viewer by default and converts displayed
+values to convenient units. Pass `fancy=false` for its fixed-axis viewer or
+`convert_units=false` when you need unconverted values in the plot.
+
 **Plot from the live REPL bindings.** Your run already left `model`, `states`,
 `wd` in the REPL — call the plotter straight on them. Do **not** rebuild the case
 and re-run `simulate_reservoir` inside `plot_julia`; that re-simulates on every
