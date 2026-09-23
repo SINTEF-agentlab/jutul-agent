@@ -3,8 +3,8 @@
 This is the cheapest signal that an upstream change broke jutul-agent: if a
 simulator (or Jutul underneath it) ships a breaking release, ``using <Sim>``
 fails to precompile/load and this test goes red. It runs in the dedicated
-``Simulators`` workflow (Linux matrix, one job per simulator), not in the
-cross-OS lane; see ``.github/workflows/simulators.yml``.
+``Simulators`` workflow (Linux matrix, every simulator on every PR), not in
+the cross-OS lane; see ``.github/workflows/simulators.yml``.
 
 Gating mirrors the other integration tests: a simulator runs only when its env
 is instantiated, which we detect by the generated (gitignored) ``Manifest.toml``.

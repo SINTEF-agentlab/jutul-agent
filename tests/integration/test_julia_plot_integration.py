@@ -20,11 +20,11 @@ To run locally:
         s(Path('src/jutul_agent/simulators/jutuldarcy/julia_env'))"
     julia --project=src/jutul_agent/simulators/jutuldarcy/julia_env \
         -e 'using Pkg; Pkg.instantiate()'
-    uv run pytest tests/integration/test_plot_julia_integration.py
+    uv run pytest tests/integration/test_julia_plot_integration.py
 
 On headless Linux GLMakie needs a virtual display; the ``plot_display`` fixture
 starts a private Xvfb (as production does via ``managed_display``). CI runs these
-in the `plot-integration` job.
+in the JutulDarcy job of the ``Simulators`` workflow.
 """
 
 from __future__ import annotations
