@@ -113,6 +113,9 @@ include = [
 exclude = ["src/jutul_agent/interfaces/server/webapp"]
 
 [tool.uv]
+# Rebuild VCS-derived version metadata after commits and tag updates.
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
+
 # Pin resolution to a snapshot date so the committed uv.lock is the canonical,
 # reproducible result for the loose ranges above (CI installs it with
 # `uv sync --locked`). To move forward: bump the date, run `uv lock`, run the
