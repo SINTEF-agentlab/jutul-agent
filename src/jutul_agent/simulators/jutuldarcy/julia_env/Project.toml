@@ -21,11 +21,8 @@ MultiComponentFlash = "35e5bd01-9722-4017-9deb-64a5d32478ff"
 Bonito = "824d6782-a2ef-11e9-3a09-e5662e0c26f8"
 WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
-# Floor at the releases validated by the simulator smoke checks, so a stale env
-# cannot drift behind them (it fails to resolve and prompts a rebuild). This
-# baseline includes the fancy plotter returned by `plot_reservoir`.
+# Minimum simulator release supported by the bundled skills.
 [compat]
-Jutul = "0.4.31"
 JutulDarcy = "0.3.11"
 
 # Both deps are jutul-agent's in-env Julia runtime, declared as relative `[sources]`
