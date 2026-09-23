@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 from jutul_agent import workspace
+from jutul_agent.simulators import env_setup
+from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.workspace import (
     PRECOMPILE_MARKER,
     WARM_SOURCE_MARKER,
@@ -106,3 +108,36 @@ def test_recopy_skips_user_owned_env(tmp_path, template, shared_pkg):
     env = _make_env(tmp_path, template, shared_pkg)
     (env / "Project.toml").write_text("[deps]\n", encoding="utf-8")  # no [sources]
     assert recopy_warm_sources(env, template) is False
+
+
+def test_failed_refresh_restores_previous_sources_and_markers(
+    tmp_path: Path, template: Path, shared_pkg: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _make_env(tmp_path, template, shared_pkg)
+    (env / "Manifest.toml").write_text("old manifest", encoding="utf-8")
+    old_marker = (env / WARM_SOURCE_MARKER).read_text(encoding="utf-8")
+    (shared_pkg / "src" / "ensemble.jl").write_text("# v2 changed\n", encoding="utf-8")
+
+    def failed_resolve(project: Path, **_kwargs) -> None:
+        (project / "Manifest.toml").write_text("partial manifest", encoding="utf-8")
+        raise env_setup.EnvSetupError("resolve failed")
+
+    monkeypatch.setattr(env_setup, "resolve_and_instantiate", failed_resolve)
+    adapter = SimulatorAdapter(
+        name="test",
+        display_name="Test",
+        module_dir=template.parent,
+        package_imports=("JutulAgentSim",),
+        primary_package="JutulAgentSim",
+        domain_hints="",
+    )
+    monkeypatch.setattr(
+        SimulatorAdapter, "julia_env_template_path", property(lambda _self: template)
+    )
+
+    env_setup._refresh_warm_sources(adapter, tmp_path, env, "test")
+
+    assert (env / "JutulAgent" / "src" / "ensemble.jl").read_text() == "# v1\n"
+    assert (env / "Manifest.toml").read_text() == "old manifest"
+    assert (env / WARM_SOURCE_MARKER).read_text(encoding="utf-8") == old_marker
+    assert (env / PRECOMPILE_MARKER).exists()

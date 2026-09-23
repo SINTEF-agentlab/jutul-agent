@@ -1402,6 +1402,7 @@ async def _serve_stream(websocket: WebSocket, manager: SessionManager, session_i
                 "output is being recorded; reopen the session to see the rest."
             ),
         )
+        state.watch_existing_turn()
     # Re-surface an approval the session was paused on if an earlier connection
     # dropped while it was pending, so a reconnect can still answer it.
     await state.resync_pending()
@@ -1434,6 +1435,8 @@ class _StreamState:
         self._host = host
         self._pending: list[Any] = []
         self._turn: asyncio.Task[None] | None = None
+        self._existing_turn_watch: asyncio.Task[None] | None = None
+        self._closed = False
         # Whether the running turn has already told the client it ended, so the
         # backstop in ``_run_turn`` never sends a second end.
         self._turn_ended = True
@@ -1694,7 +1697,7 @@ class _StreamState:
         # An optional target size the client measured (the stage on a regenerate,
         # the popup window on a popout): the replay re-fits the figure to it.
         size = _sane_size(message.get("width"), message.get("height"))
-        self._turn = asyncio.create_task(self._replot_turn(record, target, size))
+        self._spawn_task(self._replot_turn(record, target, size))
 
     async def _replot_turn(self, record: str, target: str, size: list[int] | None) -> None:
         """Run a replay so that it always ends its turn, whatever happens.
@@ -1874,7 +1877,32 @@ class _StreamState:
             )
 
     def _busy(self) -> bool:
-        return self._turn is not None and not self._turn.done()
+        return self._host.busy or (self._turn is not None and not self._turn.done())
+
+    def watch_existing_turn(self) -> None:
+        task = self._host.active_turn
+        if task is None:
+            return
+
+        async def watch() -> None:
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                if not task.done():
+                    return
+            except Exception:
+                pass
+            if self._closed:
+                return
+            await self.resync_pending()
+            await _safe_send(
+                self._ws,
+                protocol.notice_to_wire(
+                    "The earlier turn finished. Reopen this session to see its output."
+                ),
+            )
+
+        self._existing_turn_watch = asyncio.create_task(watch())
 
     async def resync_pending(self) -> None:
         """Re-send an approval the session was paused on when a prior connection dropped.
@@ -1919,7 +1947,14 @@ class _StreamState:
         self._spawn(lambda: runner.resume(payload, on_message=self._on_message))
 
     def _spawn(self, factory) -> None:
-        self._turn = asyncio.create_task(self._run_turn(factory))
+        self._spawn_task(self._run_turn(factory))
+
+    def _spawn_task(self, coro) -> None:
+        task = asyncio.create_task(coro)
+        if not self._host.claim_turn(task):
+            task.cancel()
+            return
+        self._turn = task
 
     async def _run_turn(self, factory) -> None:
         """Drive one turn and, whatever happens, tell the client it ended.
@@ -1935,9 +1970,6 @@ class _StreamState:
         self._side_output_id = self._latest_event_id()
         self._turn_ended = False
         self._announced = False
-        # Held for the whole turn so nothing evicts the session under it, whether
-        # or not a connection is still watching.
-        self._host.set_busy(True)
         try:
             await self._drive(factory)
         except asyncio.CancelledError:
@@ -1951,7 +1983,6 @@ class _StreamState:
                 await self._flush_side_outputs()
             await self._end_turn(protocol.turn_end_to_wire([]), error=str(exc))
         finally:
-            self._host.set_busy(False)
             # A turn that reached here without ending raised somewhere the client
             # cannot see; end it anyway rather than wedge the composer.
             await self._end_turn(protocol.turn_end_to_wire([]), error="the turn ended unexpectedly")
@@ -2147,10 +2178,18 @@ class _StreamState:
         the client believes a turn is in flight and the server does not, the
         client is the one stuck.
         """
-        if self._busy():
-            self._turn.cancel()  # type: ignore[union-attr]
+        task = self._host.active_turn
+        if task is not None and not task.done():
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._turn  # type: ignore[arg-type]
+                await task
+            if task is not self._turn:
+                await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
+            return
+        if self._turn is not None and not self._turn.done():
+            self._turn.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._turn
             return
         await _safe_send(self._ws, protocol.turn_cancelled_to_wire())
 
@@ -2171,7 +2210,12 @@ class _StreamState:
         The titling task is still cancelled: it is a fire-and-forget model call
         with nothing to write, so without this it would spend for nobody.
         """
+        self._closed = True
         self._end_all_tool_streams()
+        if self._existing_turn_watch is not None:
+            self._existing_turn_watch.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._existing_turn_watch
         if self._title_task is not None and not self._title_task.done():
             self._title_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):

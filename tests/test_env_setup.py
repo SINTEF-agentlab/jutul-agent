@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -20,6 +23,39 @@ def _adapter(module_dir: Path) -> SimulatorAdapter:
         primary_package="Foo",
         domain_hints="",
     )
+
+
+def test_prepare_workspace_env_serializes_same_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    active = 0
+    peak = 0
+    guard = threading.Lock()
+
+    def prepare(*_args) -> None:
+        nonlocal active, peak
+        with guard:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.05)
+        with guard:
+            active -= 1
+
+    monkeypatch.setattr(env_setup, "_prepare_workspace_env_unlocked", prepare)
+    workspace = tmp_path / "ws"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                env_setup.prepare_workspace_env,
+                _adapter(tmp_path),
+                workspace=workspace,
+                julia_project=workspace,
+            )
+            for _ in range(2)
+        ]
+        for future in futures:
+            future.result()
+    assert peak == 1
 
 
 def _make_template(tmp_path: Path) -> Path:

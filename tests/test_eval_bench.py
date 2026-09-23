@@ -645,3 +645,29 @@ def test_filesystem_and_search_modules_expose_tasks_via_tasks_list() -> None:
         *api_discovery.TASKS,
     ):
         assert factory().dataset
+
+
+async def test_filesystem_source_accepts_source_inspection_without_loading_julia(
+    tmp_path: Path,
+) -> None:
+    from inspect_ai.model import ModelOutput
+
+    from jutul_agent.eval.tasks.filesystem_source import filesystem_source
+
+    task = filesystem_source()
+    sample = task.dataset[0]
+    source_file = tmp_path / "notes" / "JutulDarcy_source.txt"
+    source_file.parent.mkdir()
+    source_file.write_text("/depot/JutulDarcy/abc", encoding="utf-8")
+    state = _state(
+        tmp_path,
+        [
+            ("tool_call", {"name": "ls", "args": {"path": "/depot/JutulDarcy/abc"}}),
+            ("tool_call", {"name": "write_file", "args": {"file_path": str(source_file)}}),
+        ],
+    )
+    state.output = ModelOutput.from_content(
+        model="test", content="I wrote notes/JutulDarcy_source.txt"
+    )
+    scores = [await scorer(state, Target(sample.target)) for scorer in task.scorer]
+    assert all(score.value == "C" for score in scores)

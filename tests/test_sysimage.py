@@ -182,6 +182,45 @@ def test_an_edited_path_package_diverges(tmp_path: Path) -> None:
     assert "JutulAgent" in decision.reason
 
 
+def test_removed_or_retracked_package_diverges(tmp_path: Path) -> None:
+    ws, env = build_workspace(tmp_path)
+    install_image(ws)
+    write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
+
+    write_manifest(env, versions={"JutulDarcy": "0.2.44"}, paths={})
+    assert "JutulAgent" in decide(ws, env, enabled=True).reason
+    assert decide(ws, env, enabled=True).status == DIVERGENT
+
+    write_manifest(env, versions={"JutulDarcy": "0.2.44", "JutulAgent": "0.1.0"}, paths={})
+    decision = decide(ws, env, enabled=True)
+    assert decision.status == DIVERGENT
+    assert "source tracking changed" in decision.reason
+
+
+def test_toml_date_preference_is_supported(tmp_path: Path) -> None:
+    ws, env = build_workspace(tmp_path)
+    (env / "LocalPreferences.toml").write_text("expires = 2026-01-01\n", encoding="utf-8")
+    install_image(ws)
+    write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
+    assert decide(ws, env, enabled=True).status == CURRENT
+
+
+def test_unreadable_path_source_refuses_without_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws, env = build_workspace(tmp_path)
+    install_image(ws)
+    write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
+
+    def unreadable(_root: Path) -> str:
+        raise PermissionError("source unavailable")
+
+    monkeypatch.setattr(sysimage, "package_source_digest", unreadable)
+    decision = decide(ws, env, enabled=True)
+    assert decision.status == UNUSABLE
+    assert "source unavailable" in decision.reason
+
+
 def test_a_changed_preference_diverges(tmp_path: Path) -> None:
     """A preference read while precompiling is baked in as surely as the code is.
 

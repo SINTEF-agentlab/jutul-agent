@@ -91,11 +91,9 @@ function useLiveReady(url: string, enabled: boolean, resetKey: number): boolean 
     let attempt = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tryOnce = () => {
-      // HEAD + no-cors: enough to learn whether *something* is listening and
-      // responding on this origin, without invoking the actual plot route or
-      // reading a response we're not allowed to see cross-origin.
-      fetch(url, { method: "HEAD", mode: "no-cors", cache: "no-store" })
-        .then(() => {
+      fetch(url, { method: "HEAD", cache: "no-store" })
+        .then((response) => {
+          if (!response.ok) throw new Error(`plot server returned ${response.status}`);
           if (!cancelled) setReady(true);
         })
         .catch(() => {

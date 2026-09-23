@@ -2318,3 +2318,69 @@ async def test_cancel_answers_even_with_no_turn_running(tmp_path: Path) -> None:
     await st.cancel_turn()
     assert [m["type"] for m in ws.sent] == ["turn_end"]
     assert ws.sent[0]["cancelled"] is True
+
+
+async def test_reconnected_socket_cannot_overlap_or_lose_the_running_turn(tmp_path: Path) -> None:
+    from jutul_agent.interfaces.server.app import _StreamState
+
+    first, _ws, _session = _plot_state(tmp_path)
+    second_ws = _FakeWS()
+    second = _StreamState(second_ws, first._host)
+    started = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def slow(*_args: Any, **_kwargs: Any) -> Any:
+        started.set()
+        try:
+            await asyncio.sleep(30)
+        finally:
+            finished.set()
+
+    first._host.drive_turn = slow  # type: ignore[assignment]
+    await first._start_prompt("first")
+    await started.wait()
+    await first.aclose()
+    assert first._host.busy
+
+    await second._start_prompt("second")
+    await second._start_replot({"record": "artifacts/res.png"})
+    assert [message["type"] for message in second_ws.sent] == ["error", "error"]
+    assert first._host.active_turn is first._turn
+
+    await second.cancel_turn()
+    assert finished.is_set()
+    assert second_ws.sent[-1]["cancelled"] is True
+    assert not first._host.busy
+    await second.aclose()
+
+
+async def test_reconnected_socket_resyncs_when_the_old_turn_finishes(tmp_path: Path) -> None:
+    from jutul_agent.interfaces.server.app import _StreamState
+
+    first, _ws, _session = _plot_state(tmp_path)
+    second_ws = _FakeWS()
+    second = _StreamState(second_ws, first._host)
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    resynced = []
+
+    async def turn(*_args: Any, **_kwargs: Any) -> Any:
+        started.set()
+        await finish.wait()
+        return SimpleNamespace(interrupts=[], messages=[])
+
+    async def resync() -> None:
+        resynced.append(True)
+
+    first._host.drive_turn = turn  # type: ignore[assignment]
+    first._host.maybe_title = lambda _cb: None  # type: ignore[assignment]
+    second.resync_pending = resync  # type: ignore[method-assign]
+    await first._start_prompt("first")
+    await started.wait()
+    second.watch_existing_turn()
+    finish.set()
+    await first._turn
+    await second._existing_turn_watch
+    assert resynced == [True]
+    assert second_ws.sent[-1]["type"] == "notice"
+    await second.aclose()

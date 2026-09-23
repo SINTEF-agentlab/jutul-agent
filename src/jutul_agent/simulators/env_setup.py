@@ -13,15 +13,21 @@ the user owns that env, and we only run dev and instantiate on request.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 import tomllib
 from collections.abc import Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.workspace import (
+    PRECOMPILE_MARKER,
+    WARM_SOURCE_MARKER,
     WorkspaceBootstrapError,
     bootstrap_julia_env,
     dependency_source_is_current,
@@ -38,6 +44,7 @@ from jutul_agent.workspace import (
     sync_julia_project_with_dependencies,
     user_owns_root_project,
     warm_source_is_current,
+    workspace_dir,
     workspace_is_simulator_source,
     write_env_template_stamp,
 )
@@ -407,6 +414,51 @@ def prepare_workspace_env(
       solve is fast without paying the bake on every launch.
     """
 
+    with _workspace_env_lock(workspace):
+        _prepare_workspace_env_unlocked(adapter, workspace, julia_project, sim_name, dependencies)
+
+
+@contextmanager
+def _workspace_env_lock(workspace: Path):
+    """Serialize env preparation across sessions and processes sharing a workspace."""
+    path = workspace_dir(workspace) / "env-prepare.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+
+            if path.stat().st_size == 0:
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    time.sleep(0.2)
+            try:
+                yield
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _prepare_workspace_env_unlocked(
+    adapter: SimulatorAdapter,
+    workspace: Path,
+    julia_project: Path,
+    sim_name: str | None,
+    dependencies: Sequence[Path] | None,
+) -> None:
     if not is_workspace_env_ready(workspace):
         # Implicit auto-bootstrap (without dev or precompile; those are init's job).
         bootstrap_workspace(adapter, workspace=workspace)
@@ -580,23 +632,72 @@ def _refresh_warm_sources(
     template = adapter.julia_env_template_path
     if warm_source_is_current(julia_project, template):
         return
-    if not recopy_warm_sources(julia_project, template):
-        return  # user-owned env (no [sources]); nothing to refresh
+    with tempfile.TemporaryDirectory(prefix="warm-source-", dir=julia_project.parent) as temp:
+        backup = Path(temp)
+        env_root = julia_project.resolve()
+        targets = _warm_source_targets(env_root)
+        for target in targets:
+            saved = backup / target.relative_to(env_root)
+            if target.is_dir():
+                shutil.copytree(target, saved)
+            elif target.exists():
+                saved.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, saved)
 
-    _info("Updating the in-env JutulAgent runtime (jutul-agent was updated)…")
-    try:
-        resolve_and_instantiate(julia_project, precompile=False, capture=True)
-    except EnvSetupError as exc:
-        rebuild = "jutul-agent init --force"
-        if sim_name:
-            rebuild += f" --sim {sim_name}"
-        print(
-            f"warning: could not refresh the JutulAgent runtime ({exc}). The agent "
-            f"will start on the previous copy; rebuild cleanly with: {rebuild}",
-            file=sys.stderr,
-        )
-        return
+        try:
+            if not recopy_warm_sources(julia_project, template):
+                return  # user-owned env (no [sources]); nothing to refresh
+            _info("Updating the in-env JutulAgent runtime (jutul-agent was updated)…")
+            resolve_and_instantiate(julia_project, precompile=False, capture=True)
+        except (EnvSetupError, OSError) as exc:
+            for target in targets:
+                saved = backup / target.relative_to(env_root)
+                if target.is_dir():
+                    shutil.rmtree(target)
+                elif target.exists():
+                    target.unlink()
+                if saved.is_dir():
+                    shutil.copytree(saved, target)
+                elif saved.exists():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(saved, target)
+            rebuild = "jutul-agent init --force"
+            if sim_name:
+                rebuild += f" --sim {sim_name}"
+            print(
+                f"warning: could not refresh the JutulAgent runtime ({exc}). The agent "
+                f"will start on the previous copy; rebuild cleanly with: {rebuild}",
+                file=sys.stderr,
+            )
+            return
     mark_warm_source(julia_project, template)
+
+
+def _warm_source_targets(julia_project: Path) -> list[Path]:
+    """Files and env-local source directories a failed refresh must restore."""
+    targets = [
+        julia_project / name
+        for name in ("Project.toml", "Manifest.toml", PRECOMPILE_MARKER, WARM_SOURCE_MARKER)
+    ]
+    try:
+        data = tomllib.loads((julia_project / "Project.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return targets
+    for spec in data.get("sources", {}).values():
+        path = spec.get("path") if isinstance(spec, dict) else None
+        if not isinstance(path, str):
+            continue
+        source = Path(path)
+        if source.is_absolute():
+            continue
+        target = (julia_project / source).resolve()
+        if (
+            target != julia_project.resolve()
+            and target.is_relative_to(julia_project.resolve())
+            and target not in targets
+        ):
+            targets.append(target)
+    return targets
 
 
 def _ensure_simulator_installed(
