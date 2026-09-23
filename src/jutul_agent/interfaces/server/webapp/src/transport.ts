@@ -9,6 +9,7 @@ import type { StoreApi } from "zustand/vanilla";
 
 import { parseServerMessage, type ClientMessage, type ServerMessage } from "./protocol";
 import type { SessionStore } from "./store";
+import { withBase } from "./basePath";
 
 type Effects = (msg: ServerMessage) => void;
 type OnDrop = () => void;
@@ -44,7 +45,8 @@ export class Transport {
   open(sessionId: string): void {
     this.close();
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/sessions/${sessionId}/stream`);
+    const path = withBase(`/sessions/${sessionId}/stream`);
+    const ws = new WebSocket(`${proto}://${location.host}${path}`);
     ws.onopen = () => {
       this.store.setState({ reconnecting: false });
       // Flush anything queued while connecting (e.g. an example clicked the instant

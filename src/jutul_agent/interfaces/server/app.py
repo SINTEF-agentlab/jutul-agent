@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -60,6 +61,26 @@ from jutul_agent.trace import schema
 # ``webapp/`` (the React app), committed and shipped so an install needs no Node.
 _SERVER_DIR = Path(__file__).resolve().parent
 WEB_DIST_DIR = _SERVER_DIR / "web_dist"
+
+
+def normalize_base_path(raw: str | None) -> str:
+    """Return ``""`` or a leading-slash prefix with no trailing slash (e.g. ``/restricted``)."""
+    if not raw:
+        return ""
+    p = raw.strip()
+    if not p or p == "/":
+        return ""
+    if not p.startswith("/"):
+        p = "/" + p
+    return p.rstrip("/")
+
+
+def public_url(base_path: str, path: str) -> str:
+    """Prefix a site-relative path with ``base_path``; leave absolute URLs alone."""
+    if not path.startswith("/"):
+        return path
+    prefix = normalize_base_path(base_path)
+    return f"{prefix}{path}" if prefix else path
 
 
 def _ui_dir() -> Path | None:
@@ -374,10 +395,12 @@ def create_app(
     add_dirs: Sequence[Path] = (),
     ephemeral_memory: bool = False,
     sysimage: bool | None = None,
+    base_path: str = "",
 ) -> FastAPI:
     # The launch-wide knobs (folder-fixed) ride in the default manager's host
     # factory; an injected manager (tests) brings its own. The model is a default
     # a request can still override, so it is applied at the create/resume endpoint.
+    base = normalize_base_path(base_path)
     if manager is None:
         from jutul_agent.interfaces.server.manager import (
             SessionLaunchDefaults,
@@ -392,6 +415,7 @@ def create_app(
                     add_dirs=tuple(add_dirs),
                     ephemeral_memory=ephemeral_memory,
                     sysimage=sysimage,
+                    base_path=base,
                 )
             )
         )
@@ -407,6 +431,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.manager = manager
+    app.state.base_path = base
 
     @app.get("/models")
     def list_models() -> dict[str, Any]:
@@ -650,7 +675,12 @@ def create_app(
         with TraceLog(state_dir / "trace.sqlite") as log:
             events = list(log.iter_events())
         live = host is not None and host.session.web_plot_port is not None
-        return {"messages": replay_events(events, session_id, live=live)}
+        bp = (
+            host.session.base_path
+            if host is not None
+            else (getattr(app.state, "base_path", "") or "")
+        )
+        return {"messages": replay_events(events, session_id, live=live, base_path=bp)}
 
     @app.post("/sessions")
     async def create_session(req: CreateSessionRequest) -> dict[str, str]:
@@ -817,8 +847,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="no such plot route")
         if not (100 <= w <= 8192 and 100 <= h <= 8192):
             raise HTTPException(status_code=404, detail="implausible figure size")
-        src = f"/live/{quote(session_id)}/viz/{quote(route)}"
-        refit = f"/popout/{quote(session_id)}/refit?route={quote(route)}"
+        bp = getattr(app.state, "base_path", "") or ""
+        src = public_url(bp, f"/live/{quote(session_id)}/viz/{quote(route)}")
+        refit = public_url(bp, f"/popout/{quote(session_id)}/refit?route={quote(route)}")
         return HTMLResponse(
             _POPOUT_WRAPPER_HTML.replace("__SRC__", src)
             .replace("__REFIT__", refit)
@@ -1156,19 +1187,39 @@ def create_app(
     ui_dir = _ui_dir()
     if ui and ui_dir is not None:
         _register_web_mime_types()
-        app.mount("/", StaticFiles(directory=ui_dir, html=True), name="web")
+        index_html = (ui_dir / "index.html").read_text(encoding="utf-8")
+        # Inject the public base path so the SPA prefixes API/WebSocket URLs.
+        inject = f'<script>window.__JUTUL_BASE_PATH__={json.dumps(base)};</script>'
+        if "<!--jutul-base-path-->" in index_html:
+            index_html = index_html.replace("<!--jutul-base-path-->", inject)
+        elif "</head>" in index_html:
+            index_html = index_html.replace("</head>", f"{inject}</head>", 1)
+        else:
+            index_html = inject + index_html
+
+        @app.api_route("/", methods=["GET", "HEAD"])
+        def serve_spa_index() -> HTMLResponse:
+            return HTMLResponse(index_html)
+
+        assets = ui_dir / "assets"
+        if assets.is_dir():
+            app.mount("/assets", StaticFiles(directory=assets), name="web-assets")
 
     return app
 
 
-def _artifact_url(session_id: str, rel: str) -> str:
+def _artifact_url(session_id: str, rel: str, *, base_path: str = "") -> str:
     """The fetch URL for a session artifact given its workspace-relative path."""
     rel = rel[len("artifacts/") :] if rel.startswith("artifacts/") else rel
-    return f"/sessions/{session_id}/artifacts/{rel}"
+    return public_url(base_path, f"/sessions/{session_id}/artifacts/{rel}")
 
 
 def artifact_wire_events(
-    payloads: list[dict[str, Any]], session_id: str, *, live: bool = True
+    payloads: list[dict[str, Any]],
+    session_id: str,
+    *,
+    live: bool = True,
+    base_path: str = "",
 ) -> list[dict[str, Any]]:
     """Wire events for produced artifacts: interactive HTML as ``viz``, the rest as ``artifact``.
 
@@ -1180,13 +1231,18 @@ def artifact_wire_events(
     it any Bonito server that backed a live plot) has restarted, so a recorded
     ``live_url`` is dead. The figure then falls back to its saved PNG poster, shown
     inline as a static image, instead of an embed pointing at a gone server.
+
+    ``base_path`` prefixes site-relative URLs when the UI is served under a public
+    path (e.g. ``/restricted``); durable artifact records stay unprefixed.
     """
     events: list[dict[str, Any]] = []
     for payload in payloads:
-        url = _artifact_url(session_id, str(payload.get("path") or ""))
+        url = _artifact_url(session_id, str(payload.get("path") or ""), base_path=base_path)
         live_url = payload.get("live_url") if live else None
         poster = payload.get("poster")
-        poster_url = _artifact_url(session_id, str(poster)) if poster else None
+        poster_url = (
+            _artifact_url(session_id, str(poster), base_path=base_path) if poster else None
+        )
         kind = payload.get("kind")
         # A plot or report is a canvas view; a bare image or file is a plain artifact.
         if live_url or payload.get("mime") == "text/html" or kind in ("plot", "report"):
@@ -1195,7 +1251,7 @@ def artifact_wire_events(
             # gone, so a live plot falls back to its still-on-disk PNG poster instead
             # of a dead live URL — the figure stays viewable, just not interactive.
             if live_url:
-                view_url = str(live_url)
+                view_url = public_url(base_path, str(live_url))
             elif payload.get("mime") == "text/html":
                 view_url = url
             else:
@@ -1223,7 +1279,7 @@ def artifact_wire_events(
 
 
 def replay_events(
-    events: list[Any], session_id: str, *, live: bool = False
+    events: list[Any], session_id: str, *, live: bool = False, base_path: str = ""
 ) -> list[dict[str, Any]]:
     """Wire messages that reconstruct a recorded conversation for a resumed session.
 
@@ -1275,7 +1331,11 @@ def replay_events(
                 )
             )
         elif ev.kind == schema.ARTIFACT:
-            items.extend(artifact_wire_events([ev.payload], session_id, live=live))
+            items.extend(
+                artifact_wire_events(
+                    [ev.payload], session_id, live=live, base_path=base_path
+                )
+            )
     return items
 
 
@@ -1794,8 +1854,11 @@ class _StreamState:
                 route_id = url.rsplit("/viz/", 1)[-1]
                 w, h = size_px or size or [1200, 800]
                 url = (
-                    f"/popout/{self._host.session.session_id}"
-                    f"?route={quote(route_id)}&w={int(w)}&h={int(h)}"
+                    public_url(
+                        self._host.session.base_path,
+                        f"/popout/{self._host.session.session_id}"
+                        f"?route={quote(route_id)}&w={int(w)}&h={int(h)}",
+                    )
                 )
                 self._popouts[url] = route_id
             await self._end_turn(protocol.popout_ready_to_wire(record, url))
@@ -2059,7 +2122,11 @@ class _StreamState:
         for event in self._host.session.trace.events_after(self._side_output_id):
             self._side_output_id = event.id
             if event.kind == schema.ARTIFACT:
-                for wire in artifact_wire_events([event.payload], self._host.session_id):
+                for wire in artifact_wire_events(
+                    [event.payload],
+                    self._host.session_id,
+                    base_path=self._host.session.base_path,
+                ):
                     await _safe_send(self._ws, wire)
             elif event.kind == schema.UI_COMMAND:
                 action = str(event.payload.get("action") or "")

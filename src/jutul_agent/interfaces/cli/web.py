@@ -34,6 +34,16 @@ def build_parser(prog: str = "jutul-agent web") -> argparse.ArgumentParser:
     )
     parser.add_argument("--port", type=int, default=8742, help="Port to bind (default 8742).")
     parser.add_argument(
+        "--base-path",
+        default="",
+        help=(
+            "Public URL prefix the browser sees this server under (e.g. /restricted when "
+            "an SSO wrapper reverse-proxies the UI). Empty means the server is at /. "
+            "API routes still bind at /; generated browser URLs and Bonito proxy_url "
+            "include the prefix."
+        ),
+    )
+    parser.add_argument(
         "--sim",
         default=None,
         choices=registry.names(),
@@ -217,6 +227,7 @@ def run(args: argparse.Namespace) -> int:
             add_dirs=add_dirs,
             ephemeral_memory=args.ephemeral_memory,
             sysimage=args.sysimage,
+            base_path=args.base_path,
         ),
         host=args.host,
         port=args.port,

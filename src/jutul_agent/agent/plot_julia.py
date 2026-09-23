@@ -415,7 +415,9 @@ async def replot_web(
         return err, None, None
     # Idempotent: an existing server answers with its real port, a fresh kernel
     # gets one started. Either way the reverse proxy learns where to dial.
-    started = await session.julia.eval(jl.web_server_start(_free_port(), session.session_id))
+    started = await session.julia.eval(
+        jl.web_server_start(_free_port(), session.session_id, base_path=session.base_path)
+    )
     match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
     if started.error or match is None:
         reason = _truncate(started.error or "the server did not report a port", 200)
@@ -497,7 +499,9 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
             backend_loaded = True
         if web and live_base is None:
             started = await session.julia.eval(
-                jl.web_server_start(_free_port(), session.session_id)
+                jl.web_server_start(
+                    _free_port(), session.session_id, base_path=session.base_path
+                )
             )
             # The server prints its bound port on a uniquely-tagged line; read that
             # rather than scanning for digits (a startup log line could carry others).

@@ -26,12 +26,27 @@ def test_serves_the_single_page_app() -> None:
     with TestClient(create_app(ui=True)) as client:
         body = client.get("/").text
         assert '<div id="root">' in body
+        assert 'window.__JUTUL_BASE_PATH__=""' in body
         match = re.search(r'assets/index-[^"\']+\.js', body)
         assert match, "index.html should reference the hashed JS bundle"
         resp = client.get("/" + match.group(0))
         assert resp.status_code == 200
         # The module script must be served as JavaScript or the browser won't run it.
         assert resp.headers["content-type"].startswith("text/javascript")
+
+
+def test_serves_spa_with_base_path_injected() -> None:
+    with TestClient(create_app(ui=True, base_path="/restricted")) as client:
+        body = client.get("/").text
+        assert 'window.__JUTUL_BASE_PATH__="/restricted"' in body
+
+
+def test_popout_wrapper_uses_base_path() -> None:
+    with TestClient(create_app(ui=False, base_path="/restricted")) as client:
+        resp = client.get("/popout/sid-1", params={"route": "res--pop2", "w": 1600, "h": 900})
+        assert resp.status_code == 200
+        assert 'src="/restricted/live/sid-1/viz/res--pop2"' in resp.text
+        assert "/restricted/popout/sid-1/refit?route=res--pop2" in resp.text
 
 
 def test_no_ui_mount_when_disabled() -> None:

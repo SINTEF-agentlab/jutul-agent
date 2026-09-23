@@ -77,6 +77,8 @@ class SessionLaunchDefaults:
     add_dirs: tuple[Path, ...] = ()
     ephemeral_memory: bool = False
     sysimage: bool | None = None
+    # Public URL prefix (e.g. ``/restricted``); see ``Session.base_path``.
+    base_path: str = ""
 
 
 def make_host_factory(defaults: SessionLaunchDefaults | None = None) -> HostFactory:
@@ -101,7 +103,7 @@ def make_host_factory(defaults: SessionLaunchDefaults | None = None) -> HostFact
         from jutul_agent.simulators import registry
 
         adapter = registry.get(sim)
-        return await SessionHost.start(
+        host = await SessionHost.start(
             simulator=adapter,
             surface="web",
             model=model,
@@ -117,6 +119,8 @@ def make_host_factory(defaults: SessionLaunchDefaults | None = None) -> HostFact
             ephemeral_memory=launch.ephemeral_memory,
             sysimage=launch.sysimage,
         )
+        host.session.base_path = launch.base_path
+        return host
 
     return factory
 
