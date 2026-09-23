@@ -48,6 +48,7 @@ jobs:
         run: uv sync --locked --extra eval
 
       # Julia integration runs on every PR/push in simulators.yml and weekly
-      # against the latest compatible simulator releases.
+      # against the latest compatible simulator releases. Two workers run the
+      # complete Python suite; loadfile keeps each test module together.
       - name: Test
-        run: uv run pytest -m "not integration"
+        run: uv run pytest -m "not integration" -n 2 --dist loadfile
