@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import json
 import re
+import sys
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -1539,7 +1540,9 @@ class _StreamState:
         if self._deferred_host_context is not None and not self._busy():
             await self._flush_host_context()
         if kind == "prompt":
-            await self._start_prompt(str(message.get("text") or ""))
+            text = str(message.get("text") or "")
+            _log_prompt(self._host.session_id, text)
+            await self._start_prompt(text)
         elif kind == "decision":
             await self._start_decision(message)
         elif kind == "cancel":
@@ -2287,6 +2290,20 @@ class _StreamState:
             self._title_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._title_task
+
+
+# How much of a prompt the server log shows: enough to tell which log lines a
+# message belongs to, short enough to keep most of a prompt out of the log.
+PROMPT_LOG_CHARS = 80
+
+
+def _log_prompt(session_id: str, text: str) -> None:
+    """Log the start of a received prompt, in uvicorn's "INFO:" console format."""
+
+    preview = " ".join(text.split())
+    if len(preview) > PROMPT_LOG_CHARS:
+        preview = preview[:PROMPT_LOG_CHARS] + "…"
+    print(f"INFO:     received message [{session_id}]: {preview!r}", file=sys.stderr, flush=True)
 
 
 async def _safe_send(websocket: WebSocket, message: dict[str, Any]) -> None:
