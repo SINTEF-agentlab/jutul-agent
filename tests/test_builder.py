@@ -8,6 +8,27 @@ from jutul_agent.agent.builder import _set_profile_window, register_provider_pro
 from jutul_agent.models import DEFAULT_MODEL, MODEL_ENV_VAR, resolve_model
 
 
+@pytest.fixture(autouse=True)
+def _provider_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Supply capabilities explicitly while constructing real provider models."""
+    from jutul_agent import models
+    from jutul_agent.agent import builder
+
+    profiles = {
+        f"{provider}:reasoning-test-model": {
+            "reasoning_output": True,
+            "temperature": False,
+            "max_input_tokens": 131_072,
+        }
+        for provider in ("openai", "anthropic", "google_genai")
+    }
+    profiles["openai:hybrid-test-model"] = {"reasoning_output": True, "temperature": True}
+    profiles["google_genai:plain-test-model"] = {"reasoning_output": False}
+    monkeypatch.setattr(builder, "model_profile", lambda model_id: profiles.get(model_id, {}))
+    monkeypatch.setattr(models, "model_profile", builder.model_profile)
+    monkeypatch.setattr(models, "_google_context_window", lambda name: None)
+
+
 def test_set_profile_window_feeds_loaded_window(monkeypatch: pytest.MonkeyPatch) -> None:
     """The loaded window goes into the model profile, where the stock summarizer
     reads its trigger from."""
@@ -18,7 +39,7 @@ def test_set_profile_window_feeds_loaded_window(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(models, "context_window", lambda model_id: 65_536)
     model = _Model()
-    _set_profile_window(model, "ollama:qwen3.6:27b")
+    _set_profile_window(model, "ollama:local-test-model:tag")
     assert model.profile["max_input_tokens"] == 65_536
 
     # No discoverable window → leave the model's native profile untouched.
@@ -73,14 +94,14 @@ def test_resolve_model_for_agent_handles_ollama_and_cloud(monkeypatch: pytest.Mo
     # the request timeout can only be set at construction, and without one the
     # client waits forever on a connection that died. Our harness profile
     # resolves for an instance just as it does for a spec string.
-    for spec in ("google_genai:gemini-2.0-flash", "openai:gpt-4.1-mini"):
+    for spec in ("google_genai:plain-test-model", "openai:plain-test-model"):
         built = _resolve_model_for_agent(spec)
         assert isinstance(built, BaseChatModel), spec
         assert _harness_profile_for_model(built, None).general_purpose_subagent.enabled is False
     # A version-tagged Ollama id (>1 colon) becomes a built instance whose context
     # is sized from the model and capped at the budget, and; crucially; our
     # harness profile now resolves for it (it does NOT for such a spec as a string).
-    model = _resolve_model_for_agent("ollama:qwen3.6:27b")
+    model = _resolve_model_for_agent("ollama:local-test-model:tag")
     assert isinstance(model, BaseChatModel)
     assert getattr(model, "num_ctx", None) == 65536  # min(262144, budget)
     # Thinking-capable local models get think mode requested explicitly, so
@@ -107,15 +128,15 @@ def test_resolve_model_for_agent_enables_openai_reasoning(
 
     register_provider_profiles()
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    # The bundled model profile says gpt-5.4-mini reasons → effort + summaries.
-    model = _resolve_model_for_agent("openai:gpt-5.4-mini")
+    # A reasoning profile enables effort and summaries.
+    model = _resolve_model_for_agent("openai:reasoning-test-model")
     assert isinstance(model, BaseChatModel)
     assert getattr(model, "reasoning", None) == {"effort": "medium", "summary": "auto"}
     assert getattr(model, "use_responses_api", None) is True
     profile = _harness_profile_for_model(model, None)
     assert profile.general_purpose_subagent.enabled is False
     # New reasoning models work before the provider's static profile catches up.
-    for spec in (DEFAULT_MODEL, "openai:gpt-6-luna"):
+    for spec in (DEFAULT_MODEL, "openai:gpt-99-test-model"):
         newer = _resolve_model_for_agent(spec)
         assert isinstance(newer, BaseChatModel)
         assert getattr(newer, "reasoning", None) == {"effort": "medium", "summary": "auto"}
@@ -123,7 +144,7 @@ def test_resolve_model_for_agent_enables_openai_reasoning(
     # Non-reasoning models are built too (for the request timeout) but are not
     # asked to reason, and neither are the -chat hybrids, whose profile keeps
     # temperature support and whose API rejects reasoning.effort.
-    for spec in ("openai:gpt-4.1-mini", "openai:gpt-5-chat-latest"):
+    for spec in ("openai:plain-test-model", "openai:hybrid-test-model"):
         plain = _resolve_model_for_agent(spec)
         assert isinstance(plain, BaseChatModel), spec
         assert getattr(plain, "reasoning", None) is None, spec
@@ -138,7 +159,7 @@ def test_resolve_model_for_agent_enables_anthropic_thinking(
 
     register_provider_profiles()
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    model = _resolve_model_for_agent("anthropic:claude-sonnet-4-6")
+    model = _resolve_model_for_agent("anthropic:reasoning-test-model")
     assert isinstance(model, BaseChatModel)
     assert getattr(model, "thinking", None) == {"type": "enabled", "budget_tokens": 10_000}
     assert getattr(model, "max_tokens", None) == 24_000
@@ -146,7 +167,7 @@ def test_resolve_model_for_agent_enables_anthropic_thinking(
     # (every cloud request is bounded) but is not asked to think. A fictional id,
     # so the assertion can't be invalidated by the provider package later
     # learning a real model's profile.
-    unknown = _resolve_model_for_agent("anthropic:claude-imaginary-0-0")
+    unknown = _resolve_model_for_agent("anthropic:unknown-test-model")
     assert isinstance(unknown, BaseChatModel)
     assert getattr(unknown, "thinking", None) is None
 
@@ -164,9 +185,9 @@ def test_resolve_model_for_agent_bounds_cloud_requests(
     from jutul_agent.agent.builder import _resolve_model_for_agent
 
     for env_var, spec in (
-        ("OPENAI_API_KEY", "openai:gpt-5.4-mini"),
-        ("ANTHROPIC_API_KEY", "anthropic:claude-sonnet-4-6"),
-        ("GOOGLE_API_KEY", "google_genai:gemini-2.5-flash"),
+        ("OPENAI_API_KEY", "openai:reasoning-test-model"),
+        ("ANTHROPIC_API_KEY", "anthropic:reasoning-test-model"),
+        ("GOOGLE_API_KEY", "google_genai:reasoning-test-model"),
     ):
         monkeypatch.setenv(env_var, "test-key")
         model = _resolve_model_for_agent(spec)
@@ -232,7 +253,7 @@ def test_resolve_model_for_agent_degrades_without_credentials(
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
-    assert _resolve_model_for_agent("openai:gpt-5.4-mini") == "openai:gpt-5.4-mini"
+    assert _resolve_model_for_agent("openai:reasoning-test-model") == "openai:reasoning-test-model"
 
 
 def test_resolve_model_user_beats_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -250,28 +271,15 @@ def test_resolve_model_for_agent_enables_gemini_thoughts(
     register_provider_profiles()
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     # Bundled profile marks it a thinking model → thoughts made visible.
-    model = _resolve_model_for_agent("google_genai:gemini-2.5-flash")
+    model = _resolve_model_for_agent("google_genai:reasoning-test-model")
     assert isinstance(model, BaseChatModel)
     assert getattr(model, "include_thoughts", None) is True
     # No profile entry (newer than the package data) → treated as thinking.
-    model = _resolve_model_for_agent("google_genai:gemini-3.5-flash")
+    model = _resolve_model_for_agent("google_genai:unknown-test-model")
     assert isinstance(model, BaseChatModel)
     assert getattr(model, "include_thoughts", None) is True
-    # Legacy model profiles can disappear as provider data is refreshed. Pin
-    # this branch with a supplied non-reasoning profile instead of a model ID.
-    from jutul_agent.agent import builder
-
-    actual_profile = builder.model_profile
-    monkeypatch.setattr(
-        builder,
-        "model_profile",
-        lambda model_id: (
-            {"reasoning_output": False}
-            if model_id == "google_genai:gemini-2.0-flash"
-            else actual_profile(model_id)
-        ),
-    )
-    legacy = _resolve_model_for_agent("google_genai:gemini-2.0-flash")
+    # An explicitly non-reasoning profile keeps thoughts disabled.
+    legacy = _resolve_model_for_agent("google_genai:plain-test-model")
     assert isinstance(legacy, BaseChatModel)
     assert getattr(legacy, "include_thoughts", None) is not True
 
@@ -352,5 +360,5 @@ def test_agent_drops_delegation_without_a_subagent(
     session = Session.create(
         julia=FakeJulia(), state_root=tmp_path, simulator=make_fake_adapter(tmp_path)
     )
-    agent, _ = build_agent(session, model=_resolve_model_for_agent("openai:gpt-5.4-mini"))
+    agent, _ = build_agent(session, model=_resolve_model_for_agent("openai:reasoning-test-model"))
     assert "task" not in set(agent.nodes["tools"].bound.tools_by_name)

@@ -110,7 +110,7 @@ bench as the honest comparison.
 ## Models in the bench
 
 `jutul-agent eval` uses Inspect's model layer, so model ids there take the
-`provider/model` form (`openai/gpt-5.4-mini`, `ollama/qwen3.6:27b`), and
+`provider/model` form, preserving any slashes or tags in the model ID, and
 one run can matrix several models. The agent under test runs against the
 bridge regardless of the target provider, which is how the same session
 code serves every model. See [evaluation](evaluation.md).
