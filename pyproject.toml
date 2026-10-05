@@ -22,6 +22,7 @@ dependencies = [
     # (langchain-anthropic arrives via deepagents). ollama covers local models;
     # any other provider works once the user installs its langchain-* package.
     "langchain-openai>=0.2",
+    "langchain-openrouter>=0.2.9",
     "langchain-google-genai>=4.2.2",
     "langchain-ollama>=1.1.0",
     "langgraph-checkpoint-sqlite>=3.1.0",

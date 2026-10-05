@@ -170,6 +170,8 @@ _PROVIDER_TIMEOUTS: dict[str, Any] = {
     "openai": httpx.Timeout(connect=15.0, read=_PROVIDER_READ_TIMEOUT_S, write=120.0, pool=60.0),
     "anthropic": _PROVIDER_READ_TIMEOUT_S,
     "google_genai": _PROVIDER_READ_TIMEOUT_S,
+    # ChatOpenRouter's SDK expects milliseconds, unlike the other providers.
+    "openrouter": int(_PROVIDER_READ_TIMEOUT_S * 1000),
 }
 
 
@@ -229,6 +231,17 @@ def _google_settings(model_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _openrouter_settings(model_id: str) -> dict[str, Any] | None:
+    from deepagents.profiles.provider import apply_provider_profile
+
+    # We construct the model before create_deep_agent sees it, so preserve
+    # the framework's provider defaults (attribution and upstream routing).
+    settings = apply_provider_profile(model_id)
+    if model_profile(model_id).get("reasoning_output"):
+        settings["reasoning"] = {"effort": "medium", "summary": "auto"}
+    return settings
+
+
 # Construction-time keyword arguments per provider, applied when a model spec
 # string is resolved for the agent. The resolution loop is provider-agnostic:
 # adding a provider is one entry here, providers without an entry (and any
@@ -240,6 +253,7 @@ _MODEL_SETTINGS: dict[str, Callable[[str], dict[str, Any] | None]] = {
     "openai": _openai_settings,
     "anthropic": _anthropic_settings,
     "google_genai": _google_settings,
+    "openrouter": _openrouter_settings,
 }
 
 
@@ -274,9 +288,14 @@ def _resolve_model_for_agent(model: Any) -> Any:
         if timeout is not None:
             kwargs.setdefault("timeout", timeout)
         if kwargs:
-            from langchain.chat_models import init_chat_model
+            if provider == "openrouter":
+                from jutul_agent.agent.openrouter import ChatOpenRouterWithToolImages
 
-            instance = init_chat_model(model, **kwargs)
+                instance = ChatOpenRouterWithToolImages(model=model.partition(":")[2], **kwargs)
+            else:
+                from langchain.chat_models import init_chat_model
+
+                instance = init_chat_model(model, **kwargs)
             _set_profile_window(instance, model)
             return instance
     except Exception:

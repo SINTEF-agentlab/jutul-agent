@@ -180,6 +180,49 @@ def test_resolve_model_for_agent_bounds_cloud_requests(
         assert read is not None and 0 < float(read) <= 600, f"{spec}: {timeout!r}"
 
 
+def test_resolve_model_for_agent_builds_openrouter(monkeypatch: pytest.MonkeyPatch) -> None:
+    from deepagents.profiles.harness.harness_profiles import _harness_profile_for_model
+
+    from jutul_agent import models
+    from jutul_agent.agent import builder
+    from jutul_agent.agent.builder import _resolve_model_for_agent
+    from jutul_agent.agent.openrouter import ChatOpenRouterWithToolImages
+
+    register_provider_profiles()
+    monkeypatch.setenv("OPENROUTER_API_KEY", "router-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPAGENTS_OPENROUTER_ALLOW_AZURE", raising=False)
+    spec = "openrouter:vendor/reasoning-test-model"
+    profile = {"reasoning_output": True, "max_input_tokens": 131_072}
+    monkeypatch.setattr(builder, "model_profile", lambda name: profile if name == spec else {})
+    monkeypatch.setattr(models, "model_profile", builder.model_profile)
+    model = _resolve_model_for_agent(spec)
+    assert isinstance(model, ChatOpenRouterWithToolImages)
+    assert model.model_name == "vendor/reasoning-test-model"
+    assert model.openrouter_api_key.get_secret_value() == "router-key"
+    assert model.reasoning == {"effort": "medium", "summary": "auto"}
+    assert model.request_timeout == 300_000  # milliseconds in the OpenRouter SDK
+    assert model.client.sdk_configuration.timeout_ms == 300_000
+    assert model.openrouter_provider == {"ignore": ["azure"]}
+    assert model.profile["max_input_tokens"] > 0
+    assert _harness_profile_for_model(model, None).general_purpose_subagent.enabled is False
+
+    def probe(value: str) -> str:
+        """Return the given value."""
+        return value
+
+    bound = model.bind_tools([probe])
+    assert bound.kwargs["tools"][0]["function"]["name"] == "probe"
+    # Non-reasoning and unknown models still get a timeout, without extra reasoning.
+    plain = _resolve_model_for_agent("openrouter:vendor/unknown:free")
+    assert isinstance(plain, ChatOpenRouterWithToolImages)
+    assert plain.model_name == "vendor/unknown:free"
+    assert plain.reasoning is None
+    assert plain.request_timeout == 300_000
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    assert _resolve_model_for_agent(spec) == spec
+
+
 def test_resolve_model_for_agent_degrades_without_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -19,7 +19,7 @@ cli_main = sys.modules["jutul_agent.interfaces.cli.main"]
 
 @pytest.fixture(autouse=True)
 def _no_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
+    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     # main() calls load_dotenv(), which finds a .env relative to the caller's file
     # (so the repo's own .env would seed real keys here). Stub it so the status the
@@ -32,6 +32,7 @@ def test_key_show_lists_providers(capsys: pytest.CaptureFixture[str]) -> None:
     out = capsys.readouterr().out
     assert "OPENAI_API_KEY" in out
     assert "ANTHROPIC_API_KEY" in out
+    assert "OPENROUTER_API_KEY" in out
     assert "not set" in out
     assert ".env" in out  # tells the user where keys live
 

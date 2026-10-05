@@ -84,6 +84,8 @@ def test_models_endpoint(tmp_path: Path) -> None:
         body = client.get("/models").json()
     assert "default" in body
     assert isinstance(body["providers"], list)
+    assert "openrouter" in body["providers"]
+    assert any(model["provider"] == "openrouter" for model in body["models"])
     # The version a third-party front end negotiates against is announced here.
     assert body["protocol"] == protocol.PROTOCOL_VERSION
 
@@ -125,42 +127,51 @@ def test_credentials_endpoint_lists_providers(tmp_path: Path) -> None:
         body = client.get("/credentials").json()
     assert "path" in body
     providers = {p["provider"]: p for p in body["providers"]}
-    assert {"openai", "anthropic", "google_genai"} <= set(providers)
+    assert {"openai", "anthropic", "google_genai", "openrouter"} <= set(providers)
     # The placeholder keys read as set; only masked previews cross the wire.
     assert providers["openai"]["is_set"] and providers["openai"]["masked"]
 
 
+@pytest.mark.parametrize(
+    ("provider", "env_var"),
+    [("anthropic", "ANTHROPIC_API_KEY"), ("openrouter", "OPENROUTER_API_KEY")],
+)
 def test_post_credentials_saves_and_is_reflected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str, env_var: str
 ) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv(env_var, "")
     with _client(echo_agent, tmp_path) as client:
         before = {p["provider"]: p for p in client.get("/credentials").json()["providers"]}
-        assert not before["anthropic"]["is_set"]
-        ok = client.post("/credentials", json={"provider": "anthropic", "value": "sk-newkey-1234"})
-        assert ok.status_code == 200 and ok.json()["env_var"] == "ANTHROPIC_API_KEY"
+        assert not before[provider]["is_set"]
+        ok = client.post("/credentials", json={"provider": provider, "value": "sk-newkey-1234"})
+        assert ok.status_code == 200 and ok.json()["env_var"] == env_var
         after = {p["provider"]: p for p in client.get("/credentials").json()["providers"]}
-        assert after["anthropic"]["is_set"] and after["anthropic"]["source"] == "file"
+        assert after[provider]["is_set"] and after[provider]["source"] == "file"
         # Unknown providers are rejected, not written.
         assert (
             client.post("/credentials", json={"provider": "bogus", "value": "x"}).status_code == 400
         )
 
 
+@pytest.mark.parametrize(
+    ("model", "env_var"),
+    [
+        ("openai:gpt-5.4", "OPENAI_API_KEY"),
+        ("openrouter:vendor/test-model", "OPENROUTER_API_KEY"),
+    ],
+)
 def test_create_session_requires_credential(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str, env_var: str
 ) -> None:
     # A new session on a model whose key is missing is refused with a structured error
     # (the UI shows a key prompt on it), before any kernel is stood up.
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    app = create_app(
-        _manager(echo_agent, tmp_path), default_sim="demo", default_model="openai:gpt-5.4"
-    )
+    monkeypatch.delenv(env_var, raising=False)
+    app = create_app(_manager(echo_agent, tmp_path), default_sim="demo", default_model=model)
     with TestClient(app) as client:
         resp = client.post("/sessions", json={})
         assert resp.status_code == 400
         detail = resp.json()["detail"]
-        assert detail["error"] == "credential_required" and detail["env_var"] == "OPENAI_API_KEY"
+        assert detail["error"] == "credential_required" and detail["env_var"] == env_var
         # A keyless local model still creates fine.
         assert client.post("/sessions", json={"model": "ollama:qwen3"}).status_code == 200
 
@@ -189,18 +200,25 @@ def test_disk_resume_reports_stale_sysimage_as_conflict(tmp_path: Path) -> None:
     assert "--no-sysimage" in response.json()["detail"]
 
 
+@pytest.mark.parametrize(
+    ("model", "env_var"),
+    [
+        ("openai:gpt-5.4", "OPENAI_API_KEY"),
+        ("openrouter:vendor/test-model", "OPENROUTER_API_KEY"),
+    ],
+)
 def test_set_model_prompts_for_missing_key_over_ws(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str, env_var: str
 ) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv(env_var, raising=False)
     with _client(echo_agent, tmp_path) as client:
         sid = client.post("/sessions", json={"sim": "demo", "model": "ollama:qwen3"}).json()[
             "session_id"
         ]
         with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
-            ws.send_json({"type": "command", "command": "set_model", "arg": "openai:gpt-5.4"})
+            ws.send_json({"type": "command", "command": "set_model", "arg": model})
             msg = ws.receive_json()
-    assert msg["type"] == "credential_required" and msg["env_var"] == "OPENAI_API_KEY"
+    assert msg["type"] == "credential_required" and msg["env_var"] == env_var
 
 
 def test_simulators_endpoint(tmp_path: Path) -> None:

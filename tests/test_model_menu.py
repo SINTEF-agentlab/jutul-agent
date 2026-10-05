@@ -36,6 +36,7 @@ async def test_model_menu_lists_discovered_models() -> None:
         ids = _option_ids(app.screen)
         # A discovered id is present; provider headers are non-selectable (id=None).
         assert "anthropic:claude-sonnet-4-6" in ids
+        assert any(id is not None and id.startswith("openrouter:") for id in ids)
         assert None in ids
 
 
