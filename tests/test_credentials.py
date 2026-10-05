@@ -52,11 +52,20 @@ def test_store_credential_locks_file_mode() -> None:
     assert (path.stat().st_mode & 0o777) == 0o600
 
 
-def test_missing_credential_present_absent_and_local(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    assert missing_credential("openai:gpt-5.4") == "OPENAI_API_KEY"
-    monkeypatch.setenv("OPENAI_API_KEY", "x")
-    assert missing_credential("openai:gpt-5.4") is None
+@pytest.mark.parametrize(
+    ("spec", "env_var"),
+    [
+        ("openai:gpt-5.4", "OPENAI_API_KEY"),
+        ("openrouter:vendor/test-model", "OPENROUTER_API_KEY"),
+    ],
+)
+def test_missing_credential_present_absent_and_local(
+    monkeypatch: pytest.MonkeyPatch, spec: str, env_var: str
+) -> None:
+    monkeypatch.delenv(env_var, raising=False)
+    assert missing_credential(spec) == env_var
+    monkeypatch.setenv(env_var, "x")
+    assert missing_credential(spec) is None
     # Local providers need no key; unknown providers have none either.
     assert missing_credential("ollama:llama3.1") is None
     assert missing_credential("madeup:model") is None
@@ -77,7 +86,7 @@ def test_load_user_credentials_does_not_override_existing(monkeypatch: pytest.Mo
 
 @pytest.fixture
 def _clear_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
+    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY"):
         monkeypatch.delenv(var, raising=False)
 
 
@@ -89,7 +98,7 @@ def test_mask_secret_hides_the_middle() -> None:
 
 def test_key_providers_excludes_local() -> None:
     names = {p.name for p in key_providers()}
-    assert {"openai", "anthropic", "google_genai"} <= names
+    assert {"openai", "anthropic", "google_genai", "openrouter"} <= names
     assert "ollama" not in names  # local, no key
 
 
@@ -98,6 +107,7 @@ def test_provider_by_name_accepts_name_label_and_prefix() -> None:
     assert provider_by_name("OpenAI").name == "openai"
     assert provider_by_name("google").name == "google_genai"  # prefix match
     assert provider_by_name("Google").name == "google_genai"  # label
+    assert provider_by_name("OpenRouter").name == "openrouter"
     assert provider_by_name("nope") is None
 
 

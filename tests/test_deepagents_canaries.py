@@ -1,9 +1,8 @@
 """Canaries over the private upstream surface jutul-agent deliberately touches.
 
-A failure here means a deepagents/langgraph bump moved something we compose
-with. Runtime degrades gracefully in every case (that is the point of the
-guards); these tests make a pin bump fail loudly at test time instead, with a
-map of what to fix.
+A failure here means an upstream bump moved something we compose with. Some
+contacts degrade gracefully at runtime; others can break request construction.
+These tests make the change fail loudly at test time, with a map of what to fix.
 """
 
 from __future__ import annotations
@@ -47,3 +46,10 @@ def test_deepagents_harness_profile_resolver_still_exists() -> None:
         "deepagents moved _harness_profile_for_model; tests/test_builder.py "
         "asserts profile resolution through it."
     )
+
+
+def test_openrouter_message_serialization_hook_still_exists() -> None:
+    from langchain_openrouter import ChatOpenRouter
+
+    hook = getattr(ChatOpenRouter, "_create_message_dicts", None)
+    assert callable(hook), "Update agent/openrouter.py against the new serialization path."

@@ -32,7 +32,7 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Julia
 
 ```sh
 uv tool install jutul-agent
-jutul-agent key openai            # save a provider key (Anthropic and Google work too)
+jutul-agent key openai            # save a key (Anthropic, Google, and OpenRouter work too)
 
 mkdir my-study && cd my-study
 jutul-agent init --sim battmo     # jutuldarcy | battmo | fimbul | mocca
@@ -70,7 +70,7 @@ interfaces, and models; to work on jutul-agent itself, clone the repo (see
   the installed version, not from memory.
 - Everything is recorded. Each session writes a trace of every message, tool
   call, and artifact. Transcripts and the benchmark grade against it.
-- Models are interchangeable: OpenAI, Anthropic, Google, or local models via
+- Models are interchangeable: OpenAI, Anthropic, Google, OpenRouter, or local models via
   Ollama, switchable mid-session.
 - Where the packages are fixed, such as a demo or a shared machine,
   `init --sysimage` bakes the whole Julia environment into a [system

@@ -9,18 +9,26 @@ code change.
 Precedence, highest first: the `--model` flag, the workspace config, the
 user config, `$JUTUL_AGENT_MODEL`, the built-in default.
 
-In the TUI, `/model` opens the selector: bundled OpenAI, Anthropic, Google,
-and Ollama entries, your recently used models, and a free-text field for
-any `provider:model` LangChain supports. Enter saves the choice for this
-workspace, and `Ctrl+A` makes it the user-wide default. Switching mid-session
-rebuilds the agent on the same conversation (see
+In the web UI, `/model` opens the model picker with OpenAI, Anthropic, Google,
+OpenRouter, and Ollama entries. You can also type `/model provider:model` to
+use another model ID. Switching mid-session keeps the conversation (see
 [context handling](context.md)).
 
-Providers beyond the bundled four work once their LangChain package is
-installed (for example `uv add langchain-openrouter`), and jutul-agent
-names the exact package when it is missing. API keys are prompted for on first
-use and stored in the user-global `.env`
+Providers beyond the bundled five work once their LangChain package is
+installed, and jutul-agent names the exact package when it is missing.
+API keys are prompted for on first use and stored in the user-global `.env`
 ([configuration](configuration.md)).
+
+## OpenRouter
+
+OpenRouter is included. Save an API key and start the web UI:
+
+```sh
+jutul-agent key openrouter
+jutul-agent web
+```
+
+Then use `/model` to choose an OpenRouter model.
 
 ## What the harness asks of a model
 
@@ -54,6 +62,9 @@ provider:
   model with no profile entry is treated as thinking, since every model
   newer than the bundled data thinks; the legacy non-thinking ones are
   marked explicitly in the data.
+- OpenRouter: models whose bundled profile supports reasoning receive
+  `reasoning={"effort": "medium", "summary": "auto"}` through the dedicated
+  integration, which preserves reasoning across tool calls.
 - Ollama: think mode is requested explicitly for models the daemon
   reports as thinking-capable. Left at the daemon default, the thinking
   segment is dropped on the client side, and a turn the model spends

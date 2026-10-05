@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import httpx
+import pytest
+
 from jutul_agent.models import (
     DEFAULT_MODEL,
     OLLAMA_CLOUD,
@@ -28,10 +31,12 @@ def test_key_env_var_and_local_flag() -> None:
     assert key_env_var("openai:gpt-5.5") == "OPENAI_API_KEY"
     assert key_env_var("anthropic:claude-opus-4-8") == "ANTHROPIC_API_KEY"
     assert key_env_var("google_genai:gemini-3-flash-preview") == "GOOGLE_API_KEY"
+    assert key_env_var("openrouter:vendor/test-model") == "OPENROUTER_API_KEY"
     assert key_env_var("ollama:llama4") is None
     assert key_env_var("madeup:model") is None
     assert is_local("ollama:llama4") is True
     assert is_local("openai:gpt-5.5") is False
+    assert is_local("openrouter:vendor/test-model") is False
 
 
 def test_missing_provider_error_names_the_fix() -> None:
@@ -61,6 +66,7 @@ def test_discovery_groups_real_models_by_provider() -> None:
     # static profiles and is discovered from the daemon by the selector, not here.
     assert "openai" in catalog
     assert "anthropic" in catalog
+    assert "openrouter" in catalog
     assert "ollama" not in catalog
     for provider, models in catalog.items():
         assert models, provider
@@ -68,12 +74,27 @@ def test_discovery_groups_real_models_by_provider() -> None:
             assert model.provider == provider
             assert model.id.startswith(f"{provider}:")
             # The label is the bare model name (no provider prefix).
-            assert ":" not in model.label
+            assert model.label == model.id.partition(":")[2]
 
 
 def test_discovery_includes_the_default_model() -> None:
     assert DEFAULT_MODEL == "openai:gpt-6-sol"
     assert is_known_model(DEFAULT_MODEL)
+
+
+def test_openrouter_profile_uses_installed_provider_data(monkeypatch) -> None:
+    """Keep a real profile lookup alongside synthetic builder capability tests."""
+    from jutul_agent import models
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "router-key")
+    profiles = models._load_profiles(PROVIDERS["openrouter"].package)
+    info = next(
+        info
+        for info in discover_models()["openrouter"]
+        if profiles[info.label].get("max_input_tokens")
+    )
+    assert models.model_profile(info.id)["tool_calling"] is True
+    assert models.context_window(info.id) == profiles[info.label]["max_input_tokens"]
 
 
 def test_live_discovery_adds_new_ids_without_replacing_profiles(monkeypatch) -> None:
@@ -82,9 +103,12 @@ def test_live_discovery_adds_new_ids_without_replacing_profiles(monkeypatch) -> 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(models, "_openai_available", lambda: ["gpt-6-luna", "gpt-5.4-mini"])
     monkeypatch.setattr(models, "_anthropic_available", lambda: ["claude-sonnet-5"])
     monkeypatch.setattr(models, "_google_available", lambda: ["gemini-3.8-flash"])
+
+    monkeypatch.setattr(models, "_openrouter_available", lambda: ["vendor/new-tool-model"])
 
     catalog = discover_available_models()
     assert {"openai:gpt-6-luna", "anthropic:claude-sonnet-5", "google_genai:gemini-3.8-flash"} <= {
@@ -92,6 +116,7 @@ def test_live_discovery_adds_new_ids_without_replacing_profiles(monkeypatch) -> 
     }
     assert sum(model.id == "openai:gpt-5.4-mini" for model in catalog["openai"]) == 1
     assert next(model for model in catalog["openai"] if model.id == "openai:gpt-6-luna").note
+    assert any(model.id == "openrouter:vendor/new-tool-model" for model in catalog["openrouter"])
 
 
 def test_live_discovery_falls_back_to_profiles_when_provider_fails(monkeypatch) -> None:
@@ -100,12 +125,120 @@ def test_live_discovery_falls_back_to_profiles_when_provider_fails(monkeypatch) 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     def fail() -> list[str]:
         raise RuntimeError("offline")
 
     monkeypatch.setattr(models, "_openai_available", fail)
     assert discover_available_models() == discover_models()
+
+
+@pytest.fixture
+def openrouter_http(monkeypatch):
+    """Keep real HTTP handling; replace only the network transport."""
+    for info in PROVIDERS.values():
+        if info.key_env_var:
+            monkeypatch.delenv(info.key_env_var, raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "router-key")
+    monkeypatch.delenv("OPENROUTER_API_BASE", raising=False)
+    responses: list[httpx.Response | Exception] = []
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        response = responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    client_class = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: client_class(transport=httpx.MockTransport(respond), **kwargs),
+    )
+    return responses, requests
+
+
+@pytest.mark.parametrize(
+    "base_url", ["https://openrouter.ai/api/v1", "https://router.example/api/v1/"]
+)
+def test_openrouter_live_catalog_filters_for_text_and_tools(
+    openrouter_http, monkeypatch, base_url
+) -> None:
+    from jutul_agent import models
+
+    if base_url.endswith("/"):
+        monkeypatch.setenv("OPENROUTER_API_BASE", base_url)
+    responses, requests = openrouter_http
+    text = {"input_modalities": ["text", "image"], "output_modalities": ["text"]}
+    valid = {"id": "vendor/chat:free", "supported_parameters": ["tools"], "architecture": text}
+    responses.append(
+        httpx.Response(
+            200,
+            json={
+                "data": [
+                    valid,
+                    valid,
+                    {**valid, "supported_parameters": []},
+                    {"id": "vendor/no-metadata"},
+                    {**valid, "architecture": {**text, "output_modalities": ["image"]}},
+                    {**valid, "architecture": {**text, "input_modalities": ["audio"]}},
+                    {**valid, "architecture": None},
+                    {**valid, "supported_parameters": "tools"},
+                    {**valid, "id": None},
+                    None,
+                    {**valid, "id": "vendor/another-chat"},
+                ]
+            },
+        )
+    )
+    assert models._openrouter_available() == ["vendor/another-chat", "vendor/chat:free"]
+    assert len(requests) == 1
+    assert str(requests[0].url) == f"{base_url.rstrip('/')}/models"
+    assert requests[0].headers["Authorization"] == "Bearer router-key"
+    assert 0 < requests[0].extensions["timeout"]["read"] <= 10
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        # A valid body ensures this case depends on HTTP status checking.
+        httpx.Response(
+            401,
+            json={
+                "data": [
+                    {
+                        "id": "vendor/test-model",
+                        "supported_parameters": ["tools"],
+                        "architecture": {
+                            "input_modalities": ["text"],
+                            "output_modalities": ["text"],
+                        },
+                    }
+                ]
+            },
+        ),
+        httpx.Response(200, content="invalid JSON"),
+        httpx.Response(200, json={"data": None}),
+        httpx.Response(200, json=[]),
+        httpx.ReadTimeout("test timeout"),
+    ],
+    ids=["http", "json", "data-schema", "root-schema", "timeout"],
+)
+def test_openrouter_catalog_failures_preserve_bundled_models(openrouter_http, failure) -> None:
+    responses, requests = openrouter_http
+    responses.append(failure)
+    assert discover_available_models() == discover_models()
+    assert len(requests) == 1
+
+
+def test_openrouter_discovery_without_key_makes_no_request(openrouter_http, monkeypatch) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    _, requests = openrouter_http
+    assert discover_available_models() == discover_models()
+    assert not requests
 
 
 def test_is_known_model_rejects_free_text() -> None:

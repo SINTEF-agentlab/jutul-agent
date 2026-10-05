@@ -149,6 +149,9 @@ silently at runtime. The contacts:
 - `agent/summarization.py`: manual `/compact` composes the summarization
   middleware's private engine methods. Guarded by a `hasattr` sweep that
   degrades to a clear "unavailable" message.
+- `agent/openrouter.py`: overrides `ChatOpenRouter._create_message_dicts` to
+  serialize canonical tool images until upstream supports them. Tests exercise
+  the real SDK with mocked HTTP for ordinary and streaming requests.
 - `agent/backend.py`: subclasses `CompositeBackend` (overriding `grep`/`glob`
   so patterns recurse) and `LocalShellBackend` (overriding `write`/`edit`/
   `delete`/`execute` to refuse depot writes, reading `cwd` to resolve relative

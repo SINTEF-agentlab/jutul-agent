@@ -55,6 +55,9 @@ PROVIDERS: dict[str, ProviderInfo] = {
     "google_genai": ProviderInfo(
         "google_genai", "Google", "langchain-google-genai", "GOOGLE_API_KEY"
     ),
+    "openrouter": ProviderInfo(
+        "openrouter", "OpenRouter", "langchain-openrouter", "OPENROUTER_API_KEY"
+    ),
     "ollama": ProviderInfo("ollama", "Ollama (local)", "langchain-ollama", local=True),
 }
 
@@ -243,6 +246,7 @@ def discover_available_models() -> dict[str, list[ModelInfo]]:
         ("openai", _openai_available),
         ("anthropic", _anthropic_available),
         ("google_genai", _google_available),
+        ("openrouter", _openrouter_available),
     ):
         if not os.environ.get(PROVIDERS[provider].key_env_var or ""):
             continue
@@ -288,6 +292,45 @@ def _anthropic_available() -> list[str]:
             for model in client.models.list(limit=100).data
             if model.id.startswith("claude-")
         ]
+
+
+def _openrouter_available() -> list[str]:
+    """Text/tool model IDs from OpenRouter's catalog, with no inference request.
+
+    Read only the capability fields we need: SDK validation of unrelated
+    catalog fields can reject otherwise usable entries as the schema evolves.
+    Request/JSON/schema failures propagate to the shared offline fallback.
+    """
+    import httpx
+
+    base_url = os.environ.get("OPENROUTER_API_BASE") or "https://openrouter.ai/api/v1"
+    with httpx.Client(timeout=5) as client:
+        response = client.get(
+            f"{base_url.rstrip('/')}/models",
+            headers={"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        raise ValueError("OpenRouter model catalog must contain a data array")
+    names: set[str] = set()
+    for model in payload["data"]:
+        if not isinstance(model, dict):
+            continue
+        name = model.get("id")
+        architecture = model.get("architecture")
+        if not isinstance(name, str) or not name.strip() or not isinstance(architecture, dict):
+            continue
+        capabilities = (
+            (model.get("supported_parameters"), "tools"),
+            (architecture.get("input_modalities"), "text"),
+            (architecture.get("output_modalities"), "text"),
+        )
+        if all(
+            isinstance(values, list) and required in values for values, required in capabilities
+        ):
+            names.add(name)
+    return sorted(names)
 
 
 def _google_available() -> list[str]:

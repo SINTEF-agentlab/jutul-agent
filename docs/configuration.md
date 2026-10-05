@@ -69,6 +69,7 @@ so a stale shell variable can't silently override a key you just changed.
 | Variable | Meaning |
 |---|---|
 | `JUTUL_AGENT_MODEL` | Default model when no flag or config sets one (useful in CI) |
+| `OPENROUTER_API_KEY` | API key for `openrouter:<vendor>/<model>` models; also saved by `jutul-agent key openrouter` |
 | `JUTUL_AGENT_JULIA_THREADS` | Compute threads for the Julia kernel: an integer, or `auto` for all logical cores. Defaults to physical cores minus one; the `--threads` flag overrides it. Jutul's assembly and preconditioner are threaded, so this speeds up larger solves. The kernel adds one interactive thread on top, and pins OpenBLAS to one thread (unless `OPENBLAS_NUM_THREADS` is set) to avoid oversubscription. The eval/benchmark harness uses the same policy (production parity); pin it per run with this variable. |
 | `JUTUL_AGENT_HYPRE_THREADS` | OpenMP threads for HYPRE's BoomerAMG (JutulDarcy's CPR pressure preconditioner). Defaults to physical cores minus one, capped at 8 (HYPRE's solver performance degrades with many threads). Independent of the Julia compute-thread count. |
 | `JUTUL_AGENT_OLLAMA_NUM_CTX` | Memory cap for local models' context window (default 64K tokens, lower on tight hardware) |

@@ -214,7 +214,7 @@ Model ids are `provider:model` strings. Resolution precedence: `--model`
 flag, workspace config, user config (`Ctrl+A` in the selector), the
 `JUTUL_AGENT_MODEL` environment variable, then the default.
 
-`/model` opens the selector: bundled OpenAI, Anthropic, Google, and Ollama
+`/model` opens the selector: bundled OpenAI, Anthropic, Google, OpenRouter, and Ollama
 models, plus anything `init_chat_model` supports typed as `provider:model`.
 Switching mid-session keeps the conversation. Missing API keys are prompted
 for and saved to a user-global `.env` (never to config files).
@@ -235,14 +235,15 @@ anything missing. Requirements and caveats:
 ### Other providers
 
 Add the provider's LangChain package to the tool install, then use its
-`provider:model` id:
+`provider:model` id (replace the package placeholder below):
 
 ```sh
-uv tool upgrade jutul-agent --with langchain-openrouter
+uv tool upgrade jutul-agent --with 'langchain-<provider>'
 ```
 
-(From a dev checkout, use `uv add langchain-openrouter` instead.) If the
+(From a dev checkout, use `uv add 'langchain-<provider>'` instead.) If the
 package is missing, jutul-agent names the exact one to install.
+OpenAI, Anthropic, Google, OpenRouter, and Ollama are already bundled.
 
 ## Troubleshooting
 
