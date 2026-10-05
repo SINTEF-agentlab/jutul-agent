@@ -23,41 +23,41 @@ from jutul_agent.models import (
 
 
 def test_provider_of_handles_missing_prefix() -> None:
-    assert provider_of("anthropic:claude-sonnet-4-6") == "anthropic"
+    assert provider_of("anthropic:test-model") == "anthropic"
     assert provider_of("bare-model-name") == ""
 
 
 def test_key_env_var_and_local_flag() -> None:
-    assert key_env_var("openai:gpt-5.5") == "OPENAI_API_KEY"
-    assert key_env_var("anthropic:claude-opus-4-8") == "ANTHROPIC_API_KEY"
-    assert key_env_var("google_genai:gemini-3-flash-preview") == "GOOGLE_API_KEY"
+    assert key_env_var("openai:test-model") == "OPENAI_API_KEY"
+    assert key_env_var("anthropic:test-model") == "ANTHROPIC_API_KEY"
+    assert key_env_var("google_genai:test-model") == "GOOGLE_API_KEY"
     assert key_env_var("openrouter:vendor/test-model") == "OPENROUTER_API_KEY"
-    assert key_env_var("ollama:llama4") is None
+    assert key_env_var("ollama:test-model") is None
     assert key_env_var("madeup:model") is None
-    assert is_local("ollama:llama4") is True
-    assert is_local("openai:gpt-5.5") is False
+    assert is_local("ollama:test-model") is True
+    assert is_local("openai:test-model") is False
     assert is_local("openrouter:vendor/test-model") is False
 
 
 def test_missing_provider_error_names_the_fix() -> None:
-    problem = missing_provider_error("gpt-5.6-terra")
+    problem = missing_provider_error("test-model")
     assert problem is not None
     # The message has to point at the spec itself: every downstream preflight is
     # keyed on the prefix, so without it the failure surfaces much later.
     assert "provider prefix" in problem
-    assert "openai:gpt-5.6-terra" in problem
+    assert "openai:test-model" in problem
 
 
 def test_missing_provider_error_accepts_any_prefixed_spec() -> None:
-    assert missing_provider_error("openai:gpt-5.4-mini") is None
-    assert missing_provider_error("ollama:qwen3:8b") is None
+    assert missing_provider_error("openai:test-model") is None
+    assert missing_provider_error("ollama:test-model:tag") is None
     # A provider this module has no entry for still reaches init_chat_model.
     assert missing_provider_error("madeup:model") is None
 
 
 def test_provider_info_unknown_returns_none() -> None:
     assert provider_info("madeup:model") is None
-    assert provider_info("openai:gpt-5.5") is PROVIDERS["openai"]
+    assert provider_info("openai:test-model") is PROVIDERS["openai"]
 
 
 def test_discovery_groups_real_models_by_provider() -> None:
@@ -103,18 +103,20 @@ def test_live_discovery_adds_new_ids_without_replacing_profiles(monkeypatch) -> 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    monkeypatch.setattr(models, "_openai_available", lambda: ["gpt-6-luna", "gpt-5.4-mini"])
-    monkeypatch.setattr(models, "_anthropic_available", lambda: ["claude-sonnet-5"])
-    monkeypatch.setattr(models, "_google_available", lambda: ["gemini-3.8-flash"])
-
+    known = discover_models()["openai"][0].id
+    monkeypatch.setattr(
+        models, "_openai_available", lambda: ["new-test-model", known.partition(":")[2]]
+    )
+    monkeypatch.setattr(models, "_anthropic_available", lambda: ["new-test-model"])
+    monkeypatch.setattr(models, "_google_available", lambda: ["new-test-model"])
     monkeypatch.setattr(models, "_openrouter_available", lambda: ["vendor/new-tool-model"])
 
     catalog = discover_available_models()
-    assert {"openai:gpt-6-luna", "anthropic:claude-sonnet-5", "google_genai:gemini-3.8-flash"} <= {
+    assert {"openai:new-test-model", "anthropic:new-test-model", "google_genai:new-test-model"} <= {
         model.id for group in catalog.values() for model in group
     }
-    assert sum(model.id == "openai:gpt-5.4-mini" for model in catalog["openai"]) == 1
-    assert next(model for model in catalog["openai"] if model.id == "openai:gpt-6-luna").note
+    assert sum(model.id == known for model in catalog["openai"]) == 1
+    assert next(model for model in catalog["openai"] if model.id == "openai:new-test-model").note
     assert any(model.id == "openrouter:vendor/new-tool-model" for model in catalog["openrouter"])
 
 
@@ -241,15 +243,15 @@ def test_openrouter_discovery_without_key_makes_no_request(openrouter_http, monk
 
 
 def test_is_known_model_rejects_free_text() -> None:
-    assert is_known_model("openai:gpt-5.4-mini")
+    assert is_known_model(discover_models()["openai"][0].id)
     assert not is_known_model("openrouter:some/model")
     assert not is_known_model("anthropic:haiku")  # not a real id
 
 
 def test_ollama_cloud_detection() -> None:
-    assert is_ollama_cloud("ollama:glm-5.1:cloud")
-    assert not is_ollama_cloud("ollama:llama4")
-    assert not is_ollama_cloud("openai:gpt-5.5")
+    assert is_ollama_cloud("ollama:test-model:cloud")
+    assert not is_ollama_cloud("ollama:test-model")
+    assert not is_ollama_cloud("openai:test-model")
 
 
 def test_curated_ollama_lists_are_well_formed() -> None:
@@ -266,8 +268,8 @@ def test_context_window_google_sdk_fallback(monkeypatch) -> None:
 
     # Without a key the lookup declines instead of constructing a client.
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    assert models._google_context_window("gemini-3.5-flash") is None
+    assert models._google_context_window("unknown-test-model") is None
 
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setattr(models, "_google_context_window", lambda name: 1_048_576)
-    assert models.context_window("google_genai:gemini-3.5-flash") == 1_048_576
+    assert models.context_window("google_genai:unknown-test-model") == 1_048_576

@@ -156,7 +156,7 @@ def test_post_credentials_saves_and_is_reflected(
 @pytest.mark.parametrize(
     ("model", "env_var"),
     [
-        ("openai:gpt-5.4", "OPENAI_API_KEY"),
+        ("openai:test-model", "OPENAI_API_KEY"),
         ("openrouter:vendor/test-model", "OPENROUTER_API_KEY"),
     ],
 )
@@ -203,7 +203,7 @@ def test_disk_resume_reports_stale_sysimage_as_conflict(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("model", "env_var"),
     [
-        ("openai:gpt-5.4", "OPENAI_API_KEY"),
+        ("openai:test-model", "OPENAI_API_KEY"),
         ("openrouter:vendor/test-model", "OPENROUTER_API_KEY"),
     ],
 )
@@ -2018,7 +2018,13 @@ def test_set_model_refused_while_approval_pending(tmp_path: Path) -> None:
         with client.websocket_connect(f"/sessions/{sid}/stream") as ws:
             ws.send_json({"type": "prompt", "text": "run it"})
             assert _drain_turn(ws)[-1]["type"] == "interrupt"
-            ws.send_json({"type": "command", "command": "set_model", "arg": "openai:gpt-5.4-mini"})
+            ws.send_json(
+                {
+                    "type": "command",
+                    "command": "set_model",
+                    "arg": "openai:test-model",
+                }
+            )
             err = ws.receive_json()
     assert err["type"] == "error"
     assert "pending approval" in err["message"]

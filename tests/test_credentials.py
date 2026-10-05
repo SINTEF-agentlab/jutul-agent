@@ -55,7 +55,7 @@ def test_store_credential_locks_file_mode() -> None:
 @pytest.mark.parametrize(
     ("spec", "env_var"),
     [
-        ("openai:gpt-5.4", "OPENAI_API_KEY"),
+        ("openai:credential-test-model", "OPENAI_API_KEY"),
         ("openrouter:vendor/test-model", "OPENROUTER_API_KEY"),
     ],
 )
@@ -67,7 +67,7 @@ def test_missing_credential_present_absent_and_local(
     monkeypatch.setenv(env_var, "x")
     assert missing_credential(spec) is None
     # Local providers need no key; unknown providers have none either.
-    assert missing_credential("ollama:llama3.1") is None
+    assert missing_credential("ollama:credential-test-model") is None
     assert missing_credential("madeup:model") is None
 
 
