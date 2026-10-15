@@ -21,9 +21,11 @@ import sys
 import tempfile
 import time
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+
+import tomli_w
 
 from jutul_agent.paths import workspace_root
 from jutul_agent.simulators.base import SimulatorAdapter
@@ -216,7 +218,7 @@ def bootstrap_workspace(
          workspace-local env, copy the template from the install.
          With ``force``, replace an existing workspace-local env first.
       2. If ``source_path`` is set, ``Pkg.develop(path=source_path)`` in
-         the workspace env (idempotent; safe to re-run).
+         the workspace env, overriding managed simulator compat (safe to re-run).
       3. If ``precompile``, ``Pkg.instantiate()`` then ``Pkg.precompile()``. The
          plotting stack is warmed by the env's ``JutulAgent`` package,
          whose ``@compile_workload`` bakes the Makie save path into the
@@ -257,8 +259,9 @@ def _bootstrap_workspace_unlocked(
     if precompile:
         cmds.extend(_RESILIENT_INSTANTIATE)
 
-    if len(cmds) > 1:
-        _run_pkg(project, cmds)
+    with _local_source_compat(adapter, workspace, project, source_path):
+        if len(cmds) > 1:
+            _run_pkg(project, cmds)
     if precompile:
         # Catch a broken/half-resolved manifest here (Julia fails to boot in the
         # env) instead of at launch. The kernel server is stdlib-only, so a
@@ -267,6 +270,49 @@ def _bootstrap_workspace_unlocked(
         mark_env_precompiled(project)  # so launch skips a redundant bake
 
     return project
+
+
+@contextmanager
+def _local_source_compat(
+    adapter: SimulatorAdapter, workspace: Path, project: Path, source_path: Path | None
+) -> Iterator[None]:
+    """Override managed simulator compat for a dev checkout; roll back on failure."""
+    if source_path is None or user_owns_root_project(workspace):
+        yield
+        return
+
+    project_file = project / "Project.toml"
+    before = project_file.read_bytes()
+    data = tomllib.loads(before.decode("utf-8"))
+    package = adapter.primary_package
+    compat = data.get("compat", {})
+    if package not in compat:
+        yield
+        return
+
+    # Only relax compat for a checkout of the intended simulator.
+    try:
+        source = tomllib.loads((source_path / "Project.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise EnvSetupError(f"Cannot read --source-path {source_path}/Project.toml: {exc}") from exc
+    if source.get("name") != package or source.get("uuid") != data.get("deps", {}).get(package):
+        raise EnvSetupError(
+            f"--source-path {source_path} must be a {package} checkout with its UUID"
+        )
+
+    backups = {project_file: before, **{p: p.read_bytes() for p in project.glob("Manifest*.toml")}}
+    constraint = compat.pop(package)
+    project_file.write_text(tomli_w.dumps(data), encoding="utf-8")
+    _info(f"Using local {package} checkout; overriding managed {package} compat {constraint!r}.")
+    try:
+        yield
+    except BaseException:
+        for path in project.glob("Manifest*.toml"):
+            if path not in backups:
+                path.unlink()
+        for path, contents in backups.items():
+            path.write_bytes(contents)
+        raise
 
 
 def precompile_env(project: Path) -> None:

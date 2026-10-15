@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -267,8 +268,9 @@ def test_is_workspace_env_ready_reflects_project_toml(tmp_path: Path) -> None:
     assert env_setup.is_workspace_env_ready(workspace) is True
 
 
+@pytest.mark.parametrize("root_project, fails", [(False, False), (True, False), (False, True)])
 def test_bootstrap_with_source_path_runs_pkg_develop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, root_project: bool, fails: bool
 ) -> None:
     module_dir = _make_template(tmp_path)
     workspace = tmp_path / "ws"
@@ -276,19 +278,46 @@ def test_bootstrap_with_source_path_runs_pkg_develop(
     source = tmp_path / "FooSource"
     source.mkdir()
 
+    (source / "Project.toml").write_text(
+        'name = "Foo"\nuuid = "uuid"\nversion = "0.2.0"\n', encoding="utf-8"
+    )
+    template = module_dir / "julia_env" / "Project.toml"
+    template.write_text(
+        template.read_text() + '[compat]\nFoo = "0.1"\njulia = "1.10"\n', encoding="utf-8"
+    )
+    if root_project:
+        (workspace / "Project.toml").write_bytes(template.read_bytes())
+
+    project = env_setup.bootstrap_workspace(_adapter(module_dir), workspace=workspace)
+    before = (project / "Project.toml").read_bytes()
+    manifest = project / "Manifest.toml"
+    manifest.write_text("# original\n", encoding="utf-8")
     captured: dict[str, list[str]] = {}
 
     class _Result:
-        returncode = 0
+        returncode = 1 if fails else 0
 
     def _fake_run(argv, **_kwargs):
+        project = workspace if root_project else workspace_julia_env(workspace)
+        compat = tomllib.loads((project / "Project.toml").read_text())["compat"]
+        assert compat == ({"Foo": "0.1", "julia": "1.10"} if root_project else {"julia": "1.10"})
         captured["argv"] = argv
+        if fails:
+            manifest.write_text("# partial resolve\n", encoding="utf-8")
         return _Result()
 
     monkeypatch.setattr(env_setup.shutil, "which", lambda _: "/usr/bin/julia")
     monkeypatch.setattr(env_setup.subprocess, "run", _fake_run)
 
-    env_setup.bootstrap_workspace(_adapter(module_dir), workspace=workspace, source_path=source)
+    if fails:
+        with pytest.raises(env_setup.EnvSetupError):
+            env_setup.bootstrap_workspace(
+                _adapter(module_dir), workspace=workspace, source_path=source
+            )
+        assert (project / "Project.toml").read_bytes() == before
+        assert manifest.read_text() == "# original\n"
+    else:
+        env_setup.bootstrap_workspace(_adapter(module_dir), workspace=workspace, source_path=source)
 
     argv = captured["argv"]
     assert "julia" in argv  # argv[0] may be `xvfb-run` on headless Linux

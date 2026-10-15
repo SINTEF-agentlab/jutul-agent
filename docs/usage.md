@@ -58,7 +58,8 @@ jutul-agent init --sim jutuldarcy --force                              # rebuild
 builds what's missing (the ~minutes wait moves to first use). `--source-path`
 dev-links the simulator to a local checkout the agent can read and edit at its
 real path (a dev checkout, so it is writable, unlike a registry install in the
-shared depot). `--force` rebuilds the env from the template, the standard fix
+shared depot). This overrides simulator compat only in managed envs.
+`--force` rebuilds the env from the template, the standard fix
 after upgrading jutul-agent. `setup` is an alias for `init`. If you skip `init`
 entirely, the first run bootstraps the workspace and auto-detects the simulator
 from a `Project.toml` when it can.
