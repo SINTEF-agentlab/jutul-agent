@@ -29,6 +29,7 @@ Julia -> Python   RDY <token> 0           handshake
                   OUT <stream> <n>        live stdout/stderr bytes
                   RES <id> <status> <n>   one result per eval (ok | err | int)
 Python -> Julia   EXE <id> <n>            code to evaluate
+                  INT <id> 0              interrupt eval <id>, if it is running
 ```
 
 No payload travels as a bare line, so frames are binary-safe and
@@ -65,12 +66,27 @@ agent:
 Two details make delivery reliable:
 
 - The kernel always launches with an interactive thread (`--threads N,1`).
-  That pins the eval loop to one thread while the output pumps run on the
-  default pool. Julia delivers the interrupt on the root task's thread, and
-  a pump sharing that thread could swallow it inside one of its own
-  uninterruptible windows.
+  That pins the eval loop to one thread while the output pumps (and the
+  control reader) run on the default pool. Julia delivers the interrupt on
+  the root task's thread, and a pump sharing that thread could swallow it
+  inside one of its own uninterruptible windows.
 - The result handoff runs with interrupts deferred, so a late interrupt cannot
   tear an eval's output apart from its result frame.
+
+Cancelling an eval interrupts it in two steps, because the signal alone is not
+reliable for an eval that is waiting. Julia raises the `InterruptException` in
+whichever task is running on the eval's thread when the signal arrives. While
+the eval computes, that is the eval. While it waits (a `sleep`, a socket, a
+lock), it can be any other task the session started on that thread, such as a
+live plot server's handler. That task dies of the exception, and the eval runs
+on into the drain timeout, which costs the session a restart. So the supervisor
+first sends `INT <id>`. A reader task on the default pool takes it in even while
+the eval runs, and an interrupter task on the eval's own thread wakes the
+waiting eval with the exception directly, then interrupts any `Distributed`
+workers (POSIX only; on Windows, `Distributed` would end them instead). An
+`INT` for an eval that has not started cancels it when it would start; one for
+an eval that has finished is ignored. An eval still running a second later is
+computing, and only the signal reaches it, so the supervisor then sends that.
 
 If a signal can't be delivered (e.g. no console to target on Windows) or the
 eval ignores it, the supervisor falls back to a restart (the only case where
@@ -85,13 +101,22 @@ single-threaded so graded results stay deterministic.
 A pure no-allocation spin (`while true; end`) is uninterruptible on any
 Julia configuration. If an interrupt cannot recover the eval within a
 timeout, the supervisor restarts the process and reports whether session
-state was preserved.
+state was preserved. The kernel counts the processes it has started
+(`generation`) and records when and why the latest replaced the one before
+(`last_restart`), so a front end can tell the user that their state is gone,
+and why. Callbacks registered with `on_restart` hear of every restart, whatever
+caused it, once the fresh process is ready. A callback can return an awaitable
+that sets the fresh process up: other evals wait for it, even ones that were
+already queued when the restart came, so none runs on a half-ready process.
 
 ## Lifecycle and limits
 
 - Reset is restart by design: Julia cannot unload code, so `reset_julia`
   always starts a fresh process. The precompile caches and warm packages
-  make that cheap (see [adding a simulator](adding-a-simulator.md)).
+  make that cheap (see [adding a simulator](adding-a-simulator.md)). The
+  session warms the fresh process as it did the first (through
+  `on_restart`), so the simulator's packages, HYPRE's thread count and the
+  plotting names come back with it, before any other call runs.
 - A user's `include("file.jl")` is rewritten to resolve from the workspace
   (the process working directory) rather than from the server script's own
   directory, which is where Julia would otherwise look.
@@ -102,7 +127,9 @@ state was preserved.
   grow harness memory while the user decides to cancel.
 - If the process dies, every waiter fails fast with the reason the
   connection saw, and the startup log (`julia-startup.log` in the session
-  directory) keeps Julia's own boot errors.
+  directory) keeps Julia's own boot errors. A respawn first moves the last
+  process's log to `julia-startup.prev.log`, so why that process went away
+  is still readable after the restart.
 - GLMakie needs a display even headless, so the session starts a private
   Xvfb and passes it through `DISPLAY` (never `xvfb-run`, which would merge
   the process's stdout and stderr).

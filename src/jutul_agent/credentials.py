@@ -97,6 +97,29 @@ def mask_secret(value: str) -> str:
     return f"{value[:3]}{'*' * 6}{value[-4:]}"
 
 
+# Name endings that mark a credential (``*_API_KEY``, ``AZURE_OPENAI_AD_TOKEN``,
+# ``OPENAI_ADMIN_KEY``, ``CLIENT_SECRET``, ...).
+_SECRET_ENV_SUFFIXES = ("_API_KEY", "_ADMIN_KEY", "_TOKEN", "_SECRET")
+
+
+def is_secret_env_var(name: str) -> bool:
+    """Whether ``name`` holds a credential that processes running agent-written
+    code (the Julia kernel, shell commands) must not inherit."""
+    return name.upper().endswith(_SECRET_ENV_SUFFIXES) or any(
+        info.key_env_var == name for info in PROVIDERS.values()
+    )
+
+
+def scrubbed_environ() -> dict[str, str]:
+    """``os.environ`` without credentials, for processes that run agent-written code.
+
+    Neither Julia nor the shell needs a provider key, and a model that prints its
+    environment while debugging would otherwise copy one into the trace and into
+    every transcript.
+    """
+    return {name: value for name, value in os.environ.items() if not is_secret_env_var(name)}
+
+
 @dataclass(frozen=True)
 class KeyStatus:
     """How one provider's API key is configured, for display and the web UI."""

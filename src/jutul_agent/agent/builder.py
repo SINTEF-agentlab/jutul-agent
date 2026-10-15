@@ -61,6 +61,7 @@ from jutul_agent.agent.tools import (
     make_write_report_tool,
 )
 from jutul_agent.agent.windows_paths import enable_windows_real_paths
+from jutul_agent.credentials import scrubbed_environ
 from jutul_agent.models import PROVIDERS, provider_of
 from jutul_agent.paths import SHARED_SKILLS_DIR, workspace_memory_dir, workspace_root
 from jutul_agent.session import Session
@@ -388,7 +389,8 @@ def build_backend(
         default=WorkspaceShellBackend(
             root_dir=ws,
             virtual_mode=False,
-            inherit_env=True,
+            # The environment, minus credentials no shell command needs.
+            env=scrubbed_environ(),
             readonly_roots=_depot_readonly_roots(package_sources),
         ),
         routes={},

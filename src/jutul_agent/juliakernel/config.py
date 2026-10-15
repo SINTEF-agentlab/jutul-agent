@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +28,10 @@ class KernelConfig:
     # a helper process, which would merge the stdout/stderr the protocol keeps on
     # separate pipes.
     env: Mapping[str, str] | None = None
+    # Inherited variables to withhold from the Julia process: those whose name this
+    # accepts are dropped (e.g. credentials agent-written code has no use for).
+    # Applied at every spawn, so a restart also covers variables set since.
+    env_filter: Callable[[str], bool] | None = None
     # Capture the Julia process's own stderr to a file so a startup crash (a
     # package-load failure, a bad project) can be replayed in the error message.
     stderr_file: Path | None = None

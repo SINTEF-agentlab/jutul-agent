@@ -5,7 +5,8 @@ the agent built for it, and the ``TurnRunner`` that drives a turn. ``start`` is
 the single session bootstrap every front end uses: the TUI, the headless CLI,
 the web server, and the bench solver all stand up sessions here, so the kernel
 environment, capability discovery, and the checkpointer cannot drift between
-them. ``aclose`` tears everything down.
+them. The kernel half is ``session_core.start_core``, shared with front ends
+that bring their own agent. ``aclose`` tears everything down.
 
 The constructor takes a ready-made session and agent so tests can wrap fakes;
 ``start`` is the production path that stands up a real kernel.
@@ -15,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import sys
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
     from jutul_agent.agent.capabilities import Capability
     from jutul_agent.session import Session
+    from jutul_agent.session_core import SessionCore
     from jutul_agent.simulators.base import SimulatorAdapter
 
 
@@ -79,9 +80,10 @@ class SessionHost:
         # Whether a turn is running; see the ``busy`` property.
         self._busy = False
         self._active_turn: asyncio.Task[None] | None = None
-        # Background Julia warm-up (load warm package, set GLMakie offscreen); held
-        # so it can be cancelled on teardown. Set by ``start``.
-        self._warmup_task: Any | None = None
+        # The kernel half this host was started on. It owns the background Julia
+        # warm-up (load warm package, set GLMakie offscreen), which runs again after
+        # each restart, so teardown cancels whichever is current. Set by ``start``.
+        self._core: SessionCore | None = None
 
     def attach(self) -> bool:
         """Claim this session for a connection; ``False`` if one already holds it."""
@@ -290,7 +292,7 @@ class SessionHost:
     @property
     def warmup_task(self) -> Any | None:
         """The background Julia warm-up, for a front end that shows warm status."""
-        return self._warmup_task
+        return self._core.warmup_task if self._core is not None else None
 
     @property
     def package_sources(self) -> list[Any]:
@@ -415,18 +417,10 @@ class SessionHost:
 
     async def aclose(self) -> None:
         """Tear down the kernel and checkpointer, then close the session."""
-        if self._warmup_task is not None and not self._warmup_task.done():
-            self._warmup_task.cancel()
-            # Await the cancellation before closing the kernel: warm-up may be mid-eval,
-            # whose shielded interrupt/restart recovery would otherwise race the kernel
-            # teardown below (the CLI path awaits here too).
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._warmup_task
-        if self._exit_stack is not None:
-            await self._exit_stack.aclose()
-            self._exit_stack = None
-        with contextlib.suppress(Exception):
-            self.session.finalize()
+        from jutul_agent.session_core import close_session
+
+        stack, self._exit_stack = self._exit_stack, None
+        await close_session(self.session, stack, self.warmup_task)
 
     @classmethod
     async def start(
@@ -455,11 +449,13 @@ class SessionHost:
     ) -> SessionHost:
         """Stand up a real session: prepare the env, start the kernel, build the agent.
 
-        The one bootstrap for every front end. ``surface`` names the front end
-        driving the session (``tui``/``cli``/``web``) and selects which
-        capabilities and surface-tuned tools apply. The Julia kernel and the
-        SQLite checkpointer are entered on an ``AsyncExitStack`` held by the
-        host, so they stay open until ``aclose``.
+        The one bootstrap for every front end that runs the agent. ``surface``
+        names the front end driving the session (``tui``/``cli``/``web``) and
+        selects which capabilities and surface-tuned tools apply. The kernel half
+        is ``session_core.start_core`` (shared with front ends that bring their own
+        agent); this adds the SQLite checkpointer and the agent on top. Both are
+        entered on an ``AsyncExitStack`` held by the host, so they stay open until
+        ``aclose``.
 
         ``discover=False`` keeps a run hermetic (the bench must not compose
         ambient entry-point capabilities). ``warmup=False`` skips the background
@@ -470,153 +466,47 @@ class SessionHost:
         the workspace's own on/off setting for this session.
         """
 
-        from contextlib import AsyncExitStack
-
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-        from jutul_agent import sysimage as sysimage_mod
         from jutul_agent.agent.builder import build_agent
-        from jutul_agent.agent.capabilities import collect_dependency_paths, discover_extensions
         from jutul_agent.credentials import missing_credential
-        from jutul_agent.julia.requirements import require_julia
-        from jutul_agent.julia.threads import (
-            HYPRE_THREADS_ENV_VAR,
-            blas_thread_env,
-            resolve_compute_threads,
-            resolve_hypre_threads,
-        )
-        from jutul_agent.juliakernel import JuliaKernel, KernelConfig
         from jutul_agent.models import resolve_model
         from jutul_agent.paths import workspace_root
-        from jutul_agent.session import Session, default_session_id, session_dir
-        from jutul_agent.simulators.env_setup import prepare_workspace_env
+        from jutul_agent.session_core import start_core
         from jutul_agent.user_config import load_user_config
-        from jutul_agent.workspace import load_workspace_config, resolve_julia_project
+        from jutul_agent.workspace import load_workspace_config
 
-        require_julia()
-        ws = workspace or workspace_root()
-        project = julia_project or resolve_julia_project(ws)
-        # Capabilities are composed before the env is prepared, because their Julia
-        # dependencies have to be in the project the kernel starts against. Every
-        # capability contributes them, not just the ones this surface ends up
-        # offering tools from: the env is per workspace, not per surface, and it
-        # would otherwise be re-resolved each time the workspace is opened
-        # differently.
-        all_extensions = [*discover_extensions(), *extensions] if discover else list(extensions)
-        dependency_paths = collect_dependency_paths(all_extensions)
-        workspace_config = load_workspace_config(ws)
-        # Model precedence is resolved here, once, for every front end:
+        # Model precedence is resolved here, once, for every front end, and before
+        # the (possibly minutes-long) env preparation so a bad spec fails fast:
         # explicit request > workspace config > user config > env > default.
         resolved_model = resolve_model(
             model,
-            workspace_model=workspace_config.model,
+            workspace_model=load_workspace_config(workspace or workspace_root()).model,
             user_model=load_user_config().model,
         )
-        # A caller can supply a pre-provisioned env (and skip preparation); the
-        # default path prepares the workspace env from the simulator template.
-        # Run it off the event loop: the first session for a simulator can spend
-        # minutes precompiling, and a blocking call here would freeze the whole
-        # server (it serves every session from one event loop) so even the page
-        # would stop loading. Threaded, the server stays responsive while the
-        # creating request waits.
-        if prepare_env:
-            import asyncio as _asyncio
-
-            await _asyncio.to_thread(
-                prepare_workspace_env,
-                simulator,
-                workspace=ws,
-                julia_project=project,
-                sim_name=simulator.name,
-                dependencies=dependency_paths,
-            )
-
-        # After the env is prepared, never before: preparation is what re-copies the
-        # in-env JutulAgent runtime after an upgrade and installs anything a
-        # capability added, so asking earlier would compare the image against an
-        # environment that is about to change.
-        sysimage_decision = sysimage_mod.decide(
-            ws,
-            project,
-            enabled=sysimage_mod.resolve_enabled(
-                sysimage, workspace_enabled=workspace_config.sysimage
-            ),
+        core = await start_core(
+            simulator=simulator,
+            surface=surface,
+            session_id=session_id,
+            resume=resume,
+            workspace=workspace,
+            state_root=state_root,
+            julia_project=julia_project,
+            threads=threads,
+            ephemeral_memory=ephemeral_memory,
+            open_windows=open_windows,
+            prepare_env=prepare_env,
+            discover=discover,
+            virtual_display=virtual_display,
+            extensions=extensions,
+            sysimage=sysimage,
         )
-        if sysimage_decision.blocks:
-            raise sysimage_mod.SysimageUnavailable(
-                sysimage_decision,
-                command=sysimage_mod.SURFACE_COMMANDS.get(surface, "jutul-agent web"),
-            )
-        for note in sysimage_decision.notes:
-            print(f"note: {note}", file=sys.stderr)
-
-        sid = session_id or default_session_id()
-        sdir = session_dir(sid, state_root=state_root)
-        sdir.mkdir(parents=True, exist_ok=True)
-
-        compute_threads = resolve_compute_threads(threads)
-        env = {
-            **blas_thread_env(compute_threads),
-            HYPRE_THREADS_ENV_VAR: str(resolve_hypre_threads()),
-        }
-
-        stack = AsyncExitStack()
+        session, stack = core.session, core.exit_stack
         try:
-            # On a headless box GLMakie needs a virtual display just to load, on
-            # every surface (the TUI renders PNGs, the web serves WGLMakie, and
-            # both go through the native plotters). Best-effort: without it the
-            # session still runs and plotting errors at first use. WGLMakie and
-            # Bonito need nothing further here; they are ordinary deps of the
-            # workspace env, resolved together with the simulator's own.
-            if virtual_display:
-                _add_headless_display(stack, env)
-
-            kernel_config = KernelConfig(
-                julia_project=project,
-                sysimage=sysimage_decision.path,
-                stderr_file=sdir / "julia-startup.log",
-                cwd=ws,
-                env=env,
-                threads=str(compute_threads),
-            )
-            kernel = await stack.enter_async_context(JuliaKernel(kernel_config))
-            # The session's tools go through the wrapper, the warm-up gets the kernel
-            # itself. That is what tells the two apart: an eval arriving at the wrapper
-            # is real work, and drops whatever is left of the warm-up before taking the
-            # kernel, so a user who acts early never waits behind it.
-            from jutul_agent.simulators.warmup import YieldsToWork
-
-            julia = YieldsToWork(kernel)
-            if resume:
-                session = Session.resume(
-                    julia=julia,
-                    simulator=simulator,
-                    session_id=sid,
-                    state_root=state_root,
-                    ephemeral_memory=ephemeral_memory,
-                    open_windows=open_windows,
-                    surface=surface,
-                )
-            else:
-                session = Session.create(
-                    julia=julia,
-                    simulator=simulator,
-                    session_id=sid,
-                    state_root=state_root,
-                    ephemeral_memory=ephemeral_memory,
-                    open_windows=open_windows,
-                    surface=surface,
-                )
             ckpt_path = session.state_dir / "checkpoints.sqlite"
             checkpointer = await stack.enter_async_context(
                 AsyncSqliteSaver.from_conn_string(str(ckpt_path))
             )
-            # Resolve the env's package source dirs (one fast, no-compile call): it
-            # gives the agent the simulator's source path up front, so it needn't
-            # `using <Sim>; pkgdir(<Sim>)` to find it, and guards the read-only depot.
-            from jutul_agent.agent.builder import resolve_package_sources
-
-            package_sources = await asyncio.to_thread(resolve_package_sources, project)
             if allow_missing_credential and missing_credential(resolved_model) is not None:
                 # The provider key isn't set, so building the model would crash.
                 # Come up without an agent; the front end collects the key and
@@ -629,9 +519,9 @@ class SessionHost:
                     checkpointer=checkpointer,
                     approval_mode=approval_mode,
                     surface=surface,
-                    extensions=all_extensions,
+                    extensions=core.extensions,
                     added_dirs=add_dirs or None,
-                    package_sources=package_sources,
+                    package_sources=core.package_sources,
                 )
         except BaseException:
             await stack.aclose()
@@ -646,51 +536,12 @@ class SessionHost:
             model=resolved_model,
             approval_mode=approval_mode,
             surface=surface,
-            extensions=all_extensions,
-            workspace=ws,
-            package_sources=package_sources,
+            extensions=core.extensions,
+            workspace=core.workspace,
+            package_sources=core.package_sources,
             add_dirs=add_dirs,
         )
+        host._core = core
         if warmup:
-            # Warm the kernel in the background: load the warm packages and set
-            # GLMakie offscreen so a native plotter can't pop an OS window on a
-            # machine with a display. Best-effort and cancelled on teardown.
-            #
-            # Every discovered capability's package is loaded, not just this
-            # surface's, for the same reason their Julia dependencies are: the
-            # kernel is per workspace, and a package left unloaded here would be
-            # loaded by the first tool call that needs it, at the user's expense.
-            from jutul_agent.agent.capabilities import collect_warm_code, collect_warm_packages
-            from jutul_agent.simulators.warmup import start_warmup
-
-            # Set once the warm-up is past loading; before that, cancelling it
-            # would interrupt a `using` and take the kernel down with it.
-            abandonable = asyncio.Event()
-            host._warmup_task = start_warmup(
-                kernel,
-                simulator.warm_package,
-                collect_warm_packages(all_extensions),
-                collect_warm_code(all_extensions),
-                abandonable=abandonable,
-            )
-            julia.set_warmup(host._warmup_task, abandonable)
+            core.start_warmup()
         return host
-
-
-def _add_headless_display(stack: AsyncExitStack, env: dict[str, str]) -> None:
-    """Start an Xvfb for this session (headless boxes) and set ``DISPLAY`` in ``env``.
-
-    GLMakie needs a GL context just to load, which is what makes the native
-    plotters' methods available for WGLMakie to render. On a machine with a real
-    display this is a no-op; the Xvfb is tied to the session's exit stack.
-    """
-    from jutul_agent.display import managed_display, should_wrap_xvfb
-
-    if not should_wrap_xvfb():
-        return
-    try:
-        display = stack.enter_context(managed_display())
-    except Exception as exc:  # missing/slow Xvfb must not break the session
-        print(f"warning: could not start a virtual display for plotting ({exc}).", file=sys.stderr)
-        return
-    env["DISPLAY"] = display

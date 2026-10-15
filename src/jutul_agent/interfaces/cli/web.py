@@ -183,6 +183,7 @@ def run(args: argparse.Namespace) -> int:
 
     from jutul_agent.interfaces.cli._helpers import resolve_add_dirs
     from jutul_agent.interfaces.server.app import create_app
+    from jutul_agent.interfaces.server.guard import LoopbackGuard, is_loopback
     from jutul_agent.paths import workspace_root
     from jutul_agent.workspace import load_workspace_config
 
@@ -207,18 +208,17 @@ def run(args: argparse.Namespace) -> int:
         + ")",
         file=sys.stderr,
     )
-    uvicorn.run(
-        create_app(
-            default_sim=sim,
-            default_approval_mode=approval_mode,
-            default_model=model,
-            julia_project=args.julia_project,
-            threads=args.threads,
-            add_dirs=add_dirs,
-            ephemeral_memory=args.ephemeral_memory,
-            sysimage=args.sysimage,
-        ),
-        host=args.host,
-        port=args.port,
+    app = create_app(
+        default_sim=sim,
+        default_approval_mode=approval_mode,
+        default_model=model,
+        julia_project=args.julia_project,
+        threads=args.threads,
+        add_dirs=add_dirs,
+        ephemeral_memory=args.ephemeral_memory,
+        sysimage=args.sysimage,
     )
+    if is_loopback(args.host):
+        app.add_middleware(LoopbackGuard)
+    uvicorn.run(app, host=args.host, port=args.port)
     return 0

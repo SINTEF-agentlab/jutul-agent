@@ -99,7 +99,9 @@ and check on staged `.py` files. To verify the whole tree like CI:
 - `src/jutul_agent/approval_preview.py`: the approval card body every surface
   renders for a pending tool call.
 - `src/jutul_agent/session_host.py`: the one session bootstrap and turn-policy
-  loop behind every front end.
+  loop behind every front end. Its kernel half (env, system image, display,
+  kernel, `Session`, warm-up) is `start_core` in `session_core.py`, which a
+  front end that brings its own agent uses on its own.
 - `src/jutul_agent/interfaces/`: `cli`, the Textual `tui`, and the `server`
   (FastAPI REST + per-session WebSocket). The browser UI is a React + TypeScript
   app in `server/webapp/` (see its README), built into `server/web_dist/`

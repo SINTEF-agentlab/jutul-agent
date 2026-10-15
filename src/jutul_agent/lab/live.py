@@ -76,6 +76,7 @@ async def _live_render(
     max_frames: int,
 ) -> tuple[list[str], str]:
     from jutul_agent.agent.builder import build_agent, resolve_package_sources
+    from jutul_agent.credentials import is_secret_env_var
     from jutul_agent.interfaces.tui import TUIApp
     from jutul_agent.juliakernel import JuliaKernel, KernelConfig
     from jutul_agent.paths import set_workspace_root
@@ -89,7 +90,7 @@ async def _live_render(
     julia_project = resolve_julia_project(workspace)
     scratch = Path(tempfile.mkdtemp(prefix="jutul-live-"))
 
-    config = KernelConfig(julia_project=julia_project, cwd=workspace)
+    config = KernelConfig(julia_project=julia_project, cwd=workspace, env_filter=is_secret_env_var)
     async with JuliaKernel(config) as julia:
         session = Session.create(
             julia=julia, simulator=adapter, state_root=scratch, ephemeral_memory=True

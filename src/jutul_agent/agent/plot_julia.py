@@ -359,6 +359,8 @@ def _plot_id_of(payload: dict[str, Any]) -> str:
 # which is the fallback the client already renders; cancelling interrupts the
 # eval in Julia and frees the lock.
 REFIT_TIMEOUT_S = 20.0
+# How often a re-fit checks whether the kernel has come free.
+_IDLE_POLL_S = 0.25
 
 
 async def refit_web(
@@ -370,9 +372,17 @@ async def refit_web(
     no code re-runs and the figure's state (camera, widget values) is kept.
     See ``jl.resize_web_fig_call`` for why this direction is the robust one.
     Bounded by ``REFIT_TIMEOUT_S``: cosmetic work must never wedge a session.
+
+    The re-fit waits for the kernel to be idle and only then starts, so that
+    deadline times the resize itself. Queued behind other evals, it counted
+    their time too, and so could expire just as the resize began: cancelling
+    then interrupts Julia mid-resize, for nothing. Waiting is checked and the
+    eval entered in one step (no await in between), so nothing can queue ahead.
     """
 
     call = jl.resize_web_fig_call(jl.viz_route(route_id), *size, authored=authored)
+    while getattr(session.julia, "busy", False):
+        await asyncio.sleep(_IDLE_POLL_S)
     try:
         result = await asyncio.wait_for(session.julia.eval(call), REFIT_TIMEOUT_S)
     except TimeoutError:

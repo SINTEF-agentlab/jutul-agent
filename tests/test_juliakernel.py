@@ -13,13 +13,20 @@ import io
 import shutil
 import signal
 import socket
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from jutul_agent.juliakernel import JuliaKernel, KernelConfig, OutputChunk
 from jutul_agent.juliakernel.connection import KernelConnection
-from jutul_agent.juliakernel.kernel import JuliaStartupError, _thread_flag, describe_exit
+from jutul_agent.juliakernel.kernel import (
+    JuliaStartupError,
+    _keep_previous_log,
+    _thread_flag,
+    describe_exit,
+)
 
 _HAS_JULIA = shutil.which("julia") is not None
 needs_julia = pytest.mark.skipif(not _HAS_JULIA, reason="requires `julia` on PATH")
@@ -87,6 +94,7 @@ class _Wire:
     def __init__(self) -> None:
         self.log = io.BytesIO()
         self.conn: KernelConnection = None  # type: ignore[assignment]
+        self.reader: asyncio.StreamReader = None  # type: ignore[assignment]
         self.writer: asyncio.StreamWriter = None  # type: ignore[assignment]
 
     async def __aenter__(self) -> _Wire:
@@ -94,7 +102,7 @@ class _Wire:
         self.conn = KernelConnection(self.out_pipe, self.err_pipe, stderr_fh=self.log)
         ours, theirs = socket.socketpair()
         await self.conn.attach_control(ours)
-        _, self.writer = await asyncio.open_connection(sock=theirs)
+        self.reader, self.writer = await asyncio.open_connection(sock=theirs)
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -105,6 +113,73 @@ class _Wire:
     async def send(self, raw: bytes) -> None:
         self.writer.write(raw)
         await self.writer.drain()
+
+
+async def test_an_interrupt_frame_names_its_eval() -> None:
+    """INT carries the id of the eval it targets, so the server can tell one for
+    the running eval from one for an eval that finished or has not started."""
+    async with _Wire() as wire:
+        pending = wire.conn.begin_eval(None)
+        await wire.conn.send_exec(pending, "sleep(9)")
+        await wire.conn.send_interrupt(pending)
+        expected = f"EXE {pending.exec_id} 8\nsleep(9)INT {pending.exec_id} 0\n".encode()
+        frames = await asyncio.wait_for(wire.reader.readexactly(len(expected)), 5)
+        assert frames == expected
+        wire.conn.end_eval(pending)
+
+
+def test_a_respawn_keeps_the_last_log(tmp_path: Path) -> None:
+    log = tmp_path / "julia.log"
+    _keep_previous_log(log)  # no log yet: nothing to keep
+    assert not (tmp_path / "julia.prev.log").exists()
+    log.write_text("")
+    _keep_previous_log(log)  # an empty one says nothing worth keeping
+    assert log.exists() and not (tmp_path / "julia.prev.log").exists()
+    log.write_text("why it died")
+    (tmp_path / "julia.prev.log").write_text("older")
+    _keep_previous_log(log)
+    assert not log.exists()
+    assert (tmp_path / "julia.prev.log").read_text() == "why it died"
+
+
+async def test_restart_callbacks_hear_of_every_restart_until_removed(monkeypatch) -> None:
+    """Each callback gets the restart, in the order they came; one that raises is
+    reported the way asyncio reports a failed callback, and the rest still run."""
+    kernel = JuliaKernel(KernelConfig())
+
+    async def _no_process(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(kernel, "_spawn", _no_process)
+    monkeypatch.setattr(kernel, "_teardown", _no_process)
+    loop = asyncio.get_running_loop()
+    reported: list[dict] = []
+    loop.set_exception_handler(lambda _loop, context: reported.append(context))
+    heard: list[str] = []
+
+    def _broken(_restart: object) -> None:
+        raise RuntimeError("broken callback")
+
+    try:
+        remove = kernel.on_restart(lambda r: heard.append(f"first: {r.reason}"))
+        kernel.on_restart(_broken)
+        kernel.on_restart(lambda r: heard.append(f"last: {r.reason}"))
+        await kernel.restart("it was asked to")
+        await kernel.reset()
+        assert heard == [
+            "first: it was asked to",
+            "last: it was asked to",
+            "first: it was reset",
+            "last: it was reset",
+        ]
+        assert [str(context["exception"]) for context in reported] == ["broken callback"] * 2
+        remove()
+        remove()  # removing twice is harmless
+        await kernel.restart()
+        assert heard[-1] == "last: it was restarted"
+        assert "first: it was restarted" not in heard
+    finally:
+        loop.set_exception_handler(None)
 
 
 async def test_connection_routes_frames_to_the_pending_eval() -> None:
@@ -331,6 +406,184 @@ async def test_cancelled_eval_interrupts_and_preserves_state() -> None:
         # 100-second loop quietly running to completion.
         assert (await asyncio.wait_for(k.eval("kept + 1"), timeout=15)).output == "124"
         assert (await asyncio.wait_for(k.eval("2 + 2"), timeout=15)).output == "4"
+
+
+@pytest.mark.integration
+@needs_julia
+async def test_busy_while_an_eval_runs_or_waits_its_turn() -> None:
+    async with JuliaKernel(KernelConfig()) as k:
+        assert not k.busy
+        running = asyncio.create_task(k.eval("sleep(0.5); 1"))
+        queued = asyncio.create_task(k.eval("2"))
+        await asyncio.sleep(0.2)
+        assert k.busy
+        assert [(await running).output, (await queued).output] == ["1", "2"]
+        assert not k.busy
+
+
+@pytest.mark.integration
+@needs_julia
+async def test_a_restart_keeps_the_previous_log_and_says_why(tmp_path: Path) -> None:
+    log = tmp_path / "julia.log"
+    async with JuliaKernel(KernelConfig(stderr_file=log)) as k:
+        assert (k.generation, k.last_restart) == (1, None)
+        # Printed while idle, so into the log; long, because the server holds back
+        # the last few bytes of any output until more follows (a marker prefix).
+        await k.eval('@async (sleep(0.2); println("FROM-THE-FIRST", "-"^60)); nothing')
+        await asyncio.sleep(1.0)
+        assert "FROM-THE-FIRST" in log.read_text()
+        await k.restart("it was asked to")
+        assert k.generation == 2
+        assert k.last_restart is not None and k.last_restart.reason == "it was asked to"
+        assert "FROM-THE-FIRST" in (tmp_path / "julia.prev.log").read_text()
+        assert "FROM-THE-FIRST" not in log.read_text()
+        await k.reset()
+        assert k.generation == 3
+        assert k.last_restart is not None and k.last_restart.reason == "it was reset"
+
+
+@pytest.mark.integration
+@needs_julia
+async def test_an_eval_queued_behind_a_restart_runs_on_the_new_session() -> None:
+    """An eval waiting for the lock while a cancel's recovery restarts Julia runs
+    on the restarted process, not on the connection the restart tore down, and
+    after the restart callbacks have set that process up.
+
+    A client that gives up on a call can send the next one at once (an MCP client
+    does), so it queues behind the recovery. The eval here swallows every
+    interrupt, which is what forces the restart; the restart says why.
+    """
+    async with JuliaKernel(KernelConfig()) as k:
+        restarts: list[Any] = []
+
+        def set_up(restart: Any) -> asyncio.Task[Any]:
+            restarts.append(restart)
+            return asyncio.create_task(_set_up_slowly(k))
+
+        k.on_restart(set_up)
+        stuck = asyncio.create_task(k.eval(_SWALLOWS_INTERRUPTS))
+        await asyncio.sleep(0.5)  # let it start
+        queued = asyncio.create_task(k.eval("@isdefined(SETUP) && SETUP == getpid()"))
+        await asyncio.sleep(0.1)  # let it wait for the lock
+        assert k.busy
+        stuck.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await stuck
+        assert not k.cancel_preserved_state, "the eval ignored the interrupt"
+        result = await asyncio.wait_for(queued, timeout=60)
+        assert result.error is None, result.error
+        assert result.output == "true", "the queued eval ran before the setup"
+        assert not k.busy
+        assert k.generation == 2
+        assert k.last_restart is not None
+        assert "did not stop" in k.last_restart.reason
+        # The recovery restarted Julia itself, and still said so to the callbacks.
+        assert restarts == [k.last_restart]
+
+
+@pytest.mark.integration
+@needs_julia
+async def test_evals_after_a_restart_wait_for_its_setup() -> None:
+    """What a restart callback returns sets the fresh process up: evals wait for
+    it, while the evals of what the callback started go ahead (or it never ends)."""
+    async with JuliaKernel(KernelConfig()) as k:
+        k.on_restart(lambda _restart: asyncio.create_task(_set_up_slowly(k)))
+        first_pid = (await k.eval("getpid()")).output
+        await k.reset()
+        result = await asyncio.wait_for(k.eval(f"SETUP == getpid() != {first_pid}"), timeout=60)
+        assert result.error is None, result.error
+        assert result.output == "true"
+
+
+async def _set_up_slowly(kernel: JuliaKernel) -> None:
+    # Slow enough that an eval which did not wait for it would run first.
+    await asyncio.sleep(0.5)
+    result = await kernel.eval("SETUP = getpid()")
+    assert result.error is None, result.error
+
+
+# An eval that ignores interrupts, however they arrive.
+_SWALLOWS_INTERRUPTS = """
+while true
+    try
+        sleep(30)
+    catch e
+        e isa InterruptException || rethrow()
+    end
+end
+"""
+
+
+@pytest.mark.integration
+@needs_julia
+async def test_a_cancelled_wait_is_interrupted_whatever_else_runs() -> None:
+    """A cancelled eval that is waiting is interrupted, and nothing else is.
+
+    SIGINT lands in whichever task is current on the eval's thread when it
+    arrives, and while the eval waits that is as likely any other task the
+    session started there (a live plot server's handlers are such tasks). The
+    interrupt then killed that task and missed the eval, which ran into the drain
+    window and cost the session a restart. The server now wakes the eval itself.
+    """
+    async with JuliaKernel(KernelConfig()) as k:
+        await k.eval(
+            "kept = 123; ticks = Ref(0); "
+            "bg = @async while true; sleep(0.01); ticks[] += 1; end; nothing"
+        )
+        for _ in range(3):  # the misdelivery was a race, so try it more than once
+            task = asyncio.create_task(k.eval("sleep(30); 1"))
+            await asyncio.sleep(0.5)
+            started = time.monotonic()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert time.monotonic() - started < 3, "the interrupt reached the eval late"
+            assert k.cancel_preserved_state
+        assert k.generation == 1, "the session restarted"
+        assert (await k.eval("kept")).output == "123"
+        assert (await k.eval("istaskdone(bg)")).output == "false"
+        ticks = int((await k.eval("ticks[]")).output)
+        await asyncio.sleep(0.3)
+        assert int((await k.eval("ticks[]")).output) > ticks, "the background task stopped"
+
+
+@pytest.mark.integration
+@needs_julia
+async def test_a_cancelled_computation_is_interrupted_by_the_signal() -> None:
+    """An eval that computes without yielding is reached by the SIGINT follow-up."""
+    async with JuliaKernel(KernelConfig()) as k:
+        await k.eval("kept = 7")
+        task = asyncio.create_task(k.eval("x = 0.0; while true; global x += rand(); end"))
+        await asyncio.sleep(0.5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert k.cancel_preserved_state
+        assert k.generation == 1
+        assert (await k.eval("kept")).output == "7"
+
+
+@pytest.mark.integration
+@needs_julia
+async def test_an_interrupt_that_comes_early_or_late_is_handled() -> None:
+    """An interrupt for an eval that hasn't started cancels it outright, and one
+    for an eval that already finished touches nothing."""
+    async with JuliaKernel(KernelConfig()) as k:
+        conn = k._conn
+        assert conn is not None
+        pending = conn.begin_eval(None)
+        try:
+            await conn.send_interrupt(pending)
+            await conn.send_exec(pending, "global ran = true")
+            status, _payload = await asyncio.wait_for(pending.future, timeout=10)
+        finally:
+            conn.end_eval(pending)
+        assert status == "int"
+        assert (await k.eval("@isdefined(ran)")).output == "false"
+
+        await conn.send_interrupt(pending)  # long finished
+        result = await asyncio.wait_for(k.eval("sleep(0.5); 42"), timeout=10)
+        assert result.output == "42"
 
 
 @pytest.mark.integration
