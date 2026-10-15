@@ -99,11 +99,19 @@ and check on staged `.py` files. To verify the whole tree like CI:
 - `src/jutul_agent/approval_preview.py`: the approval card body every surface
   renders for a pending tool call.
 - `src/jutul_agent/session_host.py`: the one session bootstrap and turn-policy
-  loop behind every front end.
+  loop behind every front end. Its kernel half (env, system image, display,
+  kernel, `Session`, warm-up) is `start_core` in `session_core.py`, which a
+  front end that brings its own agent uses on its own.
 - `src/jutul_agent/interfaces/`: `cli`, the Textual `tui`, and the `server`
   (FastAPI REST + per-session WebSocket). The browser UI is a React + TypeScript
   app in `server/webapp/` (see its README), built into `server/web_dist/`
-  (committed and shipped, so an install needs no Node).
+  (committed and shipped, so an install needs no Node). The routes that let a
+  browser view a session's output (artifacts, the `/live` plot proxy, popouts)
+  are `server/viewer.py`'s `add_viewer_routes`, installable on any app.
+  `mcp/` is the stdio MCP server (`jutul-agent mcp`): a core plus
+  `build_tools`, no agent. `runtime.py` owns the session, `server.py` maps it
+  to the protocol, and `loopback.py` serves the viewer routes on a loopback
+  port for the links in tool results.
 - `tests/`: end-to-end, chat, CLI, and tool coverage. `tests/integration/`
   needs Julia; `tests/live/` needs an LLM provider key.
 

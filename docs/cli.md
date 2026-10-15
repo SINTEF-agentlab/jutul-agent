@@ -11,7 +11,7 @@ flags are accepted by every command:
 
 ## Interfaces
 
-`jutul-agent` has three interfaces; pick one explicitly (bare `jutul-agent`
+`jutul-agent` has four interfaces; pick one explicitly (bare `jutul-agent`
 prints this list and exits, rather than launching one by default):
 
 | Command | Interface |
@@ -19,6 +19,7 @@ prints this list and exits, rather than launching one by default):
 | `jutul-agent web [options]` | Browser UI (HTTP + WebSocket server + bundled web app) |
 | `jutul-agent tui [options]` | Terminal UI |
 | `jutul-agent run "<prompt>" [options]` | One headless turn, then exit |
+| `jutul-agent mcp [options]` | The Julia tools, served to an MCP client over stdio |
 
 `jutul-agent --version` prints the version.
 
@@ -80,6 +81,27 @@ jutul-agent run "<prompt>" [options]
 Runs one headless turn and exits — same options as `tui` (headless runs need
 `--approval-mode auto`). Exit codes: 0 on success, 3 when the turn needed an
 approval that headless mode cannot ask for.
+
+### jutul-agent mcp
+
+```sh
+jutul-agent mcp [--sim <name>] [--workspace <path>] [--viewer-port <n>]
+```
+
+Serves this folder's Julia session to an MCP client (an IDE or desktop agent),
+which launches the command and talks to it over stdin/stdout. The client brings
+the model, chat, and approvals, so there is no `--model` and no API key. Plots
+and reports are linked to a viewer on a loopback port. See
+[the MCP interface](mcp.md).
+
+| Option | Meaning |
+|---|---|
+| `--sim <name>` | Simulator for this folder (persisted to the workspace config) |
+| `--julia-project <path>` | Use a prepared Julia project at this path; skip workspace env setup |
+| `--threads <N\|auto>` | Julia compute threads (default: physical cores minus one) |
+| `--viewer-port <n>` | Loopback port for the plot viewer (default: any free port) |
+| `--no-viewer` | Serve no viewer; tool results name the saved files instead |
+| `--sysimage` / `--no-sysimage` | Start from the folder's [system image](sysimage.md), or skip it, overriding the folder's setting |
 
 ## jutul-agent init (alias: setup)
 

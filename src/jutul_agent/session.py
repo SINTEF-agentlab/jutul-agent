@@ -271,11 +271,11 @@ class Session:
     # Whether this session continues an earlier conversation. The thread state
     # is restored from the checkpointer; the Julia REPL is not.
     resumed: bool = False
-    # The front end driving this session ("tui" or "web"); tools that only receive
+    # The front end driving this session (see ``surfaces``); tools that only receive
     # the session (e.g. a capability's ToolFactory) read this to match the surface
     # ``build_agent`` was composed for.
     surface: str = "tui"
-    # The bound port of this session's Bonito live-plot server (web surface only),
+    # The bound port of this session's Bonito live-plot server (browser surfaces only),
     # once ``plot_julia`` starts it; ``None`` before that. The server's ``/live/...``
     # reverse proxy reads this to know which local port to forward a live plot's
     # traffic to, so the browser never needs its own route to that ephemeral port.

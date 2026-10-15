@@ -586,7 +586,7 @@ def web_server_start(port: int, session_id: str) -> str:
     ``proxy_url`` tells Bonito to write every URL it hands the browser (asset
     links and the widget websocket) as ``/live/<session_id>/...`` instead of an
     absolute ``127.0.0.1:<port>``, so they resolve through the app server's own
-    ``/live/...`` reverse proxy (see ``interfaces/server/app.py``) rather than a
+    ``/live/...`` reverse proxy (see ``interfaces/server/viewer.py``) rather than a
     raw port the browser may have no route to (an SSH/VS Code/Docker port
     forward that only knows about the app's own port). This is the same
     site-relative-prefix mechanism Bonito already uses for JupyterHub/Binder.

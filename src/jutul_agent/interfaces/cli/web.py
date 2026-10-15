@@ -8,7 +8,6 @@ install, so there is nothing extra to add.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import sys
 from typing import TYPE_CHECKING
 
@@ -59,49 +58,6 @@ def build_parser(prog: str = "jutul-agent web") -> argparse.ArgumentParser:
     add_session_flags(parser)
     add_workspace_flags(parser)
     return parser
-
-
-def _resolve_simulator(args: argparse.Namespace) -> str | None:
-    """The one simulator this folder is bound to, or ``None`` if none can be found.
-
-    Same precedence the CLI uses everywhere: the ``--sim`` flag, then the folder's
-    saved ``[workspace] simulator``, then auto-detection from its packages. The
-    resolved choice is saved back so a later launch here needs no flag. The web UI
-    deliberately does not switch simulators in place — a different simulator means
-    a different folder, each with its own Julia environment.
-    """
-    from dataclasses import replace as dc_replace
-
-    from jutul_agent.interfaces.cli._helpers import known_packages_map
-    from jutul_agent.paths import workspace_root
-    from jutul_agent.simulators import registry
-    from jutul_agent.workspace import (
-        auto_detect_simulator,
-        load_workspace_config,
-        write_workspace_config,
-    )
-
-    ws = workspace_root()
-    config = load_workspace_config(ws)
-    sim = args.sim or config.simulator or auto_detect_simulator(known_packages_map(), ws)
-    if sim is None:
-        print(
-            "error: no simulator for this folder. Pass --sim <name>, or run "
-            "`jutul-agent init --sim <name>` here first. Known: "
-            + ", ".join(registry.names())
-            + ".",
-            file=sys.stderr,
-        )
-        return None
-    try:
-        registry.get(sim)
-    except KeyError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return None
-    if config.simulator != sim:  # remember the folder's simulator for next time
-        with contextlib.suppress(OSError):
-            write_workspace_config(dc_replace(config, simulator=sim), workspace=ws)
-    return sim
 
 
 def _sysimage_ready(
@@ -173,11 +129,14 @@ def run(args: argparse.Namespace) -> int:
         )
         return 1
 
-    from jutul_agent.interfaces.cli._helpers import apply_workspace_flags
+    from jutul_agent.interfaces.cli._helpers import (
+        apply_workspace_flags,
+        resolve_folder_simulator,
+    )
 
     apply_workspace_flags(args)  # bind the server to its --workspace folder (or the cwd)
 
-    sim = _resolve_simulator(args)
+    sim = resolve_folder_simulator(args.sim)
     if sim is None:
         return 2
 

@@ -498,7 +498,12 @@ class SysimageUnavailable(RuntimeError):
 
 # The command a surface tells the user to re-run. A refusal names the way through
 # it, and the way through depends on how they got here.
-SURFACE_COMMANDS = {"web": "jutul-agent web", "tui": "jutul-agent tui", "cli": "jutul-agent run"}
+SURFACE_COMMANDS = {
+    "web": "jutul-agent web",
+    "tui": "jutul-agent tui",
+    "cli": "jutul-agent run",
+    "mcp": "jutul-agent mcp",
+}
 
 
 def refusal(decision: Decision, *, command: str = "jutul-agent web") -> str:

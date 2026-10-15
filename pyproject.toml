@@ -36,11 +36,14 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
     # Used directly by the declarative HTTP tools (agent/capabilities.py) to call a
-    # host application's endpoints, and by the web interface's live-plot reverse
-    # proxy (interfaces/server/app.py) to forward HTTP/websocket traffic to each
+    # host application's endpoints, and by the live-plot reverse proxy
+    # (interfaces/server/viewer.py) to forward HTTP/websocket traffic to each
     # session's Bonito server.
     "httpx>=0.27",
     "websockets>=13",
+    # The MCP interface (`jutul-agent mcp`): serves the session tools to an MCP
+    # client (an IDE or desktop agent) over stdio.
+    "mcp>=2.2,<3",
     "tomli-w>=1.2.0",
 ]
 

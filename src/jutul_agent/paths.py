@@ -146,8 +146,9 @@ def workspace_output_dir(workspace: Path | None = None) -> Path:
 
 
 # Session ids minted by ``session.default_session_id``: a sortable timestamp
-# plus a short random suffix (e.g. ``2026-06-12-2315-3f2a``).
-_DATED_SESSION_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-[0-9a-f]{4}$")
+# plus a short random suffix (e.g. ``2026-06-12-2315-3f2a``). The MCP server
+# mints a longer suffix, because its session id is also the key to its viewer.
+_DATED_SESSION_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-[0-9a-f]{4,}$")
 
 
 def is_dated_session_id(session_id: str) -> bool:

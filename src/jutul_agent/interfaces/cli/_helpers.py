@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from pathlib import Path
 from typing import Any
@@ -150,3 +151,46 @@ def apply_workspace_flags(args: argparse.Namespace) -> None:
 
 def known_packages_map() -> dict[str, str]:
     return {registry.get(name).primary_package: name for name in registry.names()}
+
+
+def resolve_folder_simulator(sim_flag: str | None) -> str | None:
+    """The one simulator this folder is bound to, or ``None`` if none can be found.
+
+    Same precedence the CLI uses everywhere: the ``--sim`` flag, then the folder's
+    saved ``[workspace] simulator``, then auto-detection from its packages. The
+    resolved choice is saved back so a later launch here needs no flag. A server
+    (the web UI, the MCP server) deliberately does not switch simulators in place:
+    a different simulator means a different folder, each with its own Julia
+    environment.
+    """
+    from dataclasses import replace as dc_replace
+
+    from jutul_agent.paths import workspace_root
+    from jutul_agent.simulators import registry
+    from jutul_agent.workspace import (
+        auto_detect_simulator,
+        load_workspace_config,
+        write_workspace_config,
+    )
+
+    ws = workspace_root()
+    config = load_workspace_config(ws)
+    sim = sim_flag or config.simulator or auto_detect_simulator(known_packages_map(), ws)
+    if sim is None:
+        print(
+            "error: no simulator for this folder. Pass --sim <name>, or run "
+            "`jutul-agent init --sim <name>` here first. Known: "
+            + ", ".join(registry.names())
+            + ".",
+            file=sys.stderr,
+        )
+        return None
+    try:
+        registry.get(sim)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return None
+    if config.simulator != sim:  # remember the folder's simulator for next time
+        with contextlib.suppress(OSError):
+            write_workspace_config(dc_replace(config, simulator=sim), workspace=ws)
+    return sim

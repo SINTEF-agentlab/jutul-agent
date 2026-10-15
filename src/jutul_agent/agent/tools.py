@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Callable
+from contextvars import ContextVar
 from typing import Any
 
 from langchain_core.tools import tool
@@ -17,6 +19,7 @@ from langchain_core.tools import tool
 from jutul_agent.juliakernel.result import OnChunk, OutputChunk
 from jutul_agent.paths import resolve_in_workspace, workspace_root
 from jutul_agent.session import Session
+from jutul_agent.surfaces import renders_in_browser
 from jutul_agent.trace.schema import ARTIFACT, ATTEMPT, artifact_payload
 
 # langgraph exposes the active tool call's output-delta writer only through this
@@ -29,17 +32,25 @@ except Exception:  # pragma: no cover - langgraph internals moved
     _tool_call_writer = None  # type: ignore[assignment]
 
 
+# A front end that runs the tools outside a langgraph graph (the MCP server) sets
+# this around a call to receive the same live output the graph would stream.
+tool_output_writer: ContextVar[Callable[[str], None] | None] = ContextVar(
+    "tool_output_writer", default=None
+)
+
+
 def _capture_delta_writer() -> OnChunk | None:
     """Return an ``on_chunk`` that streams kernel output as tool-output deltas.
 
-    The writer is captured here, in the tool's context where langgraph set the
-    ContextVar, so it stays valid when the kernel's pump task (a different task)
-    invokes it. Returns ``None`` outside a streaming graph (e.g. unit tests).
+    The writer is captured here, in the tool's context where the caller set the
+    ContextVar (``tool_output_writer``, else langgraph's), so it stays valid when
+    the kernel's pump task (a different task) invokes it. Returns ``None`` when
+    nobody is streaming (e.g. unit tests).
     """
 
-    if _tool_call_writer is None:
-        return None
-    writer = _tool_call_writer.get()
+    writer = tool_output_writer.get()
+    if writer is None and _tool_call_writer is not None:
+        writer = _tool_call_writer.get()
     if writer is None:
         return None
 
@@ -133,10 +144,10 @@ def make_run_julia_tool(session: Session):
 def make_reset_julia_tool(session: Session):
     @tool
     async def reset_julia() -> str:
-        """Restart Julia with a fresh, empty session.
+        """Restart Julia with a fresh session, set up as when this session started.
 
-        A recovery tool, not a routine one. It clears ALL state (loaded packages,
-        variables, and anything you built like models or simulation results) and the
+        A recovery tool, not a routine one. It clears ALL state you built (variables,
+        your `using` imports, and anything like models or simulation results) and the
         next run pays compilation again. Use it deliberately, mainly when a module
         must be reloaded (Julia can't swap a module already loaded this session,
         e.g. after installing or updating one), or to recover when the session has
@@ -159,8 +170,9 @@ def make_reset_julia_tool(session: Session):
             except Exception as exc:
                 return f"ERROR: failed to restart Julia: {exc}"
         return (
-            "Julia restarted with a fresh session. All previous state "
-            "(loaded packages, variables, results) was cleared."
+            "Julia restarted with a fresh session, set up as when this session "
+            "started. Your variables, results and `using` imports were cleared: "
+            "run the `using` lines you need again."
         )
 
     return reset_julia
@@ -247,7 +259,7 @@ def _fmt_metric(value: Any) -> str:
 
 
 def make_write_report_tool(session: Session, *, surface: str | None = None):
-    web = (surface or session.surface) == "web"
+    web = renders_in_browser(surface or session.surface)
 
     @tool
     async def write_report(

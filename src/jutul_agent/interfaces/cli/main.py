@@ -59,6 +59,7 @@ INTERFACE_CHOOSER = """jutul-agent — pick an interface:
   jutul-agent web              Browser UI: chat with interactive plots and reports.
   jutul-agent tui              Terminal UI.
   jutul-agent run "<prompt>"   Run a single turn headlessly and print the result.
+  jutul-agent mcp              Serve the Julia tools to an MCP client (IDE or desktop agent).
 
 Set up a folder first:  jutul-agent init --sim <name>
 Set an API key:         jutul-agent key <provider>
@@ -89,6 +90,12 @@ def main(argv: list[str] | None = None) -> int:
 
         args = web_cmd.build_parser(prog="jutul-agent web").parse_args(argv[1:])
         return web_cmd.run(args)  # applies the workspace flags itself
+
+    if argv[0] == "mcp":
+        from jutul_agent.interfaces.cli import mcp as mcp_cmd
+
+        args = mcp_cmd.build_parser(prog="jutul-agent mcp").parse_args(argv[1:])
+        return mcp_cmd.run(args)  # applies the workspace flags itself
 
     if argv[0] == "tui":
         args = run_cmd.build_parser(prog="jutul-agent tui").parse_args(argv[1:])

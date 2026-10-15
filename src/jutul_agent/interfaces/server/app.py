@@ -17,22 +17,19 @@ import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import quote, urlparse
 
 from fastapi import (
     FastAPI,
     File,
     HTTPException,
-    Request,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
 from fastapi.responses import (
-    FileResponse,
     HTMLResponse,
-    JSONResponse,
     PlainTextResponse,
     Response,
 )
@@ -51,10 +48,14 @@ from jutul_agent.agent.capabilities import (
 )
 from jutul_agent.interfaces.server import protocol
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
+from jutul_agent.interfaces.server.viewer import _fit_target, _sane_size, _sized, add_viewer_routes
 from jutul_agent.preview import TOOL_STREAM_RENDER_INTERVAL, TOOL_STREAM_TAIL_CAP
 from jutul_agent.session_host import SessionHost
 from jutul_agent.sysimage import SysimageUnavailable
 from jutul_agent.trace import schema
+
+if TYPE_CHECKING:
+    from jutul_agent.session import Session
 
 # The web UI ships pre-built next to this module: ``web_dist`` is the Vite build of
 # ``webapp/`` (the React app), committed and shipped so an install needs no Node.
@@ -67,61 +68,6 @@ def _ui_dir() -> Path | None:
     return WEB_DIST_DIR if (WEB_DIST_DIR / "index.html").is_file() else None
 
 
-# Timeouts for the live-plot proxy routes. The plot server shares Julia's
-# interactive thread with the kernel's eval loop, so a long eval (a solve, a slow
-# figure build) can leave requests unanswered for minutes while the OS still
-# accepts the TCP connection. Waiting serves those requests when the eval yields;
-# a short timeout would turn every busy spell into a 502 or a dropped socket.
-# Connects stay quick so a port nothing listens on still fails fast.
-_LIVE_WS_OPEN_TIMEOUT = 120.0
-_LIVE_HTTP_TIMEOUT = {"connect": 5.0, "read": 300.0, "write": 30.0, "pool": 30.0}
-
-# A live plot's route id: a slot or ``plot-<hex>`` stem, optionally with the
-# popout suffix a replay appended. What ``popout_wrapper`` accepts; anything
-# else 404s rather than being echoed into a page.
-_ROUTE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:--pop\d+)?")
-
-
-def _fit_target(stage: list[int], authored: Any) -> list[int]:
-    """The size a re-fit resizes a live figure to, for a ``stage``-sized panel.
-
-    The Python twin of the serve-time fit in ``jl._fig_size_block``, whose one
-    rule is stated in full there: aspect clamped near the authored shape
-    (letterbox rather than distort), fitted inside the panel at full text size,
-    then grown so neither dimension falls below the squash floor. The two
-    fractions are read from that module so the twins cannot drift apart.
-    Anchoring to the authored size, not the current one, makes refitting
-    idempotent. Without a recorded authored size the stage itself is target.
-    """
-    from jutul_agent.agent import plot_julia_src as jl
-
-    sw, sh = stage
-    if not (isinstance(authored, (list, tuple)) and len(authored) == 2):
-        return [sw, sh]
-    aw, ah = int(authored[0]), int(authored[1])
-    if aw <= 0 or ah <= 0:
-        return [sw, sh]
-    ra = aw / ah
-    r = min(max(sw / sh, ra * jl.FIT_ASPECT_FRACTION), ra / jl.FIT_ASPECT_FRACTION)
-    w1 = min(sw, round(sh * r))
-    h1 = round(w1 / r)
-    s = min(
-        max(1.0, aw * jl.FIT_SQUASH_FLOOR / w1, ah * jl.FIT_SQUASH_FLOOR / h1), jl.FIT_MAX_SCALE
-    )
-    return [round(w1 * s), round(h1 * s)]
-
-
-def _sized(value: Any) -> list[int] | None:
-    """A recorded ``[w, h]`` as plain ints, or ``None`` if it is not one."""
-    if not (isinstance(value, (list, tuple)) and len(value) == 2):
-        return None
-    try:
-        w, h = int(value[0]), int(value[1])
-    except (TypeError, ValueError):
-        return None
-    return [w, h] if w > 0 and h > 0 else None
-
-
 def _authored_of(payload: dict[str, Any]) -> list[int] | None:
     """The size a recorded plot's code built its figure at, if it is known.
 
@@ -130,93 +76,6 @@ def _authored_of(payload: dict[str, Any]) -> list[int] | None:
     known to work, rather than left half-grown and clipped.
     """
     return _sized(payload.get("authored_px")) or _sized(payload.get("size_px"))
-
-
-def _sane_size(width: Any, height: Any) -> list[int] | None:
-    """A client-supplied pixel size as ``[w, h]``, or ``None`` if implausible.
-
-    Guards every place the browser reports a measurement (the canvas hint, a
-    replot target): a missing field, a junk type, or a degenerate rectangle
-    yields ``None``, and callers fall back to not resizing at all.
-    """
-    try:
-        w, h = int(width), int(height)
-    except (TypeError, ValueError):
-        return None
-    if not (100 <= w <= 8192 and 100 <= h <= 8192):
-        return None
-    return [w, h]
-
-
-# The popout wrapper page (see ``popout_wrapper``). Placeholders instead of an
-# f-string so the JS braces stay readable. The figure is embedded at its real
-# pixel size and CSS-scaled down to the window (never upscaled: a canvas grown
-# by CSS blurs). When the scaled figure covers the window poorly (the same
-# gate the inline canvas uses) the wrapper POSTs a re-fit and then stages the
-# size the server *echoes*, never the size it asked for. Until a refit lands,
-# the scaled centered presentation is the always-correct fallback.
-_POPOUT_WRAPPER_HTML = """<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>jutul-agent plot</title>
-<style>
-  /* `color-scheme` is what stops the white flash on a window resize, and no
-     background declaration can substitute for it: while the window grows, the
-     browser fills the newly exposed area with the window's base canvas,
-     painted before any CSS applies, and that base is white until the page
-     declares which schemes it supports. Declaring both, and painting the page
-     in the matching system colour, makes base and page the same colour in
-     either scheme, so there is nothing left to flash. */
-  html { color-scheme: light dark; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: Canvas; }
-  /* Transparent, so the figure (whose page is transparent all the way down)
-     composites onto the page colour above rather than onto white. */
-  #stage { position: absolute; transform-origin: top left; background: transparent; }
-  iframe { display: block; border: 0; background: transparent; }
-</style>
-</head>
-<body>
-<div id="stage"><iframe id="frame" src="__SRC__" allow="fullscreen"></iframe></div>
-<script>
-  let W = __W__, H = __H__;
-  const REFIT = "__REFIT__";
-  function fit() {
-    const s = Math.min(innerWidth / W, innerHeight / H, 1);
-    const stage = document.getElementById("stage");
-    const frame = document.getElementById("frame");
-    frame.style.width = W + "px";
-    frame.style.height = H + "px";
-    stage.style.transform = s < 1 ? "scale(" + s + ")" : "none";
-    stage.style.left = Math.max(0, (innerWidth - W * s) / 2) + "px";
-    stage.style.top = Math.max(0, (innerHeight - H * s) / 2) + "px";
-  }
-  let timer;
-  addEventListener("resize", () => {
-    fit();
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
-      // The scaled figure leaves too much of the window unused (grown past it,
-      // or a shape mismatch): have the kernel re-fit the live figure to the
-      // window, then stage the size it echoes; the floors may have held.
-      const s = Math.min(innerWidth / W, innerHeight / H, 1);
-      const coverage = (W * s * H * s) / (innerWidth * innerHeight);
-      if (coverage >= 0.75) return;
-      try {
-        const resp = await fetch(
-          REFIT + "&w=" + innerWidth + "&h=" + innerHeight, { method: "POST" });
-        if (resp.ok) {
-          const d = await resp.json();
-          if (d && d.width >= 100 && d.height >= 100) { W = d.width; H = d.height; fit(); }
-        }
-      } catch (e) { /* best-effort: the scaled presentation stands */ }
-    }, 1000);
-  });
-  fit();
-</script>
-</body>
-</html>
-"""
 
 
 def _register_web_mime_types() -> None:
@@ -785,8 +644,11 @@ def create_app(
             raise HTTPException(status_code=404, detail="no such session")
         return {"ok": True}
 
-    @app.get("/sessions/{session_id}/artifacts/{path:path}")
-    def get_artifact(session_id: str, path: str) -> FileResponse:
+    def _live_session(session_id: str) -> Session | None:
+        host = manager.get(session_id)
+        return host.session if host is not None else None
+
+    def _output_dir_of(session_id: str) -> Path | None:
         # Resolve against the live session when it's loaded, else its on-disk output
         # dir — the same fallback get_transcript uses — so a plot or report stays
         # fetchable after the session is evicted from the live registry or the server
@@ -795,242 +657,14 @@ def create_app(
 
         host = manager.get(session_id)
         if host is not None:
-            out_dir: Path | None = host.session.output_dir
-        elif _is_valid_session_id(session_id):
-            out_dir = existing_output_dir(session_id)
-        else:
-            out_dir = None
-        if out_dir is None:
-            raise HTTPException(status_code=404, detail="no such session")
-        target = _resolve_artifact(out_dir, path)
-        if target is None:
-            raise HTTPException(status_code=404, detail="no such artifact")
-        return FileResponse(target)
+            return host.session.output_dir
+        if _is_valid_session_id(session_id):
+            return existing_output_dir(session_id)
+        return None
 
-    @app.get("/popout/{session_id}")
-    def popout_wrapper(session_id: str, route: str, w: int, h: int) -> HTMLResponse:
-        """The page a popout window hosts: the live figure, staged and scaled
-        under the same presentation contract as the inline canvas stage (see
-        ``_POPOUT_WRAPPER_HTML``), so resizing or fullscreening the popup can
-        never leave the scene mis-drawn with widgets floating outside it."""
-        if _ROUTE_ID_RE.fullmatch(route) is None:
-            raise HTTPException(status_code=404, detail="no such plot route")
-        if not (100 <= w <= 8192 and 100 <= h <= 8192):
-            raise HTTPException(status_code=404, detail="implausible figure size")
-        src = f"/live/{quote(session_id)}/viz/{quote(route)}"
-        refit = f"/popout/{quote(session_id)}/refit?route={quote(route)}"
-        return HTMLResponse(
-            _POPOUT_WRAPPER_HTML.replace("__SRC__", src)
-            .replace("__REFIT__", refit)
-            .replace("__W__", str(w))
-            .replace("__H__", str(h))
-        )
-
-    @app.post("/popout/{session_id}/refit")
-    async def popout_refit(session_id: str, route: str, w: int, h: int) -> Response:
-        """Re-fit a popout's live figure to its window, in place: the same fit
-        rule as everywhere else, anchored to the record's authored size. The
-        wrapper stages the echoed size this answers as JSON. Best-effort: a
-        missing session, route, or figure answers 204 and the wrapper's scaled
-        presentation stands."""
-        from jutul_agent.agent.plot_julia import _plot_id_of, refit_web
-
-        if _ROUTE_ID_RE.fullmatch(route) is None or _sane_size(w, h) is None:
-            raise HTTPException(status_code=404, detail="no such plot route")
-        host = manager.get(session_id)
-        if host is None:
-            return Response(status_code=204)
-        # The popout's route is its record's plot id plus a `--popN` suffix.
-        base = re.sub(r"--pop\d+$", "", route)
-        payload = next(
-            (
-                event.payload
-                for event in reversed(host.session.trace.iter_events())
-                if event.kind == schema.ARTIFACT and _plot_id_of(event.payload) == base
-            ),
-            None,
-        )
-        authored = (payload or {}).get("authored_px") or (payload or {}).get("size_px")
-        echoed = None
-        with contextlib.suppress(Exception):
-            _err, echoed = await refit_web(
-                host.session, route, _fit_target([w, h], authored), _sized(authored)
-            )
-        if echoed is None:
-            return Response(status_code=204)
-        return JSONResponse({"width": echoed[0], "height": echoed[1]})
-
-    @app.api_route("/live/{session_id}/{path:path}", methods=["GET", "HEAD"])
-    async def live_plot_proxy(session_id: str, path: str, request: Request) -> Response:
-        """Reverse-proxy a session's live Bonito plot server through this port.
-
-        A live plot's Bonito server binds a fresh, unpredictable localhost port
-        per session; handing the browser that raw ``127.0.0.1:<port>`` URL only
-        works when the browser shares this machine's network namespace. Under any
-        port-forwarded setup (an SSH tunnel, VS Code/Cursor remote, Docker) only
-        this app server's own port is known to whatever is forwarding connections,
-        so the raw port is a permanent, unfixable connection-refused. Bonito's
-        ``proxy_url`` (set in ``plot_julia_src.web_server_start``) already writes
-        every URL it hands the browser as ``/live/<session_id>/...``, so this route
-        only needs to strip that prefix and forward to the real port.
-        """
-        host = manager.get(session_id)
-        port = host.session.web_plot_port if host is not None else None
-        if port is None:
-            raise HTTPException(status_code=404, detail="no live plot server for this session")
-
-        import httpx
-
-        # Answer a readiness probe here rather than forwarding it. Bonito renders the
-        # figure's app for *any* request reaching its route, HEAD included, and each
-        # render leaves behind a WGLMakie screen that nothing removes, because no browser
-        # attaches to a HEAD. The canvas polls this route to find out when the live server
-        # is up, so a figure that takes a moment collects a fistful of dead screens — and
-        # those shadow the real view, since Makie resolves a scene's screen by taking the
-        # first backend match, breaking picking and the click-to-select built on it.
-        #
-        # A readiness check only has to answer "is the server there", which a connection
-        # settles without rendering anything.
-        if request.method == "HEAD":
-            try:
-                _reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection("127.0.0.1", port), timeout=5.0
-                )
-            except (TimeoutError, OSError) as exc:
-                raise HTTPException(
-                    status_code=502, detail=f"live plot server unreachable: {exc}"
-                ) from exc
-            writer.close()
-            with contextlib.suppress(Exception):
-                await writer.wait_closed()
-            return Response(status_code=200)
-
-        hop_by_hop = {"host", "content-length", "connection"}
-        headers = [(k, v) for k, v in request.headers.items() if k.lower() not in hop_by_hop]
-        async with httpx.AsyncClient() as client:
-            try:
-                upstream = await client.request(
-                    request.method,
-                    f"http://127.0.0.1:{port}/{path}",
-                    params=request.query_params,
-                    headers=headers,
-                    content=await request.body(),
-                    timeout=httpx.Timeout(**_LIVE_HTTP_TIMEOUT),
-                )
-            except httpx.TransportError as exc:
-                raise HTTPException(
-                    status_code=502, detail=f"live plot server unreachable: {exc}"
-                ) from exc
-        strip = {"content-length", "content-encoding", "transfer-encoding", "connection"}
-        response_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in strip}
-        return Response(
-            content=upstream.content,
-            status_code=upstream.status_code,
-            headers=response_headers,
-            media_type=upstream.headers.get("content-type"),
-        )
-
-    @app.websocket("/live/{session_id}/{path:path}")
-    async def live_plot_ws_proxy(websocket: WebSocket, session_id: str, path: str) -> None:
-        """Pump a live plot's widget websocket (a slider, a field selector) through
-        the same reverse proxy as ``live_plot_proxy``, for the same reason: the
-        browser has no route to Bonito's own port, only to this one."""
-        host = manager.get(session_id)
-        port = host.session.web_plot_port if host is not None else None
-        if port is None:
-            # Refuse before ``accept`` so the upgrade is answered with a plain HTTP
-            # error instead of a socket that opens and immediately closes. The plot
-            # client's reconnect budgets ~30s of backed-off attempts but resets that
-            # budget on every successful open, so accept-then-close would keep a
-            # dead session's leftover tab reconnecting forever.
-            with contextlib.suppress(RuntimeError, WebSocketDisconnect, OSError):
-                await websocket.close(code=1011)
-            return
-
-        import websockets
-        from websockets.exceptions import ConnectionClosed, WebSocketException
-
-        upstream_url = f"ws://127.0.0.1:{port}/{path}"
-        if websocket.url.query:
-            upstream_url += f"?{websocket.url.query}"
-
-        # Dial the plot server first and accept the browser only once the upstream
-        # handshake has succeeded, for the same reason as the refusal above: an
-        # accept before a failed dial reads as progress to the client and resets
-        # its retry budget. Dialing first, a gone upstream is a refused handshake
-        # the client backs off from and gives up on, while a merely busy one holds
-        # the browser in CONNECTING (which the client treats as "wait", not
-        # "retry") until the kernel yields. The generous ``open_timeout`` covers a
-        # long eval delaying the upstream handshake; the TCP connect itself still
-        # fails fast when nothing listens.
-        #
-        # No keepalive on this hop. The client library's default is to ping the
-        # upstream every 20s and tear the connection down when a pong does not come
-        # back in another 20s, but the peer here is the Julia process: its plot
-        # server's handler tasks share a thread pool with whatever the kernel is
-        # computing, so a long solve can leave them unscheduled for minutes. Pinging
-        # measures how busy Julia is, not whether the connection is alive, and every
-        # timeout kills a working socket that the browser then reconnects, in a loop
-        # for as long as the solve runs. The socket itself still reports a plot
-        # server that actually goes away.
-        try:
-            async with websockets.connect(
-                upstream_url,
-                max_size=None,
-                ping_interval=None,
-                open_timeout=_LIVE_WS_OPEN_TIMEOUT,
-            ) as upstream:
-                await websocket.accept(subprotocol=websocket.headers.get("sec-websocket-protocol"))
-
-                async def to_upstream() -> None:
-                    try:
-                        while True:
-                            message = await websocket.receive()
-                            if message["type"] == "websocket.disconnect":
-                                return
-                            data = message.get("bytes")
-                            if data is not None:
-                                await upstream.send(data)
-                                continue
-                            text = message.get("text")
-                            if text is not None:
-                                await upstream.send(text)
-                    finally:
-                        with contextlib.suppress(Exception):
-                            await upstream.close()
-
-                async def from_upstream() -> None:
-                    with contextlib.suppress(ConnectionClosed):
-                        async for message in upstream:
-                            if isinstance(message, bytes):
-                                await websocket.send_bytes(message)
-                            else:
-                                await websocket.send_text(message)
-
-                pumps = {asyncio.create_task(to_upstream()), asyncio.create_task(from_upstream())}
-                done, pending = await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
-                for task in pending:
-                    task.cancel()
-                # Wait for the cancellation to actually land: otherwise the loser can
-                # still be mid-``send`` when we close the client socket below, racing
-                # a "send after close" ASGI error instead of a clean cancel. Gather the
-                # winner as well, so that a pump which ended by raising has its
-                # exception retrieved here: an unretrieved one stays on the task until
-                # it is collected and then prints itself as a bare, unattributed
-                # traceback, typically long after the connection it belongs to.
-                await asyncio.gather(*done, *pending, return_exceptions=True)
-        except (WebSocketDisconnect, OSError, WebSocketException):
-            # OSError: the dial failed or timed out. WebSocketException: the plot
-            # server answered the upgrade with an HTTP error (e.g. a route removed
-            # by close_plots while a tab still held it). The close below then
-            # refuses the still-unaccepted browser handshake.
-            pass
-        finally:
-            # Closing is best-effort on a peer that may already be gone: starlette
-            # turns uvicorn's ClientDisconnected into WebSocketDisconnect (a raw
-            # OSError before accept), and a double close raises RuntimeError.
-            with contextlib.suppress(RuntimeError, WebSocketDisconnect, OSError):
-                await websocket.close()
+    # Artifacts, live plots, and popouts: the routes shared with the MCP server's
+    # viewer (see viewer.py), resolved through this server's session registry.
+    add_viewer_routes(app, live_session=_live_session, output_dir=_output_dir_of)
 
     @app.get("/sessions/{session_id}/transcript")
     def get_transcript(session_id: str, format: str = "html") -> Response:
@@ -1360,15 +994,6 @@ def _doc_page(title: str, body_html: str) -> str:
         "pre code{background:none;padding:0}a{color:#0e7490}"
         "</style></head><body><div class='page'>" + body_html + "</div></body></html>"
     )
-
-
-def _resolve_artifact(output_dir: Path, path: str):
-    """The artifact file for ``path``, or ``None`` if it escapes the artifacts dir."""
-    base = (output_dir / "artifacts").resolve()
-    target = (base / path).resolve()
-    if not target.is_file() or not target.is_relative_to(base):
-        return None
-    return target
 
 
 async def _serve_stream(websocket: WebSocket, manager: SessionManager, session_id: str) -> None:

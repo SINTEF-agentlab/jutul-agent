@@ -10,6 +10,7 @@
 #                     OUT <stdout|stderr> <n>    live output bytes
 #                     RES <id> <ok|err|int> <n>  one result per eval
 #   parent -> Julia:  EXE <id> <n>               code to evaluate
+#                     INT <id> 0                 interrupt eval <id>, if it runs
 #
 # stdout/stderr are captured *in this process*: the fds are redirected to pipes
 # (fd-level via dup2, so output written by C libraries is included) and pump
@@ -22,9 +23,19 @@
 #
 # Threading: the parent launches Julia with an interactive thread (`-t N,1`),
 # which pins the root task — this eval loop — to the interactive thread, while
-# the pumps run on the default pool. SIGINT -> InterruptException is delivered
-# on the root task's thread, so a pump can never swallow an interrupt meant for
-# the eval (its own sigatomic windows would otherwise eat it).
+# the pumps and the control reader run on the default pool. SIGINT ->
+# InterruptException is delivered on the root task's thread, so a pump can never
+# swallow an interrupt meant for the eval (its own sigatomic windows would
+# otherwise eat it).
+#
+# Interrupts: SIGINT raises the exception in whichever task is running on that
+# thread when it arrives. While the eval computes, that is the eval. While it
+# waits (a sleep, a socket, a lock), it is any task the session started there:
+# a live plot server's handler, a timer. That task dies of the exception, and
+# the eval never sees it. So the parent first sends INT, and the interrupter,
+# a task on the root's thread, wakes the waiting eval with the exception
+# itself. A computing eval holds the thread, so the interrupter only runs once
+# the eval yields; for that case the parent follows up with SIGINT.
 
 using Sockets
 
@@ -78,6 +89,39 @@ function cap_payload(s::AbstractString)
 end
 
 Base.exit_on_sigint(false)   # SIGINT -> InterruptException instead of process exit
+
+# Whether `task` is suspended waiting for something to wake it (`true`), as
+# opposed to queued to run, already woken (`false`). Only a waiting task may be
+# woken with an exception by another: one queued to run would be pulled out of
+# the scheduler's queue, which other threads add to under a lock this cannot
+# take. Called on the task's own thread, so the task is not running. Reads
+# scheduler internals: if they are not as expected, `nothing` (cannot tell).
+function waiting(task::Task)
+    try
+        task._state === Base.task_state_runnable || return false
+        q = task.queue
+        return q === nothing || q !== Base.workqueue_for(Threads.threadid()).queue
+    catch
+        return nothing
+    end
+end
+
+# Distributed workers compute in processes of their own, which an interrupt of
+# the eval does not reach (the parent's SIGINT goes to the whole process group
+# for that reason). Interrupt them too, so an interrupted ensemble stops instead
+# of running on. Only where that is a signal: on Windows, Distributed
+# terminates the worker instead.
+const DISTRIBUTED = Base.PkgId(Base.UUID("8ba89e20-285c-5b6f-9357-94700520ee1b"), "Distributed")
+
+function interrupt_workers()
+    Sys.iswindows() && return
+    dist = get(Base.loaded_modules, DISTRIBUTED, nothing)
+    dist === nothing && return
+    try
+        Base.invokelatest(dist.nprocs) > 1 && Base.invokelatest(dist.interrupt)
+    catch
+    end
+end
 
 # A process started from a system image comes up with `Base.pkgorigins` empty,
 # so `pathof`, `pkgdir` and `pkgversion` answer `nothing` for every baked
@@ -168,14 +212,77 @@ function main()
         end
     end
 
-    sendframe("RDY", (token,), UInt8[])
+    root = current_task()
+    # The id of the eval the root task is running, "" between evals; and the id
+    # of an eval interrupted before it started. Both are read and written only on
+    # the root's thread (by the root task and the interrupter), so need no lock.
+    evaluating = Ref("")
+    cancelled = Ref("")
+    # An EXE as "id\ncode": a Channel{String} is already compiled into Julia's
+    # system image, where a channel of tuples took a tenth of a second to compile.
+    requests = Channel{String}(Inf)
+    interrupts = Channel{String}(Inf)
 
-    # fd-level capture: from here on, everything written to fd 1/2 (by Julia or
-    # by C code) lands in these pipes and is forwarded by the pumps.
-    pout = Pipe(); perr = Pipe()
-    redirect_stdout(pout); redirect_stderr(perr)
+    # The control reader, on the default pool, so that an INT is read while the
+    # eval it targets runs. Unknown frames are skipped whole, body included.
+    function read_control()
+        try
+            while true
+                head = readline(ctrl)
+                if head == ""
+                    eof(ctrl) && break             # parent closed the control socket
+                    continue
+                end
+                parts = split(head)
+                length(parts) == 3 || continue
+                id = String(parts[2])
+                body = read(ctrl, parse(Int, parts[3]))
+                if parts[1] == "EXE"
+                    put!(requests, string(id, "\n", String(body)))
+                elseif parts[1] == "INT"
+                    put!(interrupts, id)
+                end
+            end
+        catch
+            # A torn connection ends the session as an EOF does.
+        finally
+            close(requests)
+            close(interrupts)
+        end
+    end
+
+    # The interrupter: `@async` keeps it on the root's thread, so it runs only
+    # while the eval yields, and `evaluating` cannot change under it. An eval
+    # queued to run is let run to its next wait first. If the eval's state cannot
+    # be read, this leaves it to the parent's SIGINT follow-up rather than spin.
+    function interrupter()
+        while true
+            try
+                id = take!(interrupts)
+                if evaluating[] != id
+                    cancelled[] = id                   # not started yet, or finished
+                    continue
+                end
+                while evaluating[] == id
+                    ready = waiting(root)
+                    ready === nothing && break
+                    if ready
+                        schedule(root, InterruptException(); error = true)
+                        interrupt_workers()
+                        break
+                    end
+                    yield()
+                end
+            catch e
+                e isa InterruptException || break      # closed: the parent went away
+                # A SIGINT that landed here was meant for the eval.
+                evaluating[] != "" && waiting(root) === true &&
+                    schedule(root, InterruptException(); error = true)
+            end
+        end
+    end
+
     drained = Dict("stdout" => Channel{Nothing}(Inf), "stderr" => Channel{Nothing}(Inf))
-
     function pump(p::Pipe, stream::String)
         hold = length(MARKER) - 1
         tail = UInt8[]
@@ -207,8 +314,6 @@ function main()
             end
         end
     end
-    Threads.@spawn pump(pout, "stdout")
-    Threads.@spawn pump(perr, "stderr")
 
     # Close the eval's output: push everything (including C stdio buffers) into
     # the pipes, then wait until the pumps have forwarded up to the markers.
@@ -219,30 +324,51 @@ function main()
         take!(drained["stdout"]); take!(drained["stderr"])
     end
 
+    # Compile the tasks now, before RDY. Compiled on first use instead, they held
+    # up the first eval by most of a second (the reader shares one thread with the
+    # pumps), and a SIGINT sent in that window found the eval not yet started and
+    # was dropped as stray.
+    precompile(read_control, ())
+    precompile(interrupter, ())
+    precompile(pump, (Pipe, String))
+    precompile(drain, ())
+
+    sendframe("RDY", (token,), UInt8[])
+
+    # fd-level capture: from here on, everything written to fd 1/2 (by Julia or
+    # by C code) lands in these pipes and is forwarded by the pumps.
+    pout = Pipe(); perr = Pipe()
+    redirect_stdout(pout); redirect_stderr(perr)
+
+    # The reader first: the pumps share its thread.
+    Threads.@spawn read_control()
+    @async interrupter()
+    Threads.@spawn pump(pout, "stdout")
+    Threads.@spawn pump(perr, "stderr")
+
     while true
-        local head
+        local id, code
         try
-            head = readline(ctrl)
+            request = take!(requests)
+            cut = findfirst('\n', request)::Int
+            id = request[1:prevind(request, cut)]
+            code = request[nextind(request, cut):end]
         catch e
             e isa InterruptException && continue   # stray interrupt between evals
-            rethrow()
+            break                                  # closed: the parent went away
         end
-        if head == ""
-            eof(ctrl) && break                     # parent closed the control socket
-            continue
-        end
-        parts = split(head)
-        length(parts) == 3 && parts[1] == "EXE" || continue
-        id = parts[2]
-        nbytes = parse(Int, parts[3])
-        # The body read must not be torn by a stray interrupt: a half-read frame
-        # would desync the protocol. A deferred interrupt surfaces in the eval.
-        code = String(Base.disable_sigint() do; read(ctrl, nbytes) end)
 
         status = "ok"
         payload = ""
         try
-            val = Core.eval(Main, rewrite_includes!(Meta.parseall(code)))
+            # An INT that came before its eval started cancels it outright.
+            cancelled[] == id && throw(InterruptException())
+            evaluating[] = id
+            val = try
+                Core.eval(Main, rewrite_includes!(Meta.parseall(code)))
+            finally
+                evaluating[] = ""
+            end
             payload = value_repr(val)
         catch e
             if e isa InterruptException
@@ -253,9 +379,15 @@ function main()
             end
         end
         # Atomic w.r.t. interrupts: a late SIGINT can't tear output from result.
-        Base.disable_sigint() do
-            drain()
-            sendframe("RES", (id, status), cap_payload(payload))
+        # One that arrives meanwhile is deferred to the end of the block; the
+        # result has gone by then, so it is dropped rather than ending the loop.
+        try
+            Base.disable_sigint() do
+                drain()
+                sendframe("RES", (id, status), cap_payload(payload))
+            end
+        catch e
+            e isa InterruptException || rethrow()
         end
     end
 end

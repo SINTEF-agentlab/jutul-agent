@@ -29,6 +29,7 @@ from deepagents import (
 )
 from deepagents.backends import CompositeBackend
 from langchain.agents.middleware import TodoListMiddleware
+from langchain_core.tools import BaseTool
 
 from jutul_agent.agent.added_dirs import add_dir
 from jutul_agent.agent.approval import ApprovalMode, interrupt_on_for_mode, parse_approval_mode
@@ -420,6 +421,41 @@ def skill_sources(adapter: SimulatorAdapter) -> list[str | tuple[str, str]]:
     return sources
 
 
+def build_tools(
+    session: Session,
+    *,
+    surface: str | None = None,
+    extensions: Sequence[Capability] = (),
+    memory_dir: Path | None = None,
+) -> list[BaseTool]:
+    """The session's tools, in the order the model is offered them.
+
+    The Julia, plotting, and record-keeping tools every front end offers, then
+    the tools of whichever ``extensions`` apply to ``surface`` (default
+    ``session.surface``). ``memory_dir`` adds ``remember``, which only means
+    something to an agent whose memory middleware reads that directory back, so
+    a front end that brings its own agent and memory leaves it out.
+
+    This is the one list: ``build_agent`` hands it to the agent, and any other
+    front end that exposes the session's tools gets exactly the same set.
+    """
+    if surface is None:
+        surface = session.surface
+    tools = [
+        make_run_julia_tool(session),
+        make_reset_julia_tool(session),
+        make_plot_julia_tool(session, surface=surface),
+        make_recapture_tool(session, surface=surface),
+        make_close_plots_tool(session, surface=surface),
+        make_record_attempt_tool(session),
+        make_write_report_tool(session, surface=surface),
+    ]
+    if memory_dir is not None:
+        tools.append(make_remember_tool(memory_dir))
+    tools.extend(collect_tools(select_for_surface(list(extensions), surface), session))
+    return tools
+
+
 def build_agent(
     session: Session,
     *,
@@ -461,17 +497,7 @@ def build_agent(
     # extension capabilities that apply to this surface (see agent.capabilities).
     active = select_for_surface(list(extensions), surface)
 
-    tools = [
-        make_run_julia_tool(session),
-        make_reset_julia_tool(session),
-        make_plot_julia_tool(session, surface=surface),
-        make_recapture_tool(session, surface=surface),
-        make_close_plots_tool(session, surface=surface),
-        make_record_attempt_tool(session),
-        make_write_report_tool(session, surface=surface),
-        make_remember_tool(memory_dir),
-        *collect_tools(active, session),
-    ]
+    tools = build_tools(session, surface=surface, extensions=extensions, memory_dir=memory_dir)
     mode = (
         approval_mode
         if isinstance(approval_mode, ApprovalMode)

@@ -84,9 +84,10 @@ Read the full stack trace. Common fixes:
   package change. Julia can't reload a module from inside the REPL, so this needs
   `reset_julia` (see below).
 
-`reset_julia` restarts Julia with an empty session. It is the right fix when a
-module must be reloaded, but it clears **all** state (loaded packages, values,
-and results) and recompiles on the next run. Use it deliberately, not as a
+`reset_julia` restarts Julia with a fresh session, set up as at the start. It is
+the right fix when a module must be reloaded, but it clears **all** state you
+built (your `using` imports, values, and results) and recompiles on the next
+run. Use it deliberately, not as a
 default; install the packages you need *before* building up expensive state so a
 reset stays cheap.
 

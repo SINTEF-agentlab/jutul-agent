@@ -284,6 +284,45 @@ def test_resolve_model_for_agent_enables_gemini_thoughts(
     assert getattr(legacy, "include_thoughts", None) is not True
 
 
+def test_build_tools_is_the_one_session_tool_list(tmp_path) -> None:
+    """``build_tools`` is the list ``build_agent`` offers, in order, and the one
+    any other front end exposes. ``remember`` comes only with a memory dir (it is
+    useless without the memory middleware that reads it back), and a capability's
+    tools only on the surfaces it declares."""
+    from langchain_core.tools import tool
+
+    from jutul_agent.agent.builder import build_tools
+    from jutul_agent.agent.capabilities import Capability
+    from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
+    from jutul_agent.session import Session
+
+    session = Session.create(
+        julia=FakeJulia(), state_root=tmp_path, simulator=make_fake_adapter(tmp_path)
+    )
+    core = [
+        "run_julia",
+        "reset_julia",
+        "plot_julia",
+        "recapture_plot",
+        "close_plots",
+        "record_attempt",
+        "write_report",
+    ]
+    assert [t.name for t in build_tools(session)] == core
+    with_memory = build_tools(session, memory_dir=tmp_path / "memory")
+    assert [t.name for t in with_memory] == [*core, "remember"]
+
+    @tool
+    def host_lookup(query: str) -> str:
+        """Look something up in the host application."""
+        return query
+
+    web_only = Capability(name="host", tools=(lambda _session: host_lookup,), surfaces=("web",))
+    on_web = build_tools(session, surface="web", extensions=[web_only])
+    assert [t.name for t in on_web] == [*core, "host_lookup"]
+    assert [t.name for t in build_tools(session, surface="tui", extensions=[web_only])] == core
+
+
 def test_agent_tool_surface_is_pinned(tmp_path) -> None:
     """Pin the tools the model is offered, and require a gate on each mutating one.
 

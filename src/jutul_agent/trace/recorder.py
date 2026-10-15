@@ -20,6 +20,8 @@ from jutul_agent.trace.schema import (
     TOOL_CALL,
     TOOL_RESULT,
     compaction_payload,
+    tool_call_payload,
+    tool_result_payload,
 )
 
 
@@ -98,7 +100,7 @@ class TraceRecorder(AgentMiddleware):
         call = request.tool_call
         self._trace.append(
             TOOL_CALL,
-            {"id": call.get("id"), "name": call.get("name"), "args": call.get("args")},
+            tool_call_payload(id=call.get("id"), name=call.get("name"), args=call.get("args")),
         )
         try:
             result = await handler(request)
@@ -118,12 +120,12 @@ class TraceRecorder(AgentMiddleware):
         if isinstance(result, ToolMessage):
             self._trace.append(
                 TOOL_RESULT,
-                {
-                    "tool_call_id": getattr(result, "tool_call_id", None),
-                    "name": getattr(result, "name", None),
-                    "content": content_to_str(result.content),
-                    "status": getattr(result, "status", None),
-                },
+                tool_result_payload(
+                    tool_call_id=getattr(result, "tool_call_id", None),
+                    name=getattr(result, "name", None),
+                    content=content_to_str(result.content),
+                    status=getattr(result, "status", None),
+                ),
             )
         return result
 

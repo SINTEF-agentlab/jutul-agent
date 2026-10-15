@@ -8,20 +8,28 @@ process at the fd level, so an eval's result frame arrives only after all of
 its output; completion is one event, ordered by TCP. Evaluation runs
 in-process in that Julia process, so a ``Distributed`` worker pool launched
 from user code uses it the normal way (the process is the cluster master). The
-kernel is the supervisor: it spawns, interrupts (SIGINT on POSIX, CTRL_BREAK on
-Windows), and respawns the process, so a reset never takes the surrounding
-Python session down with it. The package depends only on the standard library.
+kernel is the supervisor: it spawns, interrupts (an ``INT`` frame, then SIGINT
+on POSIX or CTRL_BREAK on Windows), and respawns the process, so a reset never
+takes the surrounding Python session down with it. It counts the processes it
+has started (``generation``), records why the latest one replaced the one
+before (``last_restart``), and tells whoever asked (``on_restart``), so that what
+set the last process up can set the new one up too, before other evals reach it.
+The package depends only on the standard library.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import os
 import secrets
 import signal
 import socket
 import subprocess
+import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Self
 
@@ -31,7 +39,10 @@ from .result import EvalResult, OnChunk
 from .text import render_terminal_output
 
 _SERVER_JL = Path(__file__).resolve().parent / "server.jl"
-# After cancelling an eval we interrupt it and wait this long for its result frame;
+# A cancelled eval is first interrupted through the server, which wakes a waiting
+# eval at once; one still running after this long is computing, and gets SIGINT.
+_INTERRUPT_SIGNAL_DELAY = 1.0
+# After interrupting a cancelled eval we wait this long for its result frame;
 # past this we treat it as wedged and restart.
 _INTERRUPT_DRAIN_TIMEOUT = 10.0
 # The pipes usually reach EOF a moment before the process is reaped, so allow the
@@ -40,6 +51,11 @@ _EXIT_STATUS_TIMEOUT = 2.0
 # How much of Julia's own last output to quote back; a crash banner and the top of
 # its backtrace fit, a whole solver log does not.
 _DEATH_TAIL_CHARS = 600
+# Set while the restart callbacks run, so every task they start carries it: their
+# evals set the fresh process up, and so are the ones that do not wait for that.
+_SETTING_UP: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "julia_kernel_setting_up", default=False
+)
 
 
 class JuliaStartupError(RuntimeError):
@@ -80,6 +96,18 @@ class JuliaStartupError(RuntimeError):
         return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class KernelRestart:
+    """When a fresh Julia process replaced a running one, and why."""
+
+    at: float  # wall-clock time (``time.time()``) the fresh process was ready
+    reason: str  # completes "Julia restarted because ..."
+
+
+# Told of each restart; may return an awaitable that sets the fresh process up.
+RestartCallback = Callable[[KernelRestart], Awaitable[object] | None]
+
+
 class JuliaKernel:
     """A ``JuliaSession``-compatible persistent Julia runtime."""
 
@@ -92,7 +120,13 @@ class JuliaKernel:
         self._stderr_fh: IO[bytes] | None = None
         self._token = ""
         self._lock = asyncio.Lock()
+        self._evals = 0  # running or waiting for the lock
         self._cancel_preserved_state = True
+        self._generation = 0
+        self._last_restart: KernelRestart | None = None
+        self._restart_callbacks: list[RestartCallback] = []
+        # What the callbacks are doing to set the fresh process up; other evals wait.
+        self._setups: list[asyncio.Future[object]] = []
 
     # ---- lifecycle ---------------------------------------------------------
 
@@ -112,17 +146,89 @@ class JuliaKernel:
             and not self._conn.closed.is_set()
         )
 
+    @property
+    def busy(self) -> bool:
+        """Whether an eval is running or waiting for its turn.
+
+        Work nobody waits on (a plot re-fit) checks this to run only on an idle
+        kernel, so that a deadline it sets counts its own time, not the queue's.
+        """
+        return self._evals > 0
+
+    @property
+    def generation(self) -> int:
+        """How many Julia processes this kernel has started; a change means the
+        session's state (variables, packages, live plots) was lost."""
+        return self._generation
+
+    @property
+    def last_restart(self) -> KernelRestart | None:
+        """Why and when the current process replaced the one before, if it did."""
+        return self._last_restart
+
+    def on_restart(self, callback: RestartCallback) -> Callable[[], None]:
+        """Call ``callback`` each time a fresh process replaces the running one.
+
+        Whether ``reset``, ``restart`` or a cancelled eval's recovery started it,
+        the callback gets the ``KernelRestart`` once the new process is ready,
+        before the call that restarted it returns. It must not block: work for the
+        new process goes in a task. To set the new process up before anything else
+        runs on it, return an awaitable that finishes once that is done: other
+        evals wait for it, even those queued before the restart, while the evals
+        of the tasks the callback started go ahead.
+        Returns a function that removes the callback.
+        """
+        self._restart_callbacks.append(callback)
+
+        def remove() -> None:
+            with contextlib.suppress(ValueError):
+                self._restart_callbacks.remove(callback)
+
+        return remove
+
     async def reset(self) -> EvalResult:
         """Respawn a fresh Julia process (cooperative; never raises)."""
         with contextlib.suppress(BaseException):
             await self._teardown(graceful=True)
         await self._spawn()
+        self._restarted("it was reset")
         return EvalResult(output="Julia restarted with a fresh session.")
 
-    async def restart(self) -> None:
-        """Force the process down (SIGKILL) and respawn, ignoring responsiveness."""
+    async def restart(self, reason: str = "it was restarted") -> None:
+        """Force the process down (SIGKILL) and respawn, ignoring responsiveness.
+
+        ``reason`` completes "Julia restarted because ..." in ``last_restart``.
+        """
         await self._teardown(graceful=False)
         await self._spawn()
+        self._restarted(reason)
+
+    def _restarted(self, reason: str) -> None:
+        """Record why the fresh process replaced the last one, and tell the callbacks."""
+        restart = KernelRestart(time.time(), reason)
+        self._last_restart = restart
+        token = _SETTING_UP.set(True)
+        try:
+            for callback in list(self._restart_callbacks):
+                try:
+                    setup = callback(restart)
+                    if setup is not None:
+                        self._setups.append(asyncio.ensure_future(setup))
+                except Exception as exc:
+                    # The restart has happened either way; a broken callback is
+                    # reported the way asyncio reports one, and the rest still hear.
+                    asyncio.get_running_loop().call_exception_handler(
+                        {"message": "a Julia restart callback failed", "exception": exc}
+                    )
+        finally:
+            _SETTING_UP.reset(token)
+
+    def _setting_up(self) -> bool:
+        """Whether a fresh process is being set up, by work this task is not part of."""
+        if _SETTING_UP.get():
+            return False
+        self._setups = [setup for setup in self._setups if not setup.done()]
+        return bool(self._setups)
 
     async def interrupt(self) -> bool:
         """Try to soft-interrupt the running eval; return whether a signal was sent.
@@ -166,14 +272,33 @@ class JuliaKernel:
         """
         if self._proc is None:
             raise RuntimeError("JuliaKernel must be used inside an `async with` block")
-        if not self.running:
-            # Every call after a death lands here, so it explains itself the same
-            # way the one that witnessed the death does; otherwise only the first
-            # caller learns why and the rest see a bare "not running".
-            raise await self._explain_death(KernelDied("the Julia kernel exited unexpectedly"))
-        conn = self._conn
-        assert conn is not None
+        self._evals += 1
+        try:
+            while True:
+                while self._setting_up():
+                    await asyncio.wait(self._setups)
+                result = await self._eval_locked(code, on_chunk)
+                if result is not None:
+                    return result
+        finally:
+            self._evals -= 1
+
+    async def _eval_locked(self, code: str, on_chunk: OnChunk | None) -> EvalResult | None:
         async with self._lock:
+            # A restart while this waited for the lock may have begun setting the
+            # fresh process up, which goes first: ``None`` to wait for it and queue
+            # again.
+            if self._setting_up():
+                return None
+            # Checked under the lock: an eval queued behind a cancelled one can find
+            # that the cancel's recovery restarted Julia, with a new connection.
+            if not self.running:
+                # Every call after a death lands here, so it explains itself the same
+                # way the one that witnessed the death does; otherwise only the first
+                # caller learns why and the rest see a bare "not running".
+                raise await self._explain_death(KernelDied("the Julia kernel exited unexpectedly"))
+            conn = self._conn
+            assert conn is not None
             pending = conn.begin_eval(on_chunk)
             try:
                 await conn.send_exec(pending, code)
@@ -227,27 +352,42 @@ class JuliaKernel:
     async def _recover_from_cancel(self, pending: PendingEval) -> None:
         """Leave the session usable after an eval was cancelled mid-flight.
 
-        If the eval is still running (its future is unresolved), soft-interrupt it
-        and wait for its result frame; the connection drops that stale result. If
-        the interrupt can't be delivered, or the eval ignores it, or the process
-        dies, fall back to a restart (the only case where REPL state is lost) — a
+        If the eval is still running (its future is unresolved), interrupt it and
+        wait for its result frame; the connection drops that stale result. The
+        interrupt comes in two steps. The server is asked first (an ``INT``
+        frame): it wakes a waiting eval with the exception itself, which SIGINT
+        cannot be relied on to do: SIGINT lands in whichever task is current on
+        the eval's thread, and while the eval waits, that can be any other task
+        running there (see server.jl). An eval still going after
+        ``_INTERRUPT_SIGNAL_DELAY`` is computing, which only the signal reaches.
+        If the signal can't be sent, the eval ignores both, or the process dies,
+        fall back to a restart (the only case where REPL state is lost): a
         running solve we can't interrupt must not be left to keep going.
         """
+        conn = self._conn
+        if not pending.future.done() and conn is not None:
+            with contextlib.suppress(Exception):
+                await conn.send_interrupt(pending)
+            await asyncio.wait({pending.future}, timeout=_INTERRUPT_SIGNAL_DELAY)
         # `and` short-circuits, so interrupt() is only attempted while the eval is
         # still running; a False return (no soft interrupt available) means restart.
         if not pending.future.done() and not await self.interrupt():
-            self._cancel_preserved_state = False
-            with contextlib.suppress(Exception):
-                await self.restart()
+            await self._restart_after_cancel("a cancelled evaluation could not be interrupted")
             return
         try:
             async with asyncio.timeout(_INTERRUPT_DRAIN_TIMEOUT):
                 await pending.future
             self._cancel_preserved_state = True
         except Exception:
-            self._cancel_preserved_state = False
-            with contextlib.suppress(Exception):
-                await self.restart()
+            await self._restart_after_cancel(
+                "a cancelled evaluation did not stop within "
+                f"{_INTERRUPT_DRAIN_TIMEOUT:g} s of being interrupted"
+            )
+
+    async def _restart_after_cancel(self, reason: str) -> None:
+        self._cancel_preserved_state = False
+        with contextlib.suppress(Exception):
+            await self.restart(reason)
 
     @property
     def cancel_preserved_state(self) -> bool:
@@ -309,6 +449,7 @@ class JuliaKernel:
 
         if self._config.stderr_file is not None:
             self._config.stderr_file.parent.mkdir(parents=True, exist_ok=True)
+            _keep_previous_log(self._config.stderr_file)
             self._stderr_fh = open(self._config.stderr_file, "wb")  # noqa: SIM115
 
         command, args, env = self._build_launch(port)
@@ -361,6 +502,7 @@ class JuliaKernel:
                 stderr_tail=tail,
                 log_file=self._config.stderr_file,
             ) from exc
+        self._generation += 1
 
     async def _accept_control(self, loop: asyncio.AbstractEventLoop, port: int) -> socket.socket:
         assert self._listener is not None and self._conn is not None
@@ -464,6 +606,14 @@ class JuliaKernel:
         env["JK_TOKEN"] = self._token
 
         return cfg.julia_executable, args, env
+
+
+def _keep_previous_log(log: Path) -> None:
+    """Move the last process's log aside (``<stem>.prev<suffix>``) before a respawn
+    starts a fresh one, so that why the last process went away stays readable."""
+    with contextlib.suppress(OSError):
+        if log.stat().st_size > 0:
+            os.replace(log, log.with_name(f"{log.stem}.prev{log.suffix}"))
 
 
 def describe_exit(code: int | None) -> str:

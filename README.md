@@ -36,7 +36,7 @@ jutul-agent key openai            # save a key (Anthropic, Google, and OpenRoute
 
 mkdir my-study && cd my-study
 jutul-agent init --sim battmo     # jutuldarcy | battmo | fimbul | mocca
-jutul-agent web                   # browser UI, or: tui, or run "<prompt>"
+jutul-agent web                   # browser UI, or: tui, run "<prompt>", mcp
 ```
 
 Local models through [Ollama](https://ollama.com) need no key. `init`
