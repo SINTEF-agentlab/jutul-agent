@@ -146,6 +146,12 @@ class KernelConnection:
         self._ctrl_writer.write(head + body)
         await self._ctrl_writer.drain()
 
+    async def send_interrupt(self, pending: PendingEval) -> None:
+        """Ask the server to interrupt ``pending``'s eval (ignored once it finished)."""
+        assert self._ctrl_writer is not None
+        self._ctrl_writer.write(f"INT {pending.exec_id} 0\n".encode("ascii"))
+        await self._ctrl_writer.drain()
+
     # ---- teardown --------------------------------------------------------------
 
     def close_control(self) -> None:

@@ -13,7 +13,9 @@ parses a list of those events into the same typed-projection shape that
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -32,6 +34,7 @@ from langchain_core.messages import (
 from langgraph.types import Command
 
 from jutul_agent.julia.session import EvalResult
+from jutul_agent.juliakernel.kernel import KernelRestart, RestartCallback
 from jutul_agent.juliakernel.result import OutputChunk
 from jutul_agent.simulators.base import SimulatorAdapter
 from jutul_agent.trace import Event
@@ -690,6 +693,9 @@ class FakeJulia:
         self.calls: list[str] = []
         self.reset_count: int = 0
         self.restart_count: int = 0
+        self._restart_callbacks: list[RestartCallback] = []
+        # The setups restart callbacks returned; evals here are instant, so none wait.
+        self.setups: list[asyncio.Future[object]] = []
 
     async def __aenter__(self) -> FakeJulia:
         return self
@@ -715,12 +721,26 @@ class FakeJulia:
             return EvalResult(output=self._answers[code])
         return EvalResult(output="")
 
+    def on_restart(self, callback: RestartCallback) -> Callable[[], None]:
+        """As ``JuliaKernel.on_restart``: ``reset`` and ``restart`` call it."""
+        self._restart_callbacks.append(callback)
+        return lambda: self._restart_callbacks.remove(callback)
+
+    def _restarted(self, reason: str) -> None:
+        restart = KernelRestart(time.time(), reason)
+        for callback in list(self._restart_callbacks):
+            setup = callback(restart)
+            if setup is not None:
+                self.setups.append(asyncio.ensure_future(setup))
+
     async def reset(self) -> EvalResult:
         self.reset_count += 1
+        self._restarted("it was reset")
         return EvalResult(output="reset")
 
     async def restart(self) -> None:
         self.restart_count += 1
+        self._restarted("it was restarted")
 
 
 def make_fake_adapter(

@@ -43,7 +43,10 @@ A `Session` (`session.py`) is the unit of one invocation: a session id, a
 state directory, the trace log, and a handle to the Julia kernel. A
 `SessionHost` wraps it with everything needed to take a turn (the agent, the
 turn runner, rebuild-in-place for `/model` and `/approval-mode`, compaction,
-titling), so front ends stay presentation-only.
+titling), so front ends stay presentation-only. The kernel half of the
+bootstrap (env preparation, system image, virtual display, kernel, `Session`,
+warm-up) is `start_core` (`session_core.py`); `SessionHost.start` adds the
+checkpointer and the agent on top of it.
 
 `build_agent` (`agent/builder.py`) assembles a
 [deepagents](https://github.com/langchain-ai/deepagents) agent around the
@@ -136,6 +139,7 @@ Julia -> Python   RDY <token>            handshake
                   OUT <stream> <n>       live stdout/stderr bytes
                   RES <id> <status> <n>  one result per eval
 Python -> Julia   EXE <id> <n>           code to evaluate
+                  INT <id> 0             interrupt eval <id>, if it is running
 ```
 
 The server redirects file descriptors 1 and 2 into in-process pipes, so
@@ -145,17 +149,21 @@ of an eval's output is on the wire before its `RES` frame. TCP ordering does
 the rest, and the Python side is one reader task and one pending future
 (`juliakernel/connection.py`).
 
-Interrupts are cooperative: `interrupt()` sends SIGINT, which Julia delivers
-to the eval as an `InterruptException`, so a stuck simulation cancels without
-losing the session. The kernel is launched with an interactive thread
-(`--threads N,1`) so the eval loop and the output pumps never share one. If a
-cancelled eval cannot be recovered within a timeout, the supervisor restarts
-the process and says so.
+Interrupts are cooperative: Julia raises an `InterruptException` in the eval,
+so a stuck simulation cancels without losing the session. A cancel first sends
+an `INT` frame, which the server turns into that exception for an eval that is
+waiting, and SIGINT a second later for one that is still computing (the signal
+alone can land in another task while the eval waits). The kernel is launched
+with an interactive thread (`--threads N,1`) so the eval loop and the output
+pumps never share one. If a cancelled eval cannot be recovered within a
+timeout, the supervisor restarts the process and says so.
 
 Reset is cheap by design: Julia cannot unload code, so `reset_julia` always
 starts a fresh process and relies on precompile caches to make that fast (see
-warm packages below). The protocol and its design constraints are covered in
-[the Julia kernel](julia-kernel.md).
+warm packages below). Any restart, a reset or a cancel's recovery, runs the
+session's warm-up again on the fresh process, so the session comes back as it
+started rather than as a bare Julia. The protocol and its design constraints
+are covered in [the Julia kernel](julia-kernel.md).
 
 ## Simulators are data
 

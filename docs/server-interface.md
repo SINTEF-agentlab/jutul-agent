@@ -346,7 +346,8 @@ to the figure's recorded authored size, so floors never ratchet), the kernel
 resizes the routed figure in place (no code re-run; camera and widget state
 kept), and the answer is a `refit_done` carrying the figure's *resulting* size
 for the front end to stage. During a running turn the resize queues behind the
-kernel's current eval and lands when it frees. The bundled UI only asks when
+kernel's current eval and lands when it frees; its time limit starts only then,
+so a long eval ahead of it cannot use the limit up. The bundled UI only asks when
 the re-layout earns its visible jump (under ~75% panel coverage, after the
 size settles for a second); a view that already covers its panel well is left
 alone, and the one re-fit that fires converges to the rule's optimum in a
