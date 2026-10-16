@@ -25,6 +25,7 @@ WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 [compat]
 Jutul = "0.5.4"
 JutulDarcy = "0.4"
+WGLMakie = "0.13.16"
 
 # Both deps are jutul-agent's in-env Julia runtime, declared as relative `[sources]`
 # paths so they survive the copy into a workspace. JutulAgent is the shared,
