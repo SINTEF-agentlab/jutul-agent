@@ -22,7 +22,7 @@ WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 # Minimum simulator release supported by the bundled skills. Mocca's own
 # compatibility rules resolve the Jutul and plotting stack.
 [compat]
-Mocca = "0.1.0"
+Mocca = "0.2.0"
 
 # Both deps are jutul-agent's in-env Julia runtime, declared as relative `[sources]`
 # paths so they survive the copy into a workspace. JutulAgent is the shared,
