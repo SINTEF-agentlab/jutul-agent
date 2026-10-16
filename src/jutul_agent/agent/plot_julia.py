@@ -117,9 +117,8 @@ async def _load_web_plot_backend(session: Session, adapter: SimulatorAdapter) ->
 
     The web surface builds and renders figures with WGLMakie. The shared
     runtime also loads GLMakie for native captures and other simulators whose
-    plotters still use GLMakie extensions. Jutul 0.5.3 and JutulDarcy 0.4 expose
-    their generic plotters through Makie extensions. CairoMakie supplies the
-    provisional PNG poster.
+    plotters use GLMakie extensions. CairoMakie supplies the provisional PNG
+    poster.
     """
 
     # The live figures are held by JutulAgent.JutulAgentPlots, so this surface needs the

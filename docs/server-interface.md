@@ -362,15 +362,13 @@ instead of opening a desktop window.
 This covers both figures the agent builds with Makie and a simulator's own native
 interactive plotters. The native 3D viewers (for example JutulDarcy's
 `plot_reservoir`, with its mesh, well trajectories, and field/timestep widgets)
-build standard Makie scenes; their plotting methods ship in a GLMakie extension,
-so the web session loads GLMakie for those methods while WGLMakie does the actual
-browser rendering. Loading GLMakie needs a GL context, which the server provides
-with an Xvfb on a headless box and which is already present on a workstation with
-a display. A native plotter is asked to return its figure rather than open a
-desktop window (`new_window = false`). Camera control (rotate, zoom, pan) runs in
-the browser, and the in-figure widgets (a timestep slider, a field selector) drive
-Julia callbacks over the live server's WebSocket; on the static fallback the camera
-still works but those widgets are inert.
+build standard Makie scenes. The tool constructs web figures with WGLMakie
+active. Ordinary `display` calls are captured without opening desktop windows.
+GLMakie remains loaded for native capture and other simulator extensions; its
+context uses Xvfb on a headless box or the workstation's display. Camera control (rotate,
+zoom, pan) runs in the browser, and the in-figure widgets (a timestep slider,
+a field selector) drive Julia callbacks over the live server's WebSocket; on the
+static fallback the camera still works but those widgets are inert.
 
 The image form is kept as well. It is the record written to the session's history
 and report, the fallback when an interactive view is not available, and what
