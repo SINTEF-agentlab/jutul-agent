@@ -1,161 +1,82 @@
 ---
 name: jutuldarcy-overview
-description: High-level JutulDarcy workflow, example discovery, and result unpacking
+description: Set up JutulDarcy reservoir simulations, find examples, and inspect results.
 ---
 
-# JutulDarcy orientation
+# JutulDarcy
 
-## When to use
+JutulDarcy simulates multiphase flow in porous media. Start from the closest
+installed example under `examples/`; its setup is the reference for the
+chosen physics and input format.
 
-Use this skill for general JutulDarcy setup, example discovery, and result inspection.
+## Set up and run
 
-JutulDarcy is a reservoir simulator on the Jutul AD framework. A simulation is
-six steps that you compose in order:
-
-1. **Grid** - `CartesianMesh(dims, physical_dims)` for structured cases.
-   Unstructured grids come from `UnstructuredMesh` or `.DATA`/MRST imports.
-2. **Domain** - `reservoir_domain(grid; permeability=K, porosity=ϕ)` attaches
-   petrophysics. SI units throughout: `Darcy = si_units(:darcy)`.
-3. **Wells** - `setup_vertical_well(domain, i, j; name=:P)` or
-   `setup_well(domain, [(i,j,k), ...]; name=:I)`. Pass via `wells=[...]` to
-   `setup_reservoir_model`.
-4. **Fluid system** - `ImmiscibleSystem`, `BlackOilSystem`,
-   `CompositionalSystem`. Pick the smallest system that captures the physics.
-5. **Model + state + forces** - `setup_reservoir_model(domain, sys; wells=...)` ->
-   `setup_reservoir_state(...)` -> controls + forces.
-6. **Run and inspect** - `simulate_reservoir(...)`; review validation messages
-   and solver progress.
-
-## Case validation
-
-`simulate_reservoir` validates the assembled case by default, checking SI ranges
-for permeability, porosity, time steps, well rates and pressures. Review its
-messages and correct input errors or unintended units; validation reports
-problems but does not necessarily stop the solve.
-
-For a separate setup check before an expensive run, call
-`ok, messages = JutulDarcy.CaseValidation.validate(case)` without simulating.
-`ok` is false for warnings as well as errors; check warnings against the intended
-physical setup.
-
-Prefer `info_level = 1` to see simulation progress; use `info_level = 2` to
-inspect nonlinear iterations when convergence is difficult.
-
-## Finding what you need
-
-Example layout and APIs change between versions, so find them on disk rather
-than guessing. JutulDarcy's source path is given to you up front (read-only
-depot source); browse it directly with the file tools (see the
-`workspace-and-source` skill):
-
-```text
-# JutulDarcy source path is in your system prompt -> /.../JutulDarcy/<hash>
-glob("/.../JutulDarcy/examples/**/*.jl")                 # discover layout
-grep("setup_well", path="/.../JutulDarcy/src")           # find an API
-read_file("/.../JutulDarcy/examples/introduction/wells_intro.jl")
-```
-
-For docstrings, stay in the REPL: `run_julia("@doc setup_reservoir_model")`.
-
-For idiomatic "how do I do X" patterns, the examples directory is the
-authoritative reference. `setup_well` and `setup_vertical_well` are the
-recommended well constructors.
-
-For SPE11/CSP11 cases, inspect the built-in `JutulDarcy.CSP11` module and its
-`src/CSP11/setup.jl` rather than recreating the benchmark setup.
-
-Industry-standard `.DATA` decks run through `setup_case_from_data_file`;
-the classic SPE benchmark decks ship with GeoEnergyIO's test data:
+1. Build a grid with `CartesianMesh(dims, physical_dims)`, or follow the
+   unstructured-grid or imported-deck example for a more complex geometry.
+2. Attach rock data with
+   `reservoir_domain(grid; permeability=K, porosity=ϕ)`. Use SI inputs;
+   `si_unit(:darcy)`, `si_unit(:bar)`, and `si_unit(:day)` provide conversions.
+3. Construct wells and choose the fluid system, such as `ImmiscibleSystem`,
+   `BlackOilSystem`, or `CompositionalSystem`. Match the phases to the problem.
+4. Build the model, initial state, and forces, then simulate. See
+   `jutuldarcy-wells` for controls and time-varying schedules.
 
 ```julia
-pth = GeoEnergyIO.test_input_file_path("SPE1", "SPE1.DATA")
-case = setup_case_from_data_file(pth)
-result = simulate_reservoir(case; info_level = 1)
+model, parameters = setup_reservoir_model(domain, system; wells, extra_out=true)
+# Assemble state0, dt and forces for this model.
+result = simulate_reservoir(state0, model, dt; parameters, forces, info_level=1)
 ```
 
-## Result unpacking
+Without `extra_out=true`, `setup_reservoir_model` returns only the model.
+An assembled `JutulCase` can be run with `simulate_reservoir(case)`.
 
-```julia
-result = simulate_reservoir(state0, model, dt; parameters, forces)
-wd, states, t = result   # well data, reservoir states, time vector
-```
+`simulate_reservoir` validates the case by default. Review its messages:
+validation can report problems without stopping the solve. For a separate
+setup check, use `ok, messages = JutulDarcy.CaseValidation.validate(case)`.
+`ok` is false for warnings as well as errors; interpret the messages against
+the intended physical setup. Use `info_level=2` to inspect nonlinear iterations
+when convergence is difficult.
 
-Well outputs are indexed by name: `wd[:Producer][:bhp]`, `wd[:Producer][:rate]`,
-etc. `keys(wd[:Producer])` lists what is available.
+Use `setup_case_from_data_file` for industry `.DATA` decks and the built-in
+`JutulDarcy.CSP11` module for SPE11/CSP11 benchmarks.
+GeoEnergyIO supplies example decks through
+`GeoEnergyIO.test_input_file_path("SPE1", "SPE1.DATA")`; inspect the installed
+deck examples for setup and import options.
 
-Three shape facts that are easy to guess wrong (each wrong guess is a KeyError):
+## Results
 
-- `states[i]` is **reservoir-only and flat**: `states[end][:Saturations]` is an
-  `(nphases, ncells)` matrix, `states[end][:Pressure]` a vector. There is no
-  `:Reservoir` key here.
-- `state0` from `setup_reservoir_state` is the opposite — **keyed by submodel**:
-  `state0[:Reservoir][:Saturations]`, with well and facility submodels alongside.
-  Wells can be merged into shared submodels; do not assume each well name is a
-  top-level state key. Use `well_symbols(model)` and the named well outputs.
-- `result` itself is property-accessed (`result.states`, `result.wells`,
-  `result.time`); `result[2]` is a MethodError. Per-cell pore volume comes from
-  `pore_volume(model, parameters)`.
+`result.states`, `result.wells`, and `result.time` provide the outputs;
+`wd, states, t = result` also works. Integer indexing of `result` does not.
 
-## Plotting
+- Each `states[i]` is a flat reservoir dictionary: `:Pressure` is a cell vector
+  and `:Saturations` is a `(nphases, ncells)` matrix.
+- Initial states from `setup_reservoir_state` are keyed by submodel, such as
+  `state0[:Reservoir]`. Wells may share submodels; use `well_symbols(model)`
+  rather than assuming a submodel per well name.
+- Well outputs remain keyed by name, for example `wd[:Producer][:bhp]`.
+  Inspect available fields with `keys(wd[:Producer])`.
 
-Use the **native plotters** through `plot_julia`. The tool selects WGLMakie for
-the web interface and GLMakie for native capture, and saves the figure automatically:
+Use `pore_volume(model, parameters)` for the cell pore volumes; these are not
+obtained by indexing the simulation result.
 
-- `plot_reservoir(model)` — 3D reservoir mesh + well trajectories
-- `plot_reservoir(model, states[end])` — a state colored on the 3D mesh. Pass the
-  whole state dict, or a per-cell **vector** like `states[end][:Saturations][2, :]`
-  — not a scalar slice, which raises "No plottable properties found".
-- `plot_well_results(wd)` — well rate / BHP dashboard
-- `plot_cell_data(physical_representation(domain), field)` — a scalar field on the mesh
-- `plot_co2_inventory(t, inv)` — CO2 inventory over time (2D)
-- `plot_model_graph(model)` / `plot_variable_graph(reservoir_model(model))` —
-  model / variable dependency graphs. These live in a Jutul package **extension**,
-  so run `using GraphMakie, NetworkLayout, LayeredLayouts` first to activate them
-  (the packages are already in the env). Use the real plotter; don't hand-draw a
-  graph.
+Use `plot_reservoir(model, states)` through `plot_julia` for ordinary result
+views, retaining the GUI and full history. Read `jutuldarcy-plotting` for field
+selection and other native views.
 
-Just call them — no backend juggling, no need to return a `Figure`. In an
-interactive session the tool shows the figure by default. Set `window=false` on
-**plot_julia**, not on `plot_reservoir`, to suppress it; pass `view=true` to inspect
-a plot yourself.
+## Larger simulations and optimization
 
-`plot_reservoir` opens the fancy 3D viewer by default and converts displayed
-values to metric units. Pass `gui=false` for a static figure, `fancy=false` for
-the fixed-axis viewer with controls, or `convert_units=false` for raw values.
-Let the plotter choose its default proportions unless the user requests a change.
+`simulate_reservoir(case; mode=:ka)` selects the kernel-based CPU backend;
+benchmark it on the actual case, since small cases may not benefit. It does not
+change the Julia session's thread count.
 
-**Plot from the live REPL bindings.** Your run already left `model`, `states`,
-`wd` in the REPL — call the plotter straight on them. Do **not** rebuild the case
-and re-run `simulate_reservoir` inside `plot_julia`; that re-simulates on every
-plot. Re-run only if you changed the setup.
-
-For a **static artifact** with the field and wells but no GUI menus, use the
-native plotter. Select the field with `key`, report step with `step`, and phase
-or component of a matrix field with `row`:
-
-```julia
-plot_reservoir(model, states; gui=false, key=:Saturations,
-    step=length(states), row=2)
-```
-
-Both original field names and displayed names with units are accepted. The
-defaults are the first alphabetically sorted field, step 1 and row 1, so specify
-them when showing a particular result.
-
-## Parallel simulation and optimization
-
-For larger cases, `simulate_reservoir(case; mode=:ka)` uses the kernel-based CPU
-backend. Benchmark it against the default on the actual case; small cases may
-not benefit. This does not change the Julia session's thread count.
-
-GPU modes require a supported device and the corresponding package in the active
-environment: load `CUDA` for `mode=:ka_cuda`, or `AMDGPU` for `mode=:ka_amd`.
-These packages are not part of the default agent environment. Inspect the installed
-`docs/src/man/advanced/gpu.md` and backend extensions before configuring a GPU run.
+GPU modes require a supported device and a package outside the default agent
+environment: `CUDA` for `mode=:ka_cuda`, or `AMDGPU` for `mode=:ka_amd`.
+Inspect the installed `docs/src/man/advanced/gpu.md` and backend extension
+before configuring a GPU run.
 
 For history matching, inspect `setup_reservoir_dict_optimization`,
-`optimize_reservoir` and `docs/src/man/basics/adjoints.md`. The optimization and
-sensitivity helpers accept `mode` directly; pass e.g. `mode=:ka` at the top level,
-not inside `simulator_arg`, where the top-level default would override it.
-Upstream recommends `optimizer=:lbfgs_qp` for history matching, with bounded,
-log-scaled permeability and appropriately weighted observations.
+`optimize_reservoir`, and the installed adjoint examples. Pass `mode` directly
+to optimization helpers, not inside `simulator_arg`, where it is overridden.
+The guidance in `docs/src/man/basics/adjoints.md` recommends
+`optimizer=:lbfgs_qp`, bounded/log-scaled permeability, and balancing the
+weights of rates and pressure observations.
