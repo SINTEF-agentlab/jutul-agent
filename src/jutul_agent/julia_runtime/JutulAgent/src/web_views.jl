@@ -1,6 +1,6 @@
 # A browser connection owns its screen, polling and input callbacks. The figure
 # outlives connections so reloading or closing one view cannot destroy another.
-# WGLMakie 0.13.16 closes the shared scene and deletes shared render objects when
+# WGLMakie 0.13.15–0.13.16 close the shared scene and delete shared render objects when
 # one screen closes (MakieOrg/Makie.jl#2957). Keep that lifecycle in our own types;
 # no WGLMakie methods are replaced. Older backends retain their standard renderer.
 #
@@ -263,7 +263,7 @@ end
 
 function Bonito.jsrender(session::Bonito.Session, view::LiveFigure)
     view.released && error("This plot has been released")
-    if !(v"0.13.16" <= Base.pkgversion(WGLMakie) < v"0.14")
+    if !(v"0.13.15" <= Base.pkgversion(WGLMakie) < v"0.14")
         return Bonito.jsrender(session, WGLMakie.WithConfig(view.fig, view.config))
     end
     scene = view.fig.scene

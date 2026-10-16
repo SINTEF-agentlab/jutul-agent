@@ -6,7 +6,7 @@ import JutulAgent, WGLMakie
     plots = JutulAgent.JutulAgentPlots
     M = WGLMakie.Makie
     B = WGLMakie.Bonito
-    @test v"0.13.16" <= Base.pkgversion(WGLMakie) < v"0.14"
+    @test v"0.13.15" <= Base.pkgversion(WGLMakie) < v"0.14"
     WGLMakie.activate!()
     fig = M.Figure()
     ax = M.Axis(fig[1, 1])
