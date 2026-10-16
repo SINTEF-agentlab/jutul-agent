@@ -30,8 +30,13 @@ Call your simulator's own documented plotters first — they are the canonical,
 standard views, and `plot_julia` captures them automatically with the backend
 selected for the interface. The `<sim>-overview` skill lists the plotters for your simulator.
 
-Build a `Figure` inline when no native plotter fits, or when you want a specific
-custom view:
+Keep the native viewer's controls for ordinary exploration. A request to plot a
+particular field or timestep does not imply a static plot. If the native call
+fails, check its arguments and the simulator plotting skill before replacing the
+viewer with a static or hand-built figure.
+
+Build a `Figure` inline when no native plotter fits, or when the user requests a
+custom view (such as an observation overlay or publication layout):
 
 ```julia
 fig = Figure(size = (600, 400))
