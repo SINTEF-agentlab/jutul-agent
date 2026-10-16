@@ -28,8 +28,11 @@ Inj = setup_well(domain, [(nx, ny, 1)], name = :Injector)
 ```
 
 Pass wells to `setup_reservoir_model(domain, sys; wells = [Inj, Prod])`. The
-returned model is a `MultiModel` containing a submodel per well plus a
-facility submodel that owns the controls.
+returned model is a `MultiModel` containing reservoir, well and facility
+submodels. Wells can be merged into shared submodels for faster
+assembly, so do not assume `model.models[name]` or `state0[name]` exists for every
+well. Use `well_symbols(model)` to list well names; controls and `wd` remain keyed
+by those names.
 
 ## 2. Controls
 
