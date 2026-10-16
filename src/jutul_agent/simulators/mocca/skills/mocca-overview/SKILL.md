@@ -14,11 +14,12 @@ breakthrough data.
 
 ## Maturity
 
-Mocca is a young package with a deliberately small scope: a CO2/N2
-system on Zeolite 13X (dual-site Langmuir isotherm, linear driving
-force mass transfer) in DCB and four-stage VSA configurations. Other
-isotherms, chemistries, and cycle types are not implemented; verify
-against the installed source before promising a capability.
+Mocca 0.1 supports N-component adsorption systems. The shipped reference
+examples use CO2/N2 on Zeolite 13X with a dual-site Langmuir isotherm and
+linear driving-force mass transfer. `AbstractIsotherm` and
+`AbstractMassTransfer` allow custom implementations; a new chemistry still
+needs appropriate parameters and validation. Follow the installed examples
+before promising a particular cycle or material.
 
 ## Mental model
 
@@ -63,6 +64,10 @@ constants, info = Mocca.parse_input(Mocca.haghpanah_cyclic_input())
 Mind `info.num_cycles` for cyclic inputs: the shipped cyclic input runs
 500 cycles (to steady state), which takes a long time. `info` is mutable —
 set `info.num_cycles = 3` before `setup_mocca_case` for a short run.
+Keep the reference grid for an initial smoke test. Coarsening it aggressively
+can prevent the first cycle from converging. Confirm that the returned states
+are nonempty and `sum(timesteps)` reaches `sum(case.dt)` before plotting or
+reporting a successful simulation.
 
 ## Building a case directly
 
@@ -87,16 +92,18 @@ stay in the REPL: `run_julia("@doc Mocca.setup_mocca_case")`.
 its per-cell values, in SI units:
 
 - `state[:Pressure]`: vector over cells, in Pa (divide by `si_unit(:bar)`).
-- `state[:y]`: 2×ncells matrix of gas mole fractions, rows `[CO2, N2]`.
+- `state[:y]`: N×ncells matrix of gas mole fractions. Row order comes from
+  `case.model.system.component_names`; only the reference case assumes `[CO2, N2]`.
 - `state[:Temperature]`, `state[:WallTemperature]`: kelvin.
 
 Cell 1 is the feed/product end (LHS), cell `ncells` the outlet (RHS).
 Example probes:
 
 ```julia
-states[end][:y][1, 1]                                   # final CO2 fraction at the feed end
+co2_row = findfirst(==("CO2"), case.model.system.component_names)
+states[end][:y][co2_row, 1]                             # final CO2 fraction at the feed end
 maximum(maximum(s[:Temperature]) for s in states)       # peak column temperature
-maximum(s[:Pressure][end] for s in states) / bar        # peak outlet pressure, bar
+maximum(s[:Pressure][end] for s in states) / Jutul.si_unit(:bar)        # peak outlet pressure, bar
 ```
 
 There is no built-in product purity or CO2 recovery output: those are
@@ -110,16 +117,6 @@ off a pointwise mole fraction as a purity.
 Mocca.export_cell_results("results.csv", case, states, timesteps; format = "csv")
 ```
 
-Call Mocca's native plotters through `plot_julia`; they are backend-agnostic
-and captured automatically:
-
-- `plot_outlet(case, states, timesteps)`: outlet concentrations / breakthrough
-- `plot_state(state, model)`, `plot_cell(states, model, timesteps, cell)`: field/cell views
-- `plot_optimization_history(dict_parameters)`: calibration history
-
-No need to avoid `display`. Pass `view=true` to inspect a plot yourself.
-
-## Notes
-
-- The first run in a fresh REPL compiles a substantial dependency
-  graph; budget several minutes.
+Read `mocca-plotting` for the native outlet, spatial-state, cell-history, and
+optimization plots. Run `Mocca.plot_outlet(case, states, timesteps)` through
+`plot_julia` for a standard breakthrough request. Reuse the solved states.
