@@ -28,7 +28,7 @@ MOCCA = SimulatorAdapter(
         "(direct column breakthrough), `cyclic_vsa_haghpanah_2013_co2_n2.jl` "
         "(4-stage VSA), `custom_setup_cyclic_vsa.jl`, plus `optimization.jl` "
         "and `history_matching.jl`. Reference JSON inputs ship beside the "
-        'package at `joinpath(pkgdir(Mocca), "..", "models", "json")`.'
+        'package at `joinpath(pkgdir(Mocca), "models", "json")`.'
     ),
     review_hints=("Adsorption/separation: mole fractions, purities and recoveries lie in 0..1."),
     example_prompts=(
