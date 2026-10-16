@@ -114,8 +114,8 @@ Three shape facts that are easy to guess wrong (each wrong guess is a KeyError):
 
 ## Plotting
 
-Use the **native plotters** through `plot_julia` — they run on GLMakie (the
-default backend) and are captured to an image automatically, headless or not:
+Use the **native plotters** through `plot_julia`. The tool selects WGLMakie for
+the web interface and GLMakie for native capture, and saves the figure automatically:
 
 - `plot_reservoir(model)` — 3D reservoir mesh + well trajectories
 - `plot_reservoir(model, states[end])` — a state colored on the 3D mesh. Pass the
@@ -131,8 +131,9 @@ default backend) and are captured to an image automatically, headless or not:
   graph.
 
 Just call them — no backend juggling, no need to return a `Figure`. In an
-interactive session a live window opens for the user by default (`window=false` to
-suppress); pass `view=true` to inspect a plot yourself.
+interactive session the tool shows the figure by default. Set `window=false` on
+**plot_julia**, not on `plot_reservoir`, to suppress it; pass `view=true` to inspect
+a plot yourself.
 
 `plot_reservoir` now opens the fancy 3D viewer by default and converts displayed
 values to convenient units. Pass `fancy=false` for its fixed-axis viewer or

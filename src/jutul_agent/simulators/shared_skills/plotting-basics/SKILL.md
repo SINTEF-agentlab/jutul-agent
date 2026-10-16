@@ -27,8 +27,8 @@ Just call the plotter.
 ## Prefer native plotters
 
 Call your simulator's own documented plotters first — they are the canonical,
-best-looking views, they run on GLMakie, and `plot_julia` captures them
-automatically. The `<sim>-overview` skill lists the plotters for your simulator.
+standard views, and `plot_julia` captures them automatically with the backend
+selected for the interface. The `<sim>-overview` skill lists the plotters for your simulator.
 
 Build a `Figure` inline when no native plotter fits, or when you want a specific
 custom view:
@@ -62,10 +62,10 @@ there's no separate "interactive" mode.
 
 - `view` is for **you**, not the user — it returns the image to you; it shows
   them nothing extra.
-- Pass `window=false` only to compute/inspect a plot without surfacing it.
-- Don't force a backend or window from a plotter's own kwargs (e.g. `gui=true`):
-  that opens a separate desktop window outside `plot_julia`. Just call the plotter
-  normally — the tool already shows the figure the right way for the interface.
+- Pass `window=false` to the **plot_julia tool** only to compute/inspect a plot
+  without surfacing it. It is not a keyword for `plot_reservoir`.
+- Let the tool select the backend. For JutulDarcy, `gui=true` selects the viewer
+  controls and `gui=false` selects a static figure; neither selects the interface.
 - If the user says they can't see a plot, you probably built it in `run_julia`
   (use `plot_julia`) or set `window=false` — fix that, don't just re-describe it.
 
