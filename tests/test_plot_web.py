@@ -56,13 +56,12 @@ async def test_web_surface_serves_plot_live(tmp_path: Path) -> None:
     # can't render, so the figure still has a durable record (not a dead PNG).
     assert any("Bonito.export_static" in c for c in seen)
 
-    # An offscreen backend is active while the user code runs (a native plotter may
-    # call display() internally, which with WGLMakie active pops a browser tab);
-    # WGLMakie is activated only after the figure is built, to route it.
+    # The display capture activates WGL before construction and absorbs ordinary
+    # display() calls without a GL window or an extra browser tab.
     render = next(c for c in seen if "Bonito.route!" in c)
-    assert "GLMakie.activate!(visible = false)" in render
-    assert "CairoMakie.activate!()" in render  # the no-GL-context fallback
-    assert render.index("lines(1:3, 1:3)") < render.index("WGLMakie.activate!(resize_to = :parent)")
+    assert "GLMakie.activate!" not in render.replace("WGLMakie.", "WebBackend.")
+    assert render.index("start_web_capture()") < render.index("lines(1:3, 1:3)")
+    assert "stop_web_capture" in render
 
     log = TraceLog(session.state_dir / "trace.sqlite")
     try:
@@ -249,11 +248,9 @@ async def test_web_surface_static_fallback_when_server_down(tmp_path: Path) -> N
         log.close()
 
 
-async def test_web_render_releases_the_gl_screen_it_opened(tmp_path: Path) -> None:
-    # A native plotter displays internally, which with an offscreen GLMakie active
-    # opens a real GL screen whose render loop then runs for the rest of the
-    # session, sharing a GPU driver with every solve that follows. The web surface
-    # never shows that screen, so it is closed once the figure is in hand.
+async def test_web_render_restores_display_capture_before_serving(tmp_path: Path) -> None:
+    # Web capture must end before the Bonito route is installed. It must not close
+    # desktop GL screens that the same Julia session may already be using.
     seen: list[str] = []
 
     async def fake_eval(code: str) -> EvalResult:
@@ -270,10 +267,9 @@ async def test_web_render_releases_the_gl_screen_it_opened(tmp_path: Path) -> No
     await _call(tool, {"code": "plot_reservoir(case)", "slot": "setup"})
 
     render = next(c for c in seen if "Bonito.route!" in c)
-    assert "GLMakie.closeall()" in render
-    # After the figure is resolved: closing first would discard what was displayed.
-    assert render.index("plot_reservoir(case)") < render.index("GLMakie.closeall()")
-    assert render.index("GLMakie.closeall()") < render.index("Bonito.route!")
+    assert "GLMakie.closeall()" not in render
+    assert render.index("plot_reservoir(case)") < render.index("stop_web_capture")
+    assert render.index("stop_web_capture") < render.index("Bonito.route!")
 
 
 async def test_web_surface_reports_missing_backend(tmp_path: Path) -> None:

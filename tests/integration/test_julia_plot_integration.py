@@ -22,6 +22,8 @@ To run locally:
         -e 'using Pkg; Pkg.instantiate()'
     uv run pytest tests/integration/test_julia_plot_integration.py
 
+Set JUTUL_AGENT_TEST_JULIA_PROJECT to reuse a prepared JutulDarcy environment.
+
 On headless Linux GLMakie needs a virtual display; the ``plot_display`` fixture
 starts a private Xvfb (as production does via ``managed_display``). CI runs these
 in the JutulDarcy job of the ``Simulators`` workflow.
@@ -29,6 +31,7 @@ in the JutulDarcy job of the ``Simulators`` workflow.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -43,7 +46,9 @@ from jutul_agent.simulators.env_setup import manifest_has_package
 from jutul_agent.simulators.jutuldarcy import JUTULDARCY
 from jutul_agent.workspace import sync_shared_julia_package
 
-JUTULDARCY_ENV = JUTULDARCY.julia_env_template_path
+JUTULDARCY_ENV = Path(
+    os.environ.get("JUTUL_AGENT_TEST_JULIA_PROJECT", JUTULDARCY.julia_env_template_path)
+)
 
 
 @pytest.fixture(autouse=True)
@@ -123,6 +128,64 @@ async def _plot(tool, code: str, slot: str):
 
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.mark.skipif(
+    not _julia_available() or not _wgl_ready(JUTULDARCY_ENV),
+    reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
+)
+async def test_web_warmup_does_not_open_native_screens(plot_display) -> None:
+    from jutul_agent.simulators.warmup import start_warmup
+
+    async with JuliaKernel(_plot_kernel_config(plot_display)) as julia:
+        await start_warmup(julia, JUTULDARCY.warm_package, native_plotting=False)
+        result = await julia.eval(
+            "@assert WGLMakie.Makie.current_backend() === WGLMakie; "
+            "@assert isempty(JutulAgent.GLMakie.ALL_SCREENS); nothing"
+        )
+        assert not result.error, result.error
+
+
+@pytest.mark.skipif(
+    not _julia_available() or not _wgl_ready(JUTULDARCY_ENV),
+    reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
+)
+async def test_web_capture_preserves_backend_attributes_and_display_state(plot_display) -> None:
+    config = _plot_kernel_config(plot_display)
+    async with JuliaKernel(config) as julia:
+        loaded = await julia.eval("using JutulAgent")
+        assert not loaded.error, loaded.error
+        source = Path(__file__).with_name("web_capture.jl")
+        result = await julia.eval(f'include(raw"{source.as_posix()}")')
+        assert not result.error, result.error
+        # Exercise the generated cleanup block, including Julia's top-level scope
+        # and dollar interpolation, rather than only calling the helpers directly.
+        code = r"""
+web_capture_number = 123
+web_capture_function(x) = x + web_capture_number
+web_capture_literal = "\$ stays literal"
+web_capture_figure = WGLMakie.Figure()
+WGLMakie.lines!(WGLMakie.Axis(web_capture_figure[1, 1]), 1:3)
+display(web_capture_figure)
+nothing
+"""
+        rendered = await julia.eval("begin\n" + jl._web_figure_block(code) + "\nend")
+        assert not rendered.error, rendered.error
+        persisted = await julia.eval(
+            "@assert web_capture_function(1) == 124\n"
+            '@assert web_capture_literal == "\\$ stays literal"\n'
+            '"persistent definitions ok"'
+        )
+        assert not persisted.error, persisted.error
+        failed = await julia.eval(
+            "begin\n" + jl._web_figure_block('error("expected capture error")') + "\nend"
+        )
+        assert "expected capture error" in (failed.error or "")
+        restored = await julia.eval(
+            "@assert !any(d -> d isa JutulAgent.JutulAgentPlots.WebPlotDisplay, "
+            "Base.Multimedia.displays)"
+        )
+        assert not restored.error, restored.error
 
 
 # Every Makie return shape that `_as_figure` must resolve, built from plain Makie so
@@ -210,6 +273,9 @@ async def test_plot_julia_view_returns_image_blocks(tmp_path: Path, plot_display
 _NATIVE_PLOTTERS = {
     "reservoir_domain": "plot_reservoir(domain)",
     "reservoir_model": "plot_reservoir(model)",
+    "reservoir_state": "plot_reservoir(model, state)",
+    "reservoir_fixed": "plot_reservoir(model, state; gui=false)",
+    "reservoir_simple": "plot_reservoir(model, state; fancy=false)",
     "cell_data": "plot_cell_data(physical_representation(domain), domain[:porosity])",
     "variable_graph": (
         "using GraphMakie, NetworkLayout, LayeredLayouts\n"
@@ -223,8 +289,9 @@ _NATIVE_PLOTTERS = {
     not _julia_available() or not _gl_ready(JUTULDARCY_ENV),
     reason="Julia and a GLMakie-instantiated jutuldarcy env are required",
 )
-async def test_native_plotters_render_to_png(tmp_path: Path, plot_display) -> None:
-    """Every native plotter we document renders to a non-blank PNG through plot_julia."""
+@pytest.mark.parametrize("surface", ["native", "web"])
+async def test_native_plotters_render_to_png(tmp_path: Path, plot_display, surface: str) -> None:
+    """Native plotters work through both the GL capture and WGL + Cairo poster paths."""
     config = _plot_kernel_config(plot_display)
     async with JuliaKernel(config) as julia:
         session = _session(julia, tmp_path, "native-plotters")
@@ -239,18 +306,21 @@ async def test_native_plotters_render_to_png(tmp_path: Path, plot_display) -> No
             "sys = ImmiscibleSystem((LiquidPhase(), VaporPhase()); "
             "reference_densities = [1000.0, 100.0])\n"
             "model = setup_reservoir_model(domain, sys; wells = [Inj, Prod])\n"
+            "state0 = setup_reservoir_state(model; Pressure=1e7, Saturations=[1.0, 0.0])\n"
+            "state = state0[:Reservoir]\n"
             '"setup ok"'
         )
         assert not setup.error, f"model setup failed: {setup.error}"
 
         # Run every plotter, collecting failures so one broken plotter doesn't mask
         # which of the others render (the report then names exactly what failed).
-        tool = make_plot_julia_tool(session)
+        tool = make_plot_julia_tool(session, surface="web" if surface == "web" else "terminal")
+        expected = "served a live interactive plot" if surface == "web" else "saved plot to"
         failures: list[str] = []
         for slot, code in _NATIVE_PLOTTERS.items():
             result = await _plot(tool, code, slot)
             png = session.output_dir / "artifacts" / f"{slot}.png"
-            if "saved plot to" not in result:
+            if expected not in result:
                 failures.append(f"{slot}: tool error: {result}")
             elif not png.exists():
                 failures.append(f"{slot}: no PNG written")

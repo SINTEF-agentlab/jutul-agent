@@ -389,7 +389,10 @@ async def test_launch_defaults_reach_session_host_start(monkeypatch, tmp_path: P
     assert captured["prepare_env"] is True
 
 
-async def test_start_wires_surface_and_capability_dependencies(monkeypatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("surface", ["tui", "web"])
+async def test_start_wires_surface_and_capability_dependencies(
+    monkeypatch, tmp_path: Path, surface: str
+) -> None:
     """``SessionHost.start`` threads ``surface`` into the ``Session`` it creates,
     and merges discovered + passed-in capabilities' dependency paths into the
     ``prepare_workspace_env`` call — both added in this branch alongside the
@@ -408,7 +411,12 @@ async def test_start_wires_surface_and_capability_dependencies(monkeypatch, tmp_
 
     monkeypatch.setattr(requirements_mod, "require_julia", lambda *a, **kw: None)
     monkeypatch.setattr(juliakernel_mod, "JuliaKernel", lambda config: FakeJulia())
-    monkeypatch.setattr(warmup_mod, "start_warmup", lambda *a, **kw: None)
+    warmup_calls = {}
+
+    def _fake_warmup(*args, **kwargs):
+        warmup_calls.update(kwargs)
+
+    monkeypatch.setattr(warmup_mod, "start_warmup", _fake_warmup)
     monkeypatch.setattr(builder_mod, "resolve_package_sources", lambda project: [])
 
     discovered_dep = tmp_path / "DiscoveredCap" / "Project.toml"
@@ -437,13 +445,14 @@ async def test_start_wires_surface_and_capability_dependencies(monkeypatch, tmp_
         simulator=adapter,
         workspace=workspace,
         state_root=tmp_path,
-        surface="tui",
+        surface=surface,
         extensions=[passed_cap],
     )
     try:
         assert prepare_calls["dependencies"] == [discovered_dep, passed_dep]
-        assert host.session.surface == "tui"
-        assert build_calls["surface"] == "tui"
+        assert host.session.surface == surface
+        assert build_calls["surface"] == surface
+        assert warmup_calls["native_plotting"] is (surface != "web")
         assert discovered_cap in build_calls["extensions"]
         assert passed_cap in build_calls["extensions"]
     finally:

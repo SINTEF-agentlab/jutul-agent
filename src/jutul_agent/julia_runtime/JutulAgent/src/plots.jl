@@ -1,21 +1,24 @@
-"""GLMakie figure capture for jutul-agent's julia_plot tool.
+"""Native and web figure capture for jutul-agent's plotting tools.
 
 A submodule of the JutulAgent package (precompiled with it); the plot tool drives
 it as `JutulAgent.JutulAgentPlots.capture(...)` after `using JutulAgent`. Before
-each plot it activates GLMakie (visible for an interactive window, offscreen
+each native plot it activates GLMakie (visible for an interactive window, offscreen
 otherwise), evaluates the user's expression, and hands the result to capture.
 
 capture resolves a Makie Figure from whatever the plotter produced: a returned
 Figure or FigureAxisPlot, a controller with a `fig` property, a (fig, ax, plot)
 tuple, or, for plotters that open a window or call display and return an
 axis/screen/nothing, the figure Makie just drew (current_figure). It then saves
-that figure with GLMakie.
+that figure with GLMakie. The web path instead uses a scoped display to capture
+ordinary display(fig) calls while WGLMakie is active, without drawing a GL window
+or changing the plotter's transparency attributes.
 """
 
 module JutulAgentPlots
 
 import GLMakie
-const Makie = GLMakie.Makie  # Makie.save dispatches on the active GLMakie backend
+import WGLMakie
+const Makie = GLMakie.Makie  # Shared API; native capture activates GLMakie.
 
 export capture, recapture, close_windows
 
@@ -50,7 +53,7 @@ from before the expression ran: if the current figure is unchanged from prev,
 nothing new was drawn (a non-figure return value, or a plotter that logged and drew
 nothing), so we return nothing and the caller reports an honest error rather than
 saving a stale, unrelated figure under this slot."""
-function _as_figure(x, prev = nothing)
+function _as_figure(x, prev = nothing; displayed = nothing)
     x isa Makie.Figure && return x
     x isa Makie.FigureAxisPlot && return x.figure
     # JutulDarcy's fancy reservoir plotter returns a controller with a `fig`.
@@ -61,9 +64,72 @@ function _as_figure(x, prev = nothing)
     if x isa Tuple && length(x) >= 1 && x[1] isa Makie.Figure   # plot_cell_data / plot_mesh
         return x[1]
     end
+    displayed isa Makie.Figure && return displayed
     cf = _current_fig()
     (cf === nothing || cf === prev) && return nothing
     return cf
+end
+
+# Use Julia's display stack to capture ordinary display(fig) calls made by native
+# plotters. This owns its dispatch type; it does not replace any Makie method.
+# Explicit display(GLMakie.Screen(), fig) remains an explicit backend request.
+mutable struct WebPlotDisplay <: AbstractDisplay
+    figure::Union{Nothing, Makie.Figure}
+    previous_figure::Union{Nothing, Makie.Figure}
+    previous_inline::Union{Makie.Automatic, Bool}
+end
+
+Base.displayable(::WebPlotDisplay, ::MIME"text/html") = true
+
+function Base.display(d::WebPlotDisplay, figlike::Makie.FigureLike)
+    figure = Makie.get_figure(figlike)
+    figure isa Makie.Figure && (d.figure = figure)
+    scene = Makie.get_scene(figlike)
+    # Makie's inline display creates and attaches a WGL screen before consulting
+    # the display stack. We capture the figure without rendering, so that screen
+    # has no Bonito session. Detach it immediately from every child: otherwise a
+    # plot added after display(fig) tries inserting into an uninitialized screen.
+    # Connected or connecting screens have a session and must stay attached.
+    for screen in copy(scene.current_screens)
+        if screen isa WGLMakie.Screen && screen.session === nothing
+            stack = [scene]
+            while !isempty(stack)
+                child = pop!(stack)
+                filter!(s -> s !== screen, child.current_screens)
+                append!(stack, child.children)
+            end
+        end
+    end
+    return nothing
+end
+
+"""Start capturing display calls while constructing a figure with WGLMakie active.
+Pair with stop_web_capture in a finally block. Keep user code at top level so its
+Julia definitions remain available to later tool calls."""
+function start_web_capture()
+    d = WebPlotDisplay(nothing, _current_fig(), Makie.ALWAYS_INLINE_PLOTS[])
+    WGLMakie.activate!(resize_to = :parent)
+    Makie.inline!(true)
+    pushdisplay(d)
+    return d
+end
+
+function stop_web_capture(d::WebPlotDisplay)
+    try
+        popdisplay(d)
+    finally
+        Makie.inline!(d.previous_inline)
+    end
+    return nothing
+end
+
+function web_figure(d::WebPlotDisplay, value)
+    fig = _as_figure(value, d.previous_figure; displayed = d.figure)
+    fig === nothing && error(
+        "plot_julia: the code did not produce a Makie figure. Return a Figure, " *
+        "or call a plotter that builds one.",
+    )
+    return fig
 end
 
 function _ensure_parent_dir(path::AbstractString)

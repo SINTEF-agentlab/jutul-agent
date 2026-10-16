@@ -28,8 +28,11 @@ Inj = setup_well(domain, [(nx, ny, 1)], name = :Injector)
 ```
 
 Pass wells to `setup_reservoir_model(domain, sys; wells = [Inj, Prod])`. The
-returned model is a `MultiModel` containing a submodel per well plus a
-facility submodel that owns the controls.
+returned model is a `MultiModel` containing reservoir, well and facility
+submodels. JutulDarcy 0.4 can merge wells into shared submodels for faster
+assembly, so do not assume `model.models[name]` or `state0[name]` exists for every
+well. Use `well_symbols(model)` to list well names; controls and `wd` remain keyed
+by those names.
 
 ## 2. Controls
 
@@ -74,6 +77,9 @@ forces   = setup_reservoir_forces(model, control = controls)
 ```julia
 state0 = setup_reservoir_state(model, Pressure = 150 * bar, Saturations = [1.0, 0.0])
 dt     = repeat([30.0] * day, 60)
+case   = JutulCase(model, dt, forces; state0, parameters)
+ok, messages = JutulDarcy.CaseValidation.validate(case)
+# Inspect messages and fix errors/reconcile warnings before the next call.
 wd, states, t = simulate_reservoir(state0, model, dt; parameters = parameters, forces = forces)
 
 keys(wd[:Producer])      # what channels are available

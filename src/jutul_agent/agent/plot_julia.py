@@ -115,17 +115,11 @@ async def _load_agent_runtime(session: Session) -> str | None:
 async def _load_web_plot_backend(session: Session, adapter: SimulatorAdapter) -> str | None:
     """Load the web plotting backends once: WGLMakie + Bonito, plus GLMakie.
 
-    The web surface renders figures into the browser with WebGL (WGLMakie) instead
-    of a native window. GLMakie is also imported, not to render, but so the
-    simulator's native plotters (whose methods live in Jutul/JutulDarcy's GLMakie
-    extension, e.g. ``plot_reservoir``'s 3D mesh and well trajectories) are defined;
-    those methods dispatch on backend-agnostic Makie types, so WGLMakie renders
-    them to the browser. CairoMakie gives a static PNG for the record.
-
-    GLMakie needs a GL context to load (a real display, or the Xvfb the server
-    starts); if it can't load, native plotters are unavailable but inline Makie
-    figures (built by the agent) still render interactively, so its failure is a
-    warning, not an error.
+    The web surface builds and renders figures with WGLMakie. The shared
+    runtime also loads GLMakie for native captures and other simulators whose
+    plotters still use GLMakie extensions. Jutul 0.5.3 and JutulDarcy 0.4 expose
+    their generic plotters through Makie extensions. CairoMakie supplies the
+    provisional PNG poster.
     """
 
     # The live figures are held by JutulAgent.JutulAgentPlots, so this surface needs the
@@ -143,8 +137,8 @@ async def _load_web_plot_backend(session: Session, adapter: SimulatorAdapter) ->
             f"`jutul-agent init --sim {adapter.name} --force`. Julia said: "
             f"{_truncate(loaded.error, 300)}"
         )
-    # Best-effort: enables native plotters when a GL context is available.
-    await session.julia.eval(jl.IMPORT_GLMAKIE_OFFSCREEN)
+    # Retain compatibility with other simulators that use GLMakie extensions.
+    await session.julia.eval(jl.IMPORT_GLMAKIE)
     # Both guards patch over upstream bugs, once per session and before any figure is
     # built. Each reports whether it took: when the method it replaces moves upstream it
     # stops applying silently, and the only symptom is a mouse button that no longer works

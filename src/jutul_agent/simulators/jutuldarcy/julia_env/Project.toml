@@ -21,9 +21,10 @@ MultiComponentFlash = "35e5bd01-9722-4017-9deb-64a5d32478ff"
 Bonito = "824d6782-a2ef-11e9-3a09-e5662e0c26f8"
 WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
-# Minimum simulator release supported by the bundled skills.
+# Backend-independent plotting and the latest CPU threading fixes.
 [compat]
-JutulDarcy = "0.3.11"
+Jutul = "0.5.4"
+JutulDarcy = "0.4"
 
 # Both deps are jutul-agent's in-env Julia runtime, declared as relative `[sources]`
 # paths so they survive the copy into a workspace. JutulAgent is the shared,
