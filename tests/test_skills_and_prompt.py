@@ -95,6 +95,7 @@ def test_repo_deepagents_skill_assets_exist() -> None:
     expected = [
         ("jutuldarcy", "jutuldarcy-overview"),
         ("jutuldarcy", "jutuldarcy-wells"),
+        ("jutuldarcy", "jutuldarcy-plotting"),
         ("battmo", "battmo-overview"),
         ("battmo", "battmo-plotting"),
         ("battmo", "battmo-cycling"),
