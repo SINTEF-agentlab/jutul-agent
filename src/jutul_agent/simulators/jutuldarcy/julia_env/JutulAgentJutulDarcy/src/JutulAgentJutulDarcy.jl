@@ -90,6 +90,26 @@ function _warm_web_figure(build)
     finally
         plots.stop_web_capture(capture)
     end
+    # Figure construction does not compile the live view's serialization path.
+    # Exercise it without a browser so opening the first plot reuses that cache.
+    views = JutulAgent.JutulAgentWebViews
+    B = WGLMakie.Bonito
+    session = B.Session(B.NoConnection(); asset_server = B.NoServer())
+    view = views.LiveFigure(fig; resize_to = :parent)
+    try
+        B.jsrender(session, view)
+        screen = only(view.screens)
+        # Precompilation has no plot-tool screen lookup guard. Expose the raw
+        # backend on the root scene so WGL can find this session's font tracker.
+        push!(fig.scene.current_screens, screen.backend)
+        data = views.serialize_scene(screen, fig.scene)
+        B.serialize_cached(B.SerializationContext(session), data)
+    finally
+        for screen in view.screens
+            filter!(s -> s !== screen.backend, fig.scene.current_screens)
+        end
+        close(session)
+    end
     mktempdir() do dir
         try
             CairoMakie.activate!()
