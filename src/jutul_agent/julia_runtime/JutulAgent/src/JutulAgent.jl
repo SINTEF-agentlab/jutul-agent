@@ -16,7 +16,7 @@ import WGLMakie
 import GLMakie
 
 include("ensemble.jl")   # submodule JutulAgentEnsemble (Distributed addprocs + pmap)
-include("plots.jl")      # submodule JutulAgentPlots  (GLMakie figure capture)
+include("plots.jl")      # submodule JutulAgentPlots (native and web figure capture)
 
 using .JutulAgentEnsemble: run_ensemble, warm_addprocs
 export run_ensemble, warm_addprocs
