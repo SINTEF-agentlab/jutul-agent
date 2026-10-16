@@ -10,6 +10,8 @@ from jutul_agent.julia.session import EvalResult
 from jutul_agent.lab.fakes import FakeJulia
 from jutul_agent.simulators.warmup import (
     GL_CONTEXT_WARMUP,
+    HYPRE_THREADS_SETUP,
+    WEB_BACKEND_SETUP,
     YieldsToWork,
     load_statement,
     start_warmup,
@@ -72,6 +74,23 @@ async def test_start_warmup_without_warm_package_still_loads_shared() -> None:
     # where the capture helpers live, and warms the GL context.
     assert "using JutulAgent;" in julia.calls[0]
     assert julia.calls[-1] == GL_CONTEXT_WARMUP
+
+
+async def test_web_warmup_preserves_package_loading_without_creating_a_gl_context() -> None:
+    julia = FakeJulia()
+    abandonable = asyncio.Event()
+    task = start_warmup(
+        julia,
+        "JutulAgentJutulDarcy",
+        abandonable=abandonable,
+        native_plotting=False,
+    )
+    await task
+    assert load_statement("JutulAgentJutulDarcy") in julia.calls[0]
+    assert HYPRE_THREADS_SETUP in julia.calls
+    assert julia.calls[-1] == WEB_BACKEND_SETUP
+    assert GL_CONTEXT_WARMUP not in julia.calls
+    assert abandonable.is_set()
 
 
 async def test_start_warmup_swallows_errors_so_startup_does_not_break() -> None:

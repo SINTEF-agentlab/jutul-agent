@@ -652,9 +652,8 @@ class SessionHost:
             add_dirs=add_dirs,
         )
         if warmup:
-            # Warm the kernel in the background: load the warm packages and set
-            # GLMakie offscreen so a native plotter can't pop an OS window on a
-            # machine with a display. Best-effort and cancelled on teardown.
+            # Load the warm packages and prepare the surface's plot backend.
+            # Only native capture needs an offscreen GL context.
             #
             # Every discovered capability's package is loaded, not just this
             # surface's, for the same reason their Julia dependencies are: the
@@ -672,6 +671,7 @@ class SessionHost:
                 collect_warm_packages(all_extensions),
                 collect_warm_code(all_extensions),
                 abandonable=abandonable,
+                native_plotting=surface != "web",
             )
             julia.set_warmup(host._warmup_task, abandonable)
         return host
@@ -680,9 +680,9 @@ class SessionHost:
 def _add_headless_display(stack: AsyncExitStack, env: dict[str, str]) -> None:
     """Start an Xvfb for this session (headless boxes) and set ``DISPLAY`` in ``env``.
 
-    GLMakie needs a GL context just to load, which is what makes the native
-    plotters' methods available for WGLMakie to render. On a machine with a real
-    display this is a no-op; the Xvfb is tied to the session's exit stack.
+    The shared warm packages still load GLMakie for native capture and simulator
+    extensions that need it. On a machine with a real display this is a no-op;
+    the Xvfb is tied to the session's exit stack.
     """
     from jutul_agent.display import managed_display, should_wrap_xvfb
 

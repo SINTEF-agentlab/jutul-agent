@@ -134,6 +134,22 @@ pytestmark = pytest.mark.integration
     not _julia_available() or not _wgl_ready(JUTULDARCY_ENV),
     reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
 )
+async def test_web_warmup_does_not_open_native_screens(plot_display) -> None:
+    from jutul_agent.simulators.warmup import start_warmup
+
+    async with JuliaKernel(_plot_kernel_config(plot_display)) as julia:
+        await start_warmup(julia, JUTULDARCY.warm_package, native_plotting=False)
+        result = await julia.eval(
+            "@assert WGLMakie.Makie.current_backend() === WGLMakie; "
+            "@assert isempty(JutulAgent.GLMakie.ALL_SCREENS); nothing"
+        )
+        assert not result.error, result.error
+
+
+@pytest.mark.skipif(
+    not _julia_available() or not _wgl_ready(JUTULDARCY_ENV),
+    reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
+)
 async def test_web_capture_preserves_backend_attributes_and_display_state(plot_display) -> None:
     config = _plot_kernel_config(plot_display)
     async with JuliaKernel(config) as julia:
