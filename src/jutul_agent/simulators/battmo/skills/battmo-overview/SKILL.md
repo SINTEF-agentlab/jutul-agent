@@ -1,98 +1,55 @@
 ---
 name: battmo-overview
-description: High-level BattMo workflow, example discovery, and output inspection
+description: Set up BattMo battery simulations and inspect their outputs.
 ---
 
-# BattMo orientation
+# BattMo
 
-## When to use
+BattMo simulates battery electrochemistry and transport, with optional thermal
+physics. Choose a model and parameter set together; geometry and physical
+options determine which inputs are required.
 
-Use this skill for general BattMo setup, example discovery, and output inspection.
+Start from the closest installed example in `examples/beginner_tutorials/`,
+or a specialized example for thermal, 3D, or MATLAB cases.
 
-BattMo is a battery simulator on the Jutul AD framework. It models
-lithium-ion (and other) cells with coupled electrochemistry, transport, and
-optionally thermal effects.
+## Set up and run
 
-A simulation is four parts you compose in order:
-
-1. **Cell parameters** - physical and geometric description of the cell.
-   `load_cell_parameters(; from_default_set = "chen_2020")` gives a curated
-   NMC811/Graphite-SiOx cell; other default sets exist via the same loader.
-2. **Cycling protocol** - driving signal.
-   `load_cycling_protocol(; from_default_set = "cc_discharge")` for constant-
-   current discharge; other protocols are loaded the same way.
-3. **Model** - `LithiumIonBattery()` for the standard P2D system; specialised
-   constructors exist for full-cell, thermal, and 3D variants.
-4. **Simulation + solve** -
-   `sim = Simulation(model, cell_parameters, cycling_protocol)` performs
-   validation; check `sim.is_valid`. Then `sol = solve(sim)` runs it.
-   `solve` is expensive (a full simulation): bind `sol = solve(sim)` **once**
-   and reuse `sol` in later `run_julia` / `plot_julia` calls — the REPL keeps
-   it. Do not re-run `solve` just to inspect or plot the result.
-
-## Finding what you need
-
-BattMo's source is read-only depot source; its path is given to you up front, so
-browse it directly with the file tools (see the `workspace-and-source` skill):
-
-```text
-# BattMo source path is in your system prompt -> /.../BattMo/<hash>
-glob("/.../BattMo/examples/beginner_tutorials/*.jl")    # best starting point
-grep("load_cell_parameters", path="/.../BattMo/src")    # locate APIs and uses
-read_file("/.../BattMo/examples/beginner_tutorials/2_run_a_simulation.jl")
-```
-
-For docstrings, stay in the REPL: `run_julia("@doc LithiumIonBattery")`.
-
-## Result inspection
-
-`solve` returns a `SimulationOutput`. Its `time_series` field is a
-**`Dict{String, Any}` mapping each output variable to a `Vector` over the
-report steps** — not a list of per-timestep state objects. Index it by
-variable name; never iterate it or index it with an integer.
+The workflow combines cell parameters, a cycling protocol, and a model:
 
 ```julia
-sol = solve(sim)               # SimulationOutput
-ts  = sol.time_series          # Dict{String,Any}: variable name => Vector over steps
-keys(ts)                       # discover what's available before assuming names
-t = Float64.(ts["Time"])       # seconds
-V = Float64.(ts["Voltage"])    # cell voltage
-I = Float64.(ts["Current"])    # cell current
+using BattMo
+cell_parameters = load_cell_parameters(; from_default_set="chen_2020")
+cycling_protocol = load_cycling_protocol(; from_default_set="cc_discharge")
+model = LithiumIonBattery()
+sim = Simulation(model, cell_parameters, cycling_protocol)
+@assert sim.is_valid
+sol = solve(sim)
 ```
 
-The vectors can be `Vector{Any}`, so wrap with `Float64.(…)` before plotting
-or doing arithmetic. If a key you expect is missing, call `keys(ts)` and use
-what's actually there. `sol` has no `keys`/`getindex` of its own — go through
-`sol.time_series`.
+`LithiumIonBattery()` uses the standard P2D model. Inspect the model-selection
+tutorial for thermal and 3D settings. Review validation failures before solving,
+and retain `sol` for analysis and plotting instead of solving again.
 
-## Plotting
+## Results and input formats
 
-BattMo's native plotters run on **GLMakie** (a default dependency) and are
-captured by `plot_julia` automatically — headless or interactive:
-
-- `plot_dashboard(output; new_window = false)` — interactive results dashboard
-- `plot_output(output; new_window = false)` — standard result plots
-- `plot_cell_curves(cell_parameters; new_window = false)` — per-cell property curves
-
-Call them directly — you do **not** need to load a backend or strip `GLMakie`
-from example code; the tool activates the right backend. `plot_julia` captures
-the figure as an artifact whether BattMo opens its own window (`new_window=true`,
-its default) or not; in an interactive session it also opens a live window for
-the user. Reuse the `output`/`sol` you already solved; `plot_julia` shares the
-REPL.
-
-For a custom 2D view, build the figure inline from `sol.time_series`:
+`sol.time_series` maps variable names to vectors over report steps; inspect
+`keys(sol.time_series)` before selecting outputs. It is not a vector of states,
+and `sol` itself is a `SimulationOutput`, not a dictionary.
 
 ```julia
-ts = sol.time_series
-fig = Figure(size = (700, 400))
-ax = Axis(fig[1, 1], title = "Voltage vs time", xlabel = "Time [s]", ylabel = "Voltage [V]")
-lines!(ax, Float64.(ts["Time"]), Float64.(ts["Voltage"]))
-fig
+t = sol.time_series["Time"]       # seconds
+V = sol.time_series["Voltage"]    # volts
+I = sol.time_series["Current"]    # amperes
 ```
 
-## Inputs from MATLAB
+Vectors can have element type `Any`; use `Float64.(…)` when a custom plot
+needs a concrete numeric vector. Spatial data is in `sol.states`, while
+`sol.jutul_output` holds the underlying Jutul model and states.
+`sol.metrics` contains cycle-based summaries; `print_info(sol)` lists the
+available outputs.
 
-`load_matlab_battmo_input(filename)` reads the MATLAB BattMo `.mat` format
-for cross-validation against legacy cases (see `examples/example_battery.jl`
-for a reference run).
+For MATLAB-format input, follow `examples/example_matlab.jl` and
+`load_matlab_input(filename)`. This follows a lower-level Jutul workflow;
+do not assume its result has the `SimulationOutput` layout above.
+
+Use `battmo-cycling` for inputs and `battmo-plotting` for native result views.
