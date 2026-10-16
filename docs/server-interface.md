@@ -366,7 +366,8 @@ build standard Makie scenes. JutulDarcy 0.4 uses a backend-independent Makie
 extension, and the tool constructs web figures with WGLMakie active. Ordinary
 `display` calls are captured without opening desktop windows. GLMakie remains
 loaded for native capture and other simulator extensions; its context uses Xvfb
-on a headless box or the workstation's display. Camera control (rotate, zoom, pan) runs in
+on a headless box or the workstation's display. Web startup selects WGLMakie
+without creating a native GL window. Camera control (rotate, zoom, pan) runs in
 the browser, and the in-figure widgets (a timestep slider, a field selector) drive
 Julia callbacks over the live server's WebSocket; on the static fallback the camera
 still works but those widgets are inert.
