@@ -48,8 +48,24 @@ Raw `:Temperature` values are Kelvin. The converted native fields are
 to make the displayed units explicit. A static plot with `key=:Temperature`
 uses Kelvin, so do not caption it as Celsius. Do not subtract 273.15 before
 passing a `:Temperature` field to the native plotter.
-On JutulDarcy 0.3, use Jutul's `plot_cell_data` for a requested static field
-image, with the mesh and one vector, and state the chosen units explicitly.
+On JutulDarcy 0.3, use Jutul's native `plot_cell_data` for a requested static
+field image. For Celsius, convert the vector explicitly and label it:
+
+```julia
+temperature_c = vec(result.states[end][:Temperature]) .- 273.15
+mesh = JutulDarcy.reservoir_mesh(case.model)
+plot_mesh = mesh isa Jutul.CartesianMesh ? Jutul.UnstructuredMesh(mesh) : mesh
+fig, ax, p = Jutul.plot_cell_data(plot_mesh, temperature_c; colorbar=false)
+Makie.Colorbar(fig[2, 1], p; vertical=false, label="Temperature (°C)")
+fig
+```
+
+The Cartesian-to-unstructured conversion uses Jutul's existing mesh API to
+avoid a triangulation defect in the older direct Cartesian plotter. It only
+changes the mesh passed to the plot; the simulation model is unchanged.
+The plotting tool already binds `Makie` through the active backend. Use that
+binding for labels and colorbars; do not add `using Makie`, since Makie is a
+transitive dependency rather than a directly loadable package in this env.
 
 ## Well results
 
