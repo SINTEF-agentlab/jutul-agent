@@ -29,6 +29,9 @@ mutable struct LiveScreen <: Makie.MakieScreen
     closed::Bool
     initialized::Bool
     dirty::Bool
+    bindings::IdDict{Any, Any}
+    callbacks::Vector{Any}
+    glyphs::Set{UInt32}
 end
 import ..JutulAgentPlots: backend_screen
 backend_screen(screen::LiveScreen) = screen.backend
@@ -41,6 +44,13 @@ function Base.close(s::LiveScreen)
     s.closed && return
     s.closed = true
     Makie.stop!(s.backend.tick_clock)
+    for source in collect(keys(s.bindings))
+        unbind!(s, source)
+    end
+    foreach(Bonito.Observables.off, s.callbacks)
+    filter!(x -> !(x in s.callbacks), s.backend.session.deregister_callbacks)
+    empty!(s.callbacks)
+    empty!(s.glyphs)
     stack = [s.owner.fig.scene]
     while !isempty(stack)
         scene = pop!(stack)
@@ -54,7 +64,7 @@ Base.empty!(s::LiveScreen) = close(s)
 
 function Base.insert!(s::LiveScreen, scene::Makie.Scene, plot::Makie.AbstractPlot)
     if !s.closed && s.initialized && isopen(s)
-        insert!(s.backend, scene, plot)
+        insert_plot!(s, scene, plot)
     else
         s.dirty = true
     end
@@ -62,7 +72,7 @@ function Base.insert!(s::LiveScreen, scene::Makie.Scene, plot::Makie.AbstractPlo
 end
 function Base.delete!(s::LiveScreen, scene::Makie.Scene, plot::Makie.AbstractPlot)
     if !s.closed && s.initialized && isopen(s)
-        delete!(s.backend, scene, plot)
+        delete_plot!(s, scene, plot)
     else
         s.dirty = true
     end
@@ -70,7 +80,7 @@ function Base.delete!(s::LiveScreen, scene::Makie.Scene, plot::Makie.AbstractPlo
 end
 function Base.delete!(s::LiveScreen, scene::Makie.Scene)
     if !s.closed && s.initialized && isopen(s)
-        delete!(s.backend, scene)
+        delete_scene!(s, scene)
     else
         s.dirty = true
     end
@@ -87,11 +97,35 @@ function release!(view::LiveFigure)
     return nothing
 end
 
+function on_serially(f, session, observable)
+    # Picking waits for a JS reply. Keep that wait off Bonito's message reader,
+    # while preserving mouse move/press/release order instead of spawning one
+    # competing task per message. The producer must not block the reply reader.
+    queue = Channel{Any}(Inf)
+    Bonito.on(session, observable) do value
+        isopen(queue) && put!(queue, value)
+        return nothing
+    end
+    Bonito.on(session, session.on_close) do closed
+        closed && close(queue)
+        return nothing
+    end
+    @async try
+        for value in queue
+            Bonito.isclosed(session) && break
+            f(value)
+        end
+    finally
+        close(queue)
+    end
+    return queue
+end
+
 function connect_events!(s::LiveScreen, comm)
     scene = s.owner.fig.scene
     e = Makie.events(scene)
-    Bonito.on(s.backend.session, comm) do msg
-        @async try
+    on_serially(s.backend.session, comm) do msg
+        try
             isopen(s) || return
             if haskey(msg, "window_open") && !msg["window_open"]
                 close(s)
@@ -136,7 +170,7 @@ function canvas(s::LiveScreen, session, scene)
     config = s.backend.config
     order = WGLMakie.get_order!(session)
     initial_size = size(scene)
-    canvas_width = Makie.lift(x -> [round.(Int, Makie.widths(x))...], scene, Makie.viewport(scene))
+    canvas_width = view_map(x -> [round.(Int, Makie.widths(x))...], s, Makie.viewport(scene))
     real_size = Makie.Observable{Any}(nothing)
     serialized = Makie.Observable{Union{Nothing, Dict{Symbol, Any}}}(nothing)
     done_init = Makie.Observable{Any}(nothing)
@@ -145,7 +179,7 @@ function canvas(s::LiveScreen, session, scene)
             s.closed && return
             dimensions = Tuple(round.(Int, size_arr))
             dimensions != size(scene) && Makie.resize!(scene, dimensions...)
-            serialized[] = WGLMakie.serialize_scene(scene)
+            serialized[] = serialize_scene(s, scene)
             s.dirty = false
         catch err
             done_init[] = err
@@ -159,6 +193,17 @@ function canvas(s::LiveScreen, session, scene)
     comm = Makie.Observable(Dict{String, Any}())
     Bonito.evaljs(session, js"""
         $(WGLMakie.WGL).then(WGL => WGL.execute_in_order($order, () => {
+            // WGL throttles mouse moves. Flush the exact position before a
+            // button event, so a quick click cannot use the previous position.
+            const canvas = $element;
+            const sync_pointer = event => {
+                const scene = WGL.find_scene($(WGLMakie.js_uuid(scene)));
+                if (scene) {
+                    $comm.notify({mouseposition: WGL.events2unitless(scene.screen, event)});
+                }
+            };
+            canvas.addEventListener("mousedown", sync_pointer, true);
+            canvas.addEventListener("mouseup", sync_pointer, true);
             WGL.setup_scene_init($wrapper, $element, $width, $height,
                 $(config.resize_to), $(config.px_per_unit), $(config.scalefactor),
                 $real_size, $canvas_width, $serialized, $comm, $(config.framerate), $done_init);
@@ -180,7 +225,16 @@ function poll_view!(s::LiveScreen)
                     Bonito.evaljs(s.backend.session, js"window.location.reload()")
                     break
                 end
-                WGLMakie.poll_all_plots(scene)
+                # The figure is shared: advance it once, regardless of how many
+                # views are open. Otherwise playback runs faster with each view.
+                leader = findfirst(view -> view.initialized && isopen(view), s.owner.screens)
+                if !isnothing(leader) && s.owner.screens[leader] === s
+                    WGLMakie.poll_all_plots(scene)
+                else
+                    Makie.stop!(s.backend.tick_clock)
+                    sleep(0.01)
+                    continue
+                end
                 if !s.backend.tick_clock.running
                     Makie.start!(s.backend.tick_clock) do _
                         isopen(s) && !s.closed && tick(Makie.RegularRenderTick)
@@ -216,7 +270,7 @@ function Bonito.jsrender(session::Bonito.Session, view::LiveFigure)
     scene.isclosed = false
     screen = WGLMakie.Screen(scene, view.config)
     screen.session = session
-    s = LiveScreen(screen, view, false, false, false)
+    s = LiveScreen(screen, view, false, false, false, IdDict{Any, Any}(), Any[], Set{UInt32}())
     push!(view.screens, s)
     Makie.push_screen!(scene, s)
     try
@@ -251,4 +305,5 @@ function Bonito.jsrender(session::Bonito.Session, view::LiveFigure)
         rethrow()
     end
 end
+include("web_serialization.jl")
 end

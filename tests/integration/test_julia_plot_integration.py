@@ -374,6 +374,26 @@ async def test_native_plotters_render_to_png(tmp_path: Path, plot_display, surfa
                 failures.append(f"{slot}: no PNG written")
             elif png.stat().st_size <= 1000:
                 failures.append(f"{slot}: PNG looks blank ({png.stat().st_size} bytes)")
+            elif surface == "web":
+                # A Cairo poster alone does not exercise browser serialization.
+                # Serialize each native plotter into a real Bonito session too.
+                checked = await julia.eval(
+                    "let B = WGLMakie.Bonito, V = JutulAgent.JutulAgentWebViews\n"
+                    f'    view = Main.__JUTUL_WEB_FIGS__["/viz/{slot}"]\n'
+                    "    connection = B.Session(B.NoConnection(); asset_server=B.NoServer())\n"
+                    "    try\n"
+                    "        B.jsrender(connection, view)\n"
+                    "        screen = only(view.screens)\n"
+                    "        data = V.serialize_scene(screen, view.fig.scene)\n"
+                    "        B.serialize_cached(B.SerializationContext(connection), data)\n"
+                    "    finally\n"
+                    "        close(connection)\n"
+                    "    end\n"
+                    "    @assert isempty(view.screens)\n"
+                    "end"
+                )
+                if checked.error:
+                    failures.append(f"{slot}: web serialization: {checked.error}")
         session.finalize()
         assert not failures, "native plotters failed:\n" + "\n".join(failures)
 
