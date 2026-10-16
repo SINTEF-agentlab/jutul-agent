@@ -46,7 +46,9 @@ async def test_model_menu_adds_api_listed_models(monkeypatch: pytest.MonkeyPatch
 
     def catalog():
         groups = {name: list(items) for name, items in models.discover_models().items()}
-        groups["openai"].insert(0, models.ModelInfo("openai:gpt-6-luna", "gpt-6-luna"))
+        groups["openai"].insert(
+            0, models.ModelInfo("openai:test-api-only-model", "test-api-only-model")
+        )
         return groups
 
     monkeypatch.setattr(model_menu, "discover_available_models", catalog)
@@ -56,7 +58,7 @@ async def test_model_menu_adds_api_listed_models(monkeypatch: pytest.MonkeyPatch
         await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert "openai:gpt-6-luna" in _option_ids(app.screen)
+        assert "openai:test-api-only-model" in _option_ids(app.screen)
 
 
 async def test_model_menu_shows_recommended_and_cloud_ollama(monkeypatch) -> None:
