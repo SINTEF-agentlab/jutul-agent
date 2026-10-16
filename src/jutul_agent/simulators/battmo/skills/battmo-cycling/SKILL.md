@@ -1,60 +1,33 @@
 ---
 name: battmo-cycling
-description: Choose and customize BattMo cell parameter sets and cycling protocols
+description: Choose and customize BattMo cell parameters and cycling protocols.
 ---
 
-# Cycling protocols and cell parameters
+# Cell parameters and cycling
 
-## When to use
-
-Use this skill when the task is about default parameter sets, custom cell parameters, or cycling protocols.
-
-Parameter sets and cycling protocols are first-class inputs in BattMo. They
-are loaded by name from curated default sets, or constructed by editing a
-loaded set.
-
-## Cell parameters
+Cell parameters describe the physical cell; the cycling protocol describes
+how it is driven. Load a reference set before customizing it:
 
 ```julia
-cell_parameters = load_cell_parameters(; from_default_set = "chen_2020")
+cell_parameters = load_cell_parameters(; from_default_set="chen_2020")
+cycling_protocol = load_cycling_protocol(; from_default_set="cc_discharge")
 ```
 
-To enumerate other default sets that ship with your installed version,
-search the installed source with the file tools (its path is given to you up front):
+Inspect the installed loaders and `examples/beginner_tutorials/` for available
+sets, parameter names, and protocol options. Modify the inputs before building
+`Simulation(model, cell_parameters, cycling_protocol)`.
 
-```text
-grep("from_default_set", path="/.../BattMo/src")
-read_file("/.../BattMo/examples/beginner_tutorials/5_create_parameter_sets.jl")
-```
+Both loaders also accept `from_file_path` for a JSON file. Loaded inputs are
+dictionary-like: inspect `keys(input)`, `input.all`, or
+`search_parameter(input, "rate")` before editing an unfamiliar parameter.
+For example, the CC-discharge protocol uses `cycling_protocol["DRate"]`.
+Use `deepcopy` for independent variants so nested edits do not mutate another case.
 
-Edit a loaded parameter set as a dictionary-like structure before passing it
-to `Simulation`.
+The cell-parameter and cycling tutorials explain nested parameters and CC/CV
+protocols. Use the model-selection tutorial when changing physics, and the
+grid/time-resolution and solver-settings tutorials for numerical controls.
+These settings have their own loaders; do not put all options in the protocol.
 
-## Cycling protocols
-
-```julia
-cycling_protocol = load_cycling_protocol(; from_default_set = "cc_discharge")
-```
-
-Common defaults include constant-current discharge and CC/CV cycles. The
-tutorial in `examples/beginner_tutorials/7_handle_cycling_protocols.jl`
-walks through composing and customising protocols.
-
-## Common task to reference mapping
-
-| Task | Reference example |
-| --- | --- |
-| Minimal CC discharge | `examples/beginner_tutorials/2_run_a_simulation.jl` |
-| Inspect or plot outputs | `examples/beginner_tutorials/3_handle_outputs.jl` |
-| Choose a different model | `examples/beginner_tutorials/4_select_a_model.jl` |
-| Edit cell parameters | `examples/beginner_tutorials/6_handle_cell_parameters.jl` |
-| Custom cycling protocol | `examples/beginner_tutorials/7_handle_cycling_protocols.jl` |
-| Compute KPIs | `examples/beginner_tutorials/8_compute_cell_kpis.jl` |
-| Grid or time resolution | `examples/beginner_tutorials/10_handling_grid_time_resolution.jl` |
-| Solver settings | `examples/beginner_tutorials/11_handling_solver_settings.jl` |
-| 3D, cylindrical, or pouch | `examples/example_3D_cylindrical.jl`, `example_3D_pouch.jl` |
-| MATLAB input | `examples/example_battery.jl` |
-
-These paths are correct for the version shipped at the time of writing; if
-a file is not where the table says, list the directory via the shell
-(`ls "$SRC/examples"`) to find the current layout.
+For a short 3D check, keep the example geometry and shorten
+`Simulation(...; time_steps=...)`. Coarsening a pouch grid below its tab
+dimensions can make the geometry invalid.
