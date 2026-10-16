@@ -46,7 +46,7 @@ read_file("/.../Fimbul/examples/production/doublet_demo.jl")
 ```
 
 Fimbul builds on JutulDarcy, whose source sits alongside at `pkgdir(JutulDarcy)`.
-Reach for it (and the JutulDarcy skills) for the grid, mesh, and well primitives
+Reach for its installed examples for the grid, mesh, and well primitives
 Fimbul reuses:
 
 ```text
@@ -67,9 +67,9 @@ T_end = states[end][:Temperature]            # temperature at the final step
 T_at_cell = [s[:Temperature][cell] for s in states]   # series at one cell
 ```
 
-Well data (`result.wells`) and reservoir states follow the same
-conventions as JutulDarcy. See `jutuldarcy-overview` for result unpacking
-and `jutuldarcy-wells` for well construction details that apply here too.
+Well data (`result.wells`) and reservoir states follow the conventions in the
+installed JutulDarcy source. Fimbul has its own resolved environment; do not
+assume APIs from a newer standalone JutulDarcy installation apply here.
 
 Produced-water quantities come from the well series, not the reservoir
 field: `result.states[end][:Temperature]` is the grid; what a well delivers
@@ -86,21 +86,24 @@ user asks for degrees Celsius, convert (`T - 273.15`) before reporting; a
 "temperature" near 350 in a geothermal answer is almost certainly an
 unconverted Kelvin value.
 
+## High-temperature water and steam
+
+Fimbul 0.3.6 adds the pressure–enthalpy `H2OSystem`, distributed steam tables,
+and high-temperature benchmarks. `Fimbul.steam_tables_h2o()` loads the table
+artifact on first use. CoolProp is optional and needed to generate new tables,
+not to use the distributed tables. Do not install it for ordinary simulations.
+Read `examples/validation/validation_ht_1d.jl` and the `benchmark_ht_1d` /
+`benchmark_ht_2d` docstrings before choosing a benchmark and resolution.
+
+Fimbul 0.3.6 declares Jutul 0.4 and JutulDarcy 0.3 compatibility. A locally
+updated Fimbul may support newer versions: inspect the installed Project.toml
+and `Base.pkgversion(JutulDarcy)`. Use that environment's supported APIs rather
+than changing dependencies during a plotting task.
+
 ## Plotting
 
-Fimbul reuses JutulDarcy's **native plotters** (GLMakie, the default backend),
-captured by `plot_julia` automatically — headless or interactive:
-
-- `plot_reservoir(case.model, result.states)` — 3D reservoir (e.g. `key = :Temperature`)
-- `plot_well_results(result.wells)` — well dashboard
-- `plot_cell_data!` / `plot_mesh_edges!` to compose a custom 3D view
-- Fimbul's own `plot_well_data!` / `plot_mswell_values!` for multi-segment wells
-
-Just call them — no backend juggling. In an interactive session a live window
-opens for the user by default (`window=false` to suppress); pass `view=true` to
-inspect a plot yourself. For a custom 2D view, build inline against the live
-result object (probe `keys` / `propertynames` first).
-
-JutulDarcy's `plot_reservoir` defaults to its fancy 3D viewer and converted
-display units; use `fancy=false` or `convert_units=false` when a fixed-axis view
-or unconverted values are needed.
+Read `fimbul-plotting` for native temperature viewers, well curves, and the new
+pressure–enthalpy phase diagrams. Use the existing `case` and `result`; do not
+solve again to change the view. Raw temperatures and the native well-temperature
+field are Kelvin. The reservoir viewer also offers a converted Celsius field;
+select its full label as shown in the plotting skill.

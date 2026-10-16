@@ -26,7 +26,7 @@ FIMBUL = SimulatorAdapter(
         "`analytical/`, `production/` (doublet, EGS, AGS, coaxial BHE), and "
         "`storage/` (ATES, BTES, FTES, HTATES). Most workflows reuse "
         "JutulDarcy's grid + well constructors; its source is at "
-        "`pkgdir(JutulDarcy)` and the JutulDarcy skills/overview cover those "
+        "`pkgdir(JutulDarcy)` and its installed examples cover those "
         "primitives."
     ),
     review_hints=(
