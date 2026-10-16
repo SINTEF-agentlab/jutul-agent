@@ -10,11 +10,12 @@ Precedence, highest first: the `--model` flag, the workspace config, the
 user config, `$JUTUL_AGENT_MODEL`, the built-in default.
 
 In the web UI, `/model` opens the model picker with OpenAI, Anthropic, Google,
-OpenRouter, and Ollama entries. You can also type `/model provider:model` to
-use another model ID. Switching mid-session keeps the conversation (see
+OpenRouter, and Ollama entries, and your Azure OpenAI deployments once they are
+configured ([below](#azure-openai)). You can also type `/model provider:model`
+to use another model ID. Switching mid-session keeps the conversation (see
 [context handling](context.md)).
 
-Providers beyond the bundled five work once their LangChain package is
+Providers beyond the bundled six work once their LangChain package is
 installed, and jutul-agent names the exact package when it is missing.
 API keys are prompted for on first use and stored in the user-global `.env`
 ([configuration](configuration.md)).
@@ -29,6 +30,31 @@ jutul-agent web
 ```
 
 Then use `/model` to choose an OpenRouter model.
+
+## Azure OpenAI
+
+An Azure OpenAI model ID names a deployment, `azure_openai:<deployment>`,
+because Azure routes requests by deployment. Set the resource's endpoint and
+API version, in the environment or the user-global `.env`, then save its key
+and pick a deployment:
+
+```sh
+export AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/
+export OPENAI_API_VERSION=<api-version>
+jutul-agent key azure_openai
+jutul-agent web --model azure_openai:<deployment>
+```
+
+To offer deployments in `/model`, name one in `AZURE_OPENAI_DEPLOYMENT`, or
+several, comma-separated, in `AZURE_OPENAI_DEPLOYMENTS`.
+
+Whoever deploys a model names the deployment, so no bundled profile knows it.
+jutul-agent reads the profile of the OpenAI model behind it, by name:
+`gpt-5.5` as it is, and `gpt-5.5-prod` with the trailing `-prod` dropped. A
+reasoning model then gets the OpenAI settings below, over the Responses API,
+which needs an API version recent enough to have it. A deployment whose name
+matches no OpenAI model runs without requested reasoning, and its context
+window is unknown.
 
 ## What the harness asks of a model
 
