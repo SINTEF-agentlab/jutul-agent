@@ -99,6 +99,7 @@ def test_repo_deepagents_skill_assets_exist() -> None:
         ("battmo", "battmo-overview"),
         ("battmo", "battmo-cycling"),
         ("fimbul", "fimbul-overview"),
+        ("fimbul", "fimbul-plotting"),
         ("mocca", "mocca-overview"),
     ]
     for sim, skill in expected:

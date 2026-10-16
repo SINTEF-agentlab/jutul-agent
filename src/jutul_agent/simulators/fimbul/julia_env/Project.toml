@@ -27,7 +27,7 @@ JutulDarcy = "82210473-ab04-4dce-b31b-11573c4f8e0a"
 # Minimum simulator release supported by the bundled skills. Fimbul resolves
 # the compatible JutulDarcy and Jutul versions through its own dependencies.
 [compat]
-Fimbul = "0.3.5"
+Fimbul = "0.3.6"
 
 # Both deps are jutul-agent's in-env Julia runtime, declared as relative `[sources]`
 # paths so they survive the copy into a workspace. JutulAgent is the shared,
