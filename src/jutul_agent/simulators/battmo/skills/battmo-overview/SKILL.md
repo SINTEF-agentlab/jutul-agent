@@ -67,29 +67,10 @@ what's actually there. `sol` has no `keys`/`getindex` of its own — go through
 
 ## Plotting
 
-BattMo's native plotters run on **GLMakie** (a default dependency) and are
-captured by `plot_julia` automatically — headless or interactive:
-
-- `plot_dashboard(output; new_window = false)` — interactive results dashboard
-- `plot_output(output; new_window = false)` — standard result plots
-- `plot_cell_curves(cell_parameters; new_window = false)` — per-cell property curves
-
-Call them directly — you do **not** need to load a backend or strip `GLMakie`
-from example code; the tool activates the right backend. `plot_julia` captures
-the figure as an artifact whether BattMo opens its own window (`new_window=true`,
-its default) or not; in an interactive session it also opens a live window for
-the user. Reuse the `output`/`sol` you already solved; `plot_julia` shares the
-REPL.
-
-For a custom 2D view, build the figure inline from `sol.time_series`:
-
-```julia
-ts = sol.time_series
-fig = Figure(size = (700, 400))
-ax = Axis(fig[1, 1], title = "Voltage vs time", xlabel = "Time [s]", ylabel = "Voltage [V]")
-lines!(ax, Float64.(ts["Time"]), Float64.(ts["Voltage"]))
-fig
-```
+Read `battmo-plotting` for native dashboards, variable-expression plots, cell
+curves, and 3D viewers. Reuse the solved output; start with
+`plot_dashboard(sol; new_window=false)` through `plot_julia`.
+Use `plot_type="line"` when the user wants to move through the cell's states.
 
 ## Inputs from MATLAB
 

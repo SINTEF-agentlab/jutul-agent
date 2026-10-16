@@ -97,6 +97,7 @@ def test_repo_deepagents_skill_assets_exist() -> None:
         ("jutuldarcy", "jutuldarcy-wells"),
         ("jutuldarcy", "jutuldarcy-plotting"),
         ("battmo", "battmo-overview"),
+        ("battmo", "battmo-plotting"),
         ("battmo", "battmo-cycling"),
         ("fimbul", "fimbul-overview"),
         ("mocca", "mocca-overview"),
