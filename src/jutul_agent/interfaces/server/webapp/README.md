@@ -19,6 +19,8 @@ npm run build      # tsc typecheck + vite build -> ../web_dist
 
 ## Develop
 
+Use Node 22.22.2+, 24.15.0+, or 26+ for the current build and test dependencies.
+
 ```sh
 npm run dev          # Vite dev server with HMR, proxying the API/WebSocket
 npm test             # vitest (unit + component tests)
