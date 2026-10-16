@@ -115,49 +115,13 @@ Three shape facts that are easy to guess wrong (each wrong guess is a KeyError):
 
 ## Plotting
 
-Use the **native plotters** through `plot_julia`. The tool selects WGLMakie for
-the web interface and GLMakie for native capture, and saves the figure automatically:
+For reservoir views, use `plot_julia` with **`plot_reservoir(model, states)`**.
+Keep the default interactive GUI, including the field selector, timestep slider,
+and wells. Use the full state history so the user can explore the result.
 
-- `plot_reservoir(model)` — 3D reservoir mesh + well trajectories
-- `plot_reservoir(model, states[end])` — a state colored on the 3D mesh. Pass the
-  whole state dict, or a per-cell **vector** like `states[end][:Saturations][2, :]`
-  — not a scalar slice, which raises "No plottable properties found".
-- `plot_well_results(wd)` — well rate / BHP dashboard
-- `plot_cell_data(physical_representation(domain), field)` — a scalar field on the mesh
-- `plot_co2_inventory(t, inv)` — CO2 inventory over time (2D)
-- `plot_model_graph(model)` / `plot_variable_graph(reservoir_model(model))` —
-  model / variable dependency graphs. These live in a Jutul package **extension**,
-  so run `using GraphMakie, NetworkLayout, LayeredLayouts` first to activate them
-  (the packages are already in the env). Use the real plotter; don't hand-draw a
-  graph.
-
-Just call them — no backend juggling, no need to return a `Figure`. In an
-interactive session the tool shows the figure by default. Set `window=false` on
-**plot_julia**, not on `plot_reservoir`, to suppress it; pass `view=true` to inspect
-a plot yourself.
-
-`plot_reservoir` opens the fancy 3D viewer by default and converts displayed
-values to metric units. Pass `gui=false` for a static figure, `fancy=false` for
-the fixed-axis viewer with controls, or `convert_units=false` for raw values.
-Let the plotter choose its default proportions unless the user requests a change.
-
-**Plot from the live REPL bindings.** Your run already left `model`, `states`,
-`wd` in the REPL — call the plotter straight on them. Do **not** rebuild the case
-and re-run `simulate_reservoir` inside `plot_julia`; that re-simulates on every
-plot. Re-run only if you changed the setup.
-
-For a **static artifact** with the field and wells but no GUI menus, use the
-native plotter. Select the field with `key`, report step with `step`, and phase
-or component of a matrix field with `row`:
-
-```julia
-plot_reservoir(model, states; gui=false, key=:Saturations,
-    step=length(states), row=2)
-```
-
-Both original field names and displayed names with units are accepted. The
-defaults are the first alphabetically sorted field, step 1 and row 1, so specify
-them when showing a particular result.
+Read the **`jutuldarcy-plotting`** skill before plotting. It covers GUI field and
+phase selection, static exports, well dashboards, and custom cell fields. The
+GUI and static plotter accept different selection keywords.
 
 ## Parallel simulation and optimization
 

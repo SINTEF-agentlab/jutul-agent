@@ -1,6 +1,6 @@
 """Julia plotting tools: capture Makie figures as session artifacts.
 
-Plotting always runs on GLMakie. The tool opens a live window for the user only
+Native plotting runs on GLMakie. The tool opens a live window for the user only
 when the session can show one (an interactive run with a display); otherwise it
 renders offscreen to a PNG. Headless Linux still renders, via the xvfb-wrapped
 Julia process (see the kernel). If GLMakie cannot load at all, the tool
@@ -544,8 +544,10 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
         Prefer your simulator's documented native plotters (the `plotting-basics` and
         per-simulator skills name them); otherwise build a `Figure` inline. Just run
         the code: you don't need to return a `Figure` or avoid `display`, since the
-        tool captures whatever figure your code produced. Plotting runs on GLMakie
-        like normal Julia.
+        tool captures whatever figure your code produced. It selects WGLMakie for
+        the web interface and GLMakie for native capture; do not activate a backend
+        yourself. Keep native viewer controls unless the user requests a static
+        figure or a custom view.
 
         Give related plots a stable `slot`: the same `slot` refreshes one window
         in place (good for iterating), distinct slots get distinct windows, and

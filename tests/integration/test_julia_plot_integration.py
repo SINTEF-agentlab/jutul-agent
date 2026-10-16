@@ -32,6 +32,7 @@ in the JutulDarcy job of the ``Simulators`` workflow.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -283,6 +284,74 @@ _NATIVE_PLOTTERS = {
     ),
     "model_graph": ("using GraphMakie, NetworkLayout, LayeredLayouts\nplot_model_graph(model)"),
 }
+
+
+@pytest.mark.skipif(
+    not _julia_available() or not _wgl_ready(JUTULDARCY_ENV),
+    reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
+)
+async def test_jutuldarcy_plotting_skill_recipes(tmp_path: Path, plot_display) -> None:
+    """Execute the actual skill examples and check their field/step controls.
+
+    A PNG alone missed the regression: a static replacement rendered successfully
+    while dropping the requested GUI. These checks also catch invalid GUI `row`
+    options and renamed component keys in upstream plotting APIs.
+    """
+    skill = JUTULDARCY.skills_dir / "jutuldarcy-plotting" / "SKILL.md"
+    recipes = re.findall(r"```julia\n(.*?)```", skill.read_text(), re.DOTALL)
+    expected = [
+        None,
+        "Pressure / bar",
+        "Saturations row 1",
+        "Saturations row 2",
+        "PressureChange",
+        "static",
+    ]
+    assert len(recipes) == len(expected)
+    async with JuliaKernel(_plot_kernel_config(plot_display)) as julia:
+        setup = await julia.eval(
+            "using Jutul, JutulDarcy\n"
+            "g = CartesianMesh((3, 3, 2), (30.0, 30.0, 6.0))\n"
+            "domain = reservoir_domain(g; permeability=1e-13, porosity=0.2)\n"
+            "sys = ImmiscibleSystem((AqueousPhase(), LiquidPhase()); "
+            "reference_densities=[1000.0, 800.0])\n"
+            "model = setup_reservoir_model(domain, sys)\n"
+            "states = [Dict(:Pressure => collect(range(1e7, 1.1e7; length=18)) .+ i*1e5, "
+            ":Saturations => repeat([0.1*i, 1-0.1*i], 1, 18)) for i in 1:3]\n"
+        )
+        assert not setup.error, setup.error
+        session = _session(julia, tmp_path, "skill-recipes")
+        try:
+            tool = make_plot_julia_tool(session, surface="web")
+            for i, (code, selected) in enumerate(zip(recipes, expected, strict=True)):
+                slot = f"recipe-{i}"
+                result = await _plot(tool, code, slot)
+                assert "served a live interactive plot" in result, result
+                png = session.output_dir / "artifacts" / f"{slot}.png"
+                assert png.exists() and png.stat().st_size > 1000
+                if selected == "static":
+                    check = "@assert !any(x -> x isa Makie.Menu || x isa Makie.Slider, fig.content)"
+                else:
+                    check = (
+                        "slider = only(filter(x -> x isa Makie.Slider, fig.content))\n"
+                        "@assert slider.range[] == 1:3\n"
+                        f"@assert slider.value[] == {1 if i == 0 else 3}\n"
+                        "Makie.set_close_to!(slider, 2)\n"
+                        "@assert any(x -> x isa Makie.Label && "
+                        'occursin("Dynamic data step: 2/3", string(x.text[])), fig.content)\n'
+                    )
+                    if selected is not None:
+                        check += (
+                            "@assert any(x -> x isa Makie.Menu && "
+                            f'x.selection[] == "{selected}", fig.content)\n'
+                        )
+                verified = await julia.eval(
+                    f'let fig = Main.__JUTUL_WEB_FIGS__["/viz/{slot}"], Makie = WGLMakie.Makie\n'
+                    f"{check}\nend"
+                )
+                assert not verified.error, f"{slot}: {verified.error}"
+        finally:
+            session.finalize()
 
 
 @pytest.mark.skipif(
