@@ -116,6 +116,13 @@ catch
 end
 """
 
+WEB_BACKEND_SETUP = """try
+    using WGLMakie
+    WGLMakie.activate!()
+catch
+end
+"""
+
 
 def start_warmup(
     julia: Any,
@@ -123,13 +130,15 @@ def start_warmup(
     capability_packages: Sequence[str] = (),
     warm_code: Sequence[str] = (),
     abandonable: asyncio.Event | None = None,
+    *,
+    native_plotting: bool = True,
 ) -> asyncio.Task[Any] | None:
     """Background warm-up shared by every front end: load the simulator's Julia world
-    (plus any capability packages), pin HYPRE's threads, then initialise the GL context.
+    (plus any capability packages), pin HYPRE's threads, then prepare its plot backend.
 
-    The GL step also runs ``GLMakie.activate!(visible = false)``, which is what keeps
-    a native plot window from popping up on a machine with a real display; every
-    front end wants its plots offscreen (the TUI shows a PNG, the web serves WGLMakie).
+    Native capture warms an offscreen GL context. Web sessions activate WGLMakie
+    without creating a native window: their figures and Cairo posters do not need
+    one, so startup avoids failures in native window creation.
     Best-effort: each step is wrapped so a missing piece never breaks startup, and the
     returned task is cancelled on session teardown.
 
@@ -152,12 +161,12 @@ def start_warmup(
     async def _run() -> None:
         # Shielded: cancelling here is what kills the kernel, so a cancel that lands
         # mid-load has to leave the eval running and take effect at the next step.
-        for essential in (bootstrap, HYPRE_THREADS_SETUP, GL_CONTEXT_WARMUP):
+        backend_setup = GL_CONTEXT_WARMUP if native_plotting else WEB_BACKEND_SETUP
+        for essential in (bootstrap, HYPRE_THREADS_SETUP, backend_setup):
             await _shielded_eval(julia, essential)
         if abandonable is not None:
             abandonable.set()
-        # Last, and only once the backends are up: a capability's snippets exist to
-        # warm plot and solve paths, which need the GL context this step above built.
+        # Run capability snippets after loading and selecting the session's backend.
         for code in warm_code:
             with contextlib.suppress(Exception):
                 await julia.eval(code)
