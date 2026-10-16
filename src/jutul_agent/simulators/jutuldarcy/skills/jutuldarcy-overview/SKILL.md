@@ -30,14 +30,11 @@ six steps that you compose in order:
 
 ## Validate the case before simulating
 
-Validating the assembled case before `simulate_reservoir` is a required step on
-every run — including quick, small, or example-based setups, and even when the
-user only said "set up and run". Do not skip it to "keep things simple": an
-unvalidated solve is the single most common way a setup silently produces wrong
-numbers. JutulDarcy ships a reservoir-engineering check that knows the expected SI
-ranges for permeability, porosity, time steps, well rates, pressures, etc. — it
-catches the unit-conversion mistakes and unphysical values that a plain solve
-would silently run with or fail cryptically on:
+JutulDarcy 0.4 runs case validation by default in `simulate_reservoir`.
+Keep it enabled. Also inspect the assembled case explicitly before every run,
+including small and example-based setups: the default validator reports problems
+but does not necessarily stop the solve. Its reservoir-engineering checks cover
+SI ranges for permeability, porosity, time steps, well rates and pressures:
 
 ```julia
 case = JutulCase(model, dt, forces; state0, parameters)   # what simulate_reservoir builds internally
@@ -81,6 +78,9 @@ For idiomatic "how do I do X" patterns, the examples directory is the
 authoritative reference. `setup_well` and `setup_vertical_well` are the
 recommended well constructors.
 
+For SPE11/CSP11 cases, inspect the built-in `JutulDarcy.CSP11` module and its
+`src/CSP11/setup.jl` rather than recreating the benchmark setup.
+
 Industry-standard `.DATA` decks run through `setup_case_from_data_file`;
 the classic SPE benchmark decks ship with GeoEnergyIO's test data:
 
@@ -106,8 +106,9 @@ Three shape facts that are easy to guess wrong (each wrong guess is a KeyError):
   `(nphases, ncells)` matrix, `states[end][:Pressure]` a vector. There is no
   `:Reservoir` key here.
 - `state0` from `setup_reservoir_state` is the opposite — **keyed by submodel**:
-  `state0[:Reservoir][:Saturations]`, with `:Injector`/`:Producer`/`:Facility`
-  alongside.
+  `state0[:Reservoir][:Saturations]`, with well and facility submodels alongside.
+  Wells can be merged into shared submodels; do not assume each well name is a
+  top-level state key. Use `well_symbols(model)` and the named well outputs.
 - `result` itself is property-accessed (`result.states`, `result.wells`,
   `result.time`); `result[2]` is a MethodError. Per-cell pore volume comes from
   `pore_volume(model, parameters)`.
@@ -135,29 +136,43 @@ interactive session the tool shows the figure by default. Set `window=false` on
 **plot_julia**, not on `plot_reservoir`, to suppress it; pass `view=true` to inspect
 a plot yourself.
 
-`plot_reservoir` now opens the fancy 3D viewer by default and converts displayed
-values to convenient units. Pass `fancy=false` for its fixed-axis viewer or
-`convert_units=false` when you need unconverted values in the plot.
+`plot_reservoir` opens the fancy 3D viewer by default and converts displayed
+values to metric units. Pass `gui=false` for a static figure, `fancy=false` for
+the fixed-axis viewer with controls, or `convert_units=false` for raw values.
+Let the plotter choose its default proportions unless the user requests a change.
 
 **Plot from the live REPL bindings.** Your run already left `model`, `states`,
 `wd` in the REPL — call the plotter straight on them. Do **not** rebuild the case
 and re-run `simulate_reservoir` inside `plot_julia`; that re-simulates on every
 plot. Re-run only if you changed the setup.
 
-For a **chrome-free static artifact** (3D field + wells without `plot_reservoir`'s
-GUI menus), compose the native pieces into a plain `Axis3`. Note `plot_well!` wants
-the `Axis3`'s `scene` in this non-GUI path:
+For a **static artifact** with the field and wells but no GUI menus, use the
+native plotter. Select the field with `key`, report step with `step`, and phase
+or component of a matrix field with `row`:
 
 ```julia
-rmodel = reservoir_model(model)
-g = physical_representation(rmodel.data_domain)
-fig = Figure(size = (900, 600))
-ax = Axis3(fig[1, 1]; zreversed = true, title = "Reservoir")
-plt = plot_cell_data!(ax, g, collect(rmodel.data_domain[:porosity]); colormap = :viridis)
-Colorbar(fig[1, 2], plt)
-for (_, m) in pairs(model.models)              # overlay wells (MultiModel)
-    w = physical_representation(m.data_domain)
-    w isa WellDomain && plot_well!(ax.scene, g, w)
-end
-fig
+plot_reservoir(model, states; gui=false, key=:Saturations,
+    step=length(states), row=2)
 ```
+
+Both original field names and displayed names with units are accepted. The
+defaults are the first alphabetically sorted field, step 1 and row 1, so specify
+them when showing a particular result.
+
+## Parallel simulation and optimization
+
+For larger cases, `simulate_reservoir(case; mode=:ka)` uses the kernel-based CPU
+backend. Benchmark it against the default on the actual case; small cases may
+not benefit. This does not change the Julia session's thread count.
+
+GPU modes require a supported device and the corresponding package in the active
+environment: load `CUDA` for `mode=:ka_cuda`, or `AMDGPU` for `mode=:ka_amd`.
+These packages are not part of the default agent environment. Inspect the installed
+`docs/src/man/advanced/gpu.md` and backend extensions before configuring a GPU run.
+
+For history matching, inspect `setup_reservoir_dict_optimization`,
+`optimize_reservoir` and `docs/src/man/basics/adjoints.md`. The optimization and
+sensitivity helpers accept `mode` directly; pass e.g. `mode=:ka` at the top level,
+not inside `simulator_arg`, where the new top-level default would override it.
+Upstream recommends `optimizer=:lbfgs_qp` for history matching, with bounded,
+log-scaled permeability and appropriately weighted observations.
