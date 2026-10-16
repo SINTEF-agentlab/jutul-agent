@@ -22,6 +22,9 @@ const Makie = GLMakie.Makie  # Shared API; native capture activates GLMakie.
 
 export capture, recapture, close_windows
 
+# Web views wrap backend screens to own their lifetime. Other screens pass through.
+backend_screen(screen) = screen
+
 # Interactive windows keyed by a caller-chosen string (the plot's slot). The same
 # key refreshes that window in place; a new key opens a new window. Recapturing a
 # key re-saves its Figure, so a window the user rotated yields their current view.

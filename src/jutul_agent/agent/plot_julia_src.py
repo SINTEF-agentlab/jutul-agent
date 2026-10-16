@@ -32,13 +32,10 @@ IMPORT_GLMAKIE = "try; @eval import GLMakie; catch; end"
 # Picking then has no session to ask the browser through, gets an empty buffer, and the
 # click falls through to the camera instead of selecting.
 #
-# Every legitimate re-render pushes another screen: reconnecting to a session, popping the
-# view into its own window, closing a view and reopening it. Removing the accumulation
-# would be the better fix, but it has to key on a session that is *definitively* closed,
-# pruning on ``isopen`` also deletes screens that are merely still connecting, which was
-# measured to take the live view down. So this prefers rather than prunes, and falls back
-# to the newest match when nothing is open. A browser reload can briefly leave
-# two open screens, so the newest open one is the current interaction target.
+# A figure can have several browser views. Unwrap our managed screens for Makie's
+# backend dispatch and prefer the newest open view. Keep a connecting screen as a
+# fallback; it is valid even though isopen is still false. This also handles older
+# backends that use their standard screen lifecycle.
 SCREEN_PREFERENCE_MARKER = "__JUTUL_SCREEN_PREF__"
 
 PREFER_OPEN_SCREEN_GUARD = (
@@ -46,7 +43,9 @@ PREFER_OPEN_SCREEN_GUARD = (
     # Reached through WGLMakie: the web preamble imports that, not Makie itself.
     "    @eval WGLMakie.Makie function getscreen(scene::Scene, backend = current_backend())\n"
     "        isempty(scene.current_screens) && return nothing\n"
-    "        local matches = filter(scene.current_screens) do screen\n"
+    "        local screens = Main.JutulAgent.JutulAgentPlots.backend_screen.(\n"
+    "            scene.current_screens)\n"
+    "        local matches = filter(screens) do screen\n"
     "            parentmodule(typeof(screen)) === backend\n"
     "        end\n"
     "        isempty(matches) && return nothing\n"
@@ -561,7 +560,11 @@ def web_live_call(
         + _web_figure_block(user_code)
         + _fig_size_block(size, fit)
         + "    WGLMakie.activate!(resize_to = :parent)\n"
-        + f'    Main.__JUTUL_WEB_FIGS__[raw"{route}"] = _fig\n'
+        + f'    if haskey(Main.__JUTUL_WEB_FIGS__, raw"{route}")\n'
+        + f'        JutulAgent.JutulAgentWebViews.release!(Main.__JUTUL_WEB_FIGS__[raw"{route}"])\n'
+        + "    end\n"
+        + f'    Main.__JUTUL_WEB_FIGS__[raw"{route}"] =\n'
+        + "        JutulAgent.JutulAgentWebViews.LiveFigure(_fig; resize_to = :parent)\n"
         # Move the route to the end of the recency list (a re-plot on the same slot
         # reuses its route, so drop any earlier entry rather than double-listing it).
         "    let _order = Main.__JUTUL_WEB_ORDER__\n"
@@ -573,7 +576,8 @@ def web_live_call(
         # downgrades views, so under normal use this never fires.
         f"        while length(_order) > {WEB_LIVE_ROUTE_CAP}\n"
         "            local _victim = popfirst!(_order)\n"
-        "            delete!(Main.__JUTUL_WEB_FIGS__, _victim)\n"
+        "            JutulAgent.JutulAgentWebViews.release!(\n"
+        "                pop!(Main.__JUTUL_WEB_FIGS__, _victim))\n"
         "            try\n"
         "                Main.Bonito.delete_route!(Main.__JUTUL_WEB_SERVER__, _victim)\n"
         "            catch\n"
@@ -583,8 +587,8 @@ def web_live_call(
         f'    Bonito.route!(Main.__JUTUL_WEB_SERVER__, raw"{route}" => Bonito.App(() ->\n'
         # A later plot can change the global screen config before this route is
         # opened or reloaded. Bind resizing to the served figure itself.
-        "        Bonito.DOM.div(WGLMakie.WithConfig(\n"
-        f'            Main.__JUTUL_WEB_FIGS__[raw"{route}"]; resize_to = :parent);\n'
+        "        Bonito.DOM.div(\n"
+        f'            Main.__JUTUL_WEB_FIGS__[raw"{route}"];\n'
         f'            style = "{_WRAP_STYLE}")))\n'
         + (_poster_block(png_path, html_fallback=html_path) if poster else "")
         + '    "ok"\n'
@@ -685,9 +689,10 @@ def web_recapture_call(*, slot: str, png_path: Path) -> str:
         "        local _figs = isdefined(Main, :__JUTUL_WEB_FIGS__) ?"
         " Main.__JUTUL_WEB_FIGS__ : Dict{String,Any}()\n"
         f"{resolve}"
-        "        local _fig = _figs[_route]\n"
+        "        local _fig = _figs[_route].fig\n"
         "        local _screen = nothing\n"
-        "        for s in _fig.scene.current_screens\n"
+        "        for view in Iterators.reverse(_fig.scene.current_screens)\n"
+        "            local s = Main.JutulAgent.JutulAgentPlots.backend_screen(view)\n"
         "            if s isa Main.WGLMakie.Screen && isopen(s)\n"
         "                _screen = s\n"
         "                break\n"
@@ -735,6 +740,7 @@ def resize_web_fig_call(
         "begin\n"
         "    local _fig = isdefined(Main, :__JUTUL_WEB_FIGS__) ?\n"
         f'        get(Main.__JUTUL_WEB_FIGS__, raw"{route}", nothing) : nothing\n'
+        "    _fig = _fig === nothing ? nothing : _fig.fig\n"
         "    if _fig === nothing\n"
         '        "missing"\n'
         "    else\n"
@@ -761,10 +767,8 @@ def resize_web_fig_call(
 def close_web_plots_call(slot: str) -> str:
     """Julia to release live web figures: one slot's route, or all when empty.
 
-    The web counterpart of ``close_windows_call``, which closes native windows and
-    so has nothing to close on this surface. Unrouting the figure and dropping it
-    from the registry is what lets the kernel reclaim what a live figure holds. A
-    tab already open in the browser keeps showing its last frame until reloaded.
+    Stop the figure's managed browser views before dropping its route and registry
+    entry, so their polling tasks cannot retain an otherwise released figure.
     """
 
     routes = f'[raw"{viz_route(slot)}"]' if slot else "collect(keys(Main.__JUTUL_WEB_FIGS__))"
@@ -774,7 +778,8 @@ def close_web_plots_call(slot: str) -> str:
         # never plotted; a server that exists is also what proves Bonito is loaded.
         "    if isdefined(Main, :__JUTUL_WEB_SERVER__)\n"
         f"        for r in {routes}\n"
-        "            delete!(Main.__JUTUL_WEB_FIGS__, r)\n"
+        "            local view = pop!(Main.__JUTUL_WEB_FIGS__, r, nothing)\n"
+        "            view === nothing || JutulAgent.JutulAgentWebViews.release!(view)\n"
         "            filter!(!=(r), Main.__JUTUL_WEB_ORDER__)\n"
         "            try\n"
         "                Main.Bonito.delete_route!(Main.__JUTUL_WEB_SERVER__, r)\n"

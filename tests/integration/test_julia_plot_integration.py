@@ -188,6 +188,54 @@ nothing
         assert not restored.error, restored.error
 
 
+@pytest.mark.skipif(
+    not _julia_available() or not _wgl_ready(JUTULDARCY_ENV),
+    reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
+)
+async def test_web_view_lifetimes_and_route_release(plot_display, tmp_path, monkeypatch) -> None:
+    config = _plot_kernel_config(plot_display)
+    async with JuliaKernel(config) as julia:
+        loaded = await julia.eval("using JutulAgent")
+        assert not loaded.error, loaded.error
+        source = Path(__file__).with_name("web_views.jl")
+        checked = await julia.eval(f'include(raw"{source.as_posix()}")')
+        assert not checked.error, checked.error
+
+        session = _session(julia, tmp_path, "web-lifetimes")
+        tool = make_plot_julia_tool(session, surface="web")
+        code = "fig = WGLMakie.Figure(); WGLMakie.lines!(WGLMakie.Axis(fig[1, 1]), 1:3); fig"
+        result = await _plot(tool, code, "same")
+        assert "served a live interactive plot" in result, result
+        saved = await julia.eval('old_view = Main.__JUTUL_WEB_FIGS__["/viz/same"]; nothing')
+        assert not saved.error, saved.error
+        result = await _plot(tool, code, "same")
+        assert "served a live interactive plot" in result, result
+        replaced = await julia.eval(
+            '@assert old_view.released; @assert !Main.__JUTUL_WEB_FIGS__["/viz/same"].released'
+        )
+        assert not replaced.error, replaced.error
+
+        # Exercise the same eviction branch without creating 25 large figures.
+        monkeypatch.setattr(jl, "WEB_LIVE_ROUTE_CAP", 1)
+        saved = await julia.eval('old_view = Main.__JUTUL_WEB_FIGS__["/viz/same"]; nothing')
+        assert not saved.error, saved.error
+        result = await _plot(tool, code, "next")
+        assert "served a live interactive plot" in result, result
+        evicted = await julia.eval(
+            '@assert old_view.released; @assert !haskey(Main.__JUTUL_WEB_FIGS__, "/viz/same");'
+            ' old_view = Main.__JUTUL_WEB_FIGS__["/viz/next"]; nothing'
+        )
+        assert not evicted.error, evicted.error
+        closed = await julia.eval(jl.close_web_plots_call("next"))
+        assert not closed.error, closed.error
+        checked = await julia.eval(
+            "@assert old_view.released; @assert isempty(Main.__JUTUL_WEB_FIGS__);"
+            " @assert isempty(Main.__JUTUL_WEB_ORDER__)"
+        )
+        assert not checked.error, checked.error
+        session.finalize()
+
+
 # Every Makie return shape that `_as_figure` must resolve, built from plain Makie so
 # the test stays stable across simulator-package changes. `nonfig` is the negative
 # case: a non-figure value must NOT capture the (now stale) current figure.
