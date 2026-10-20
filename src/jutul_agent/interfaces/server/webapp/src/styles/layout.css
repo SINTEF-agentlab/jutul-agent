@@ -210,9 +210,18 @@
   text-overflow: ellipsis;
 }
 .sidebar-update {
+  display: block;
+  max-width: 100%;
   margin-top: 0.15rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
   color: var(--accent);
-  cursor: help;
+  cursor: pointer;
+}
+.sidebar-update:hover {
+  text-decoration: underline;
 }
 .history-empty {
   color: var(--muted);
@@ -632,4 +641,60 @@ body.canvas-resizing iframe {
   margin: 0.8rem 0 0;
   color: #b91c1c;
   font-size: 0.85rem;
+}
+
+/* --- Update dialog --------------------------------------------------------- */
+
+.update-dialog {
+  width: 620px;
+}
+.update-text {
+  margin: 0.5rem 0;
+}
+.update-note {
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 9px;
+  background: var(--accent-soft);
+}
+.update-sub {
+  margin: 0.8rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.update-sysimage {
+  margin: 0.8rem 0 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.update-sysimage legend {
+  padding: 0 0.3rem;
+  font-size: 0.85rem;
+}
+.update-sysimage label {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  font-size: 0.85rem;
+}
+.update-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+}
+.update-error {
+  margin: 0.4rem 0;
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
+.update-log {
+  max-height: 45vh;
+  min-height: 8rem;
+  overflow: auto;
+  margin: 0;
 }

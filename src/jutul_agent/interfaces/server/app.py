@@ -20,7 +20,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from html import escape
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import quote, urlparse
 
 from fastapi import (
@@ -54,9 +54,15 @@ from jutul_agent.agent.capabilities import (
 )
 from jutul_agent.interfaces.server import protocol
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
+from jutul_agent.interfaces.server.updates import (
+    BOOT_ID,
+    Updater,
+    UpdateRefused,
+    request_is_local,
+)
 from jutul_agent.preview import TOOL_STREAM_RENDER_INTERVAL, TOOL_STREAM_TAIL_CAP
 from jutul_agent.session_host import SessionHost
-from jutul_agent.simulators.env_setup import EnvSetupError
+from jutul_agent.simulators.env_setup import EnvOutdatedError, EnvSetupError
 from jutul_agent.sysimage import SysimageUnavailable
 from jutul_agent.trace import schema
 
@@ -305,6 +311,13 @@ class CredentialRequest(BaseModel):
     value: str
 
 
+class UpdateRequest(BaseModel):
+    # Upgrade jutul-agent itself first, or only update the Julia environment.
+    install: bool = False
+    # What to do with this folder's system image, if it has one.
+    sysimage: Literal["rebuild", "off"] | None = None
+
+
 def _host_api_url(value: str | None) -> str | None:
     """Validate the host application's API address, or raise a 400.
 
@@ -399,6 +412,7 @@ def create_app(
     ephemeral_memory: bool = False,
     sysimage: bool | None = None,
     base_path: str = "",
+    updater: Updater | None = None,
 ) -> FastAPI:
     # The launch-wide knobs (folder-fixed) ride in the default manager's host
     # factory; an injected manager (tests) brings its own. The model is a default
@@ -435,6 +449,12 @@ def create_app(
     )
     app.state.manager = manager
     app.state.base_path = base
+    if updater is None:
+        from jutul_agent.paths import workspace_root
+
+        # Embedded or under test: report updates, but never run one.
+        updater = Updater(workspace_root(), local=False)
+    app.state.updater = updater
 
     @app.get("/models")
     def list_models() -> dict[str, Any]:
@@ -553,7 +573,36 @@ def create_app(
             "jutul_agent": __version__.split("+")[0],
             "update": pending_update() if is_enabled() else None,
             "simulator": simulator,
+            # The folder's Julia environment is older than this version supports.
+            "env_update": updater.env_update_needed(),
+            # Changes when the server restarts, e.g. after an update.
+            "boot": BOOT_ID,
         }
+
+    @app.get("/update")
+    def update_status(since: int = 0) -> dict[str, Any]:
+        """What an update would do here, and the progress of one that is running.
+
+        ``since`` skips output lines the page already has.
+        """
+        return updater.status(since=since)
+
+    @app.post("/update", status_code=202)
+    async def start_update(req: UpdateRequest, request: Request) -> dict[str, Any]:
+        """Start updating jutul-agent and this folder's Julia environment.
+
+        Only this computer's own page may ask: the update runs commands and restarts
+        the server. See ``interfaces/server/updates.py``.
+        """
+        if not request_is_local(request.headers):
+            raise HTTPException(
+                status_code=403, detail="updates are only accepted from this computer"
+            )
+        try:
+            await updater.start(manager, install=req.install, sysimage=req.sysimage)
+        except UpdateRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return updater.status()
 
     @app.get("/simulators")
     def list_simulators() -> dict[str, Any]:
@@ -715,8 +764,31 @@ def create_app(
         )
         return {"messages": replay_events(events, session_id, live=live, base_path=bp)}
 
+    def _refuse_while_updating() -> None:
+        if updater.running:
+            raise HTTPException(
+                status_code=409,
+                detail="jutul-agent is updating. Start a session when it has finished.",
+            )
+
+    def _env_conflict(exc: EnvSetupError | SysimageUnavailable) -> HTTPException:
+        """A 409 for an environment a session can't start in, saying how to fix it."""
+        if isinstance(exc, EnvOutdatedError) and updater.local:
+            found = ", ".join(f"{pkg} {ver}" for pkg, ver, _ in exc.outdated)
+            needed = ", ".join(f"{pkg} {spec}" for pkg, _, spec in exc.outdated)
+            return HTTPException(
+                status_code=409,
+                detail=(
+                    f"this folder's Julia environment has {found}, but this version of "
+                    f"jutul-agent requires {needed}. Update it with “Update environment” "
+                    "at the foot of the sidebar."
+                ),
+            )
+        return HTTPException(status_code=409, detail=str(exc))
+
     @app.post("/sessions")
     async def create_session(req: CreateSessionRequest) -> dict[str, str]:
+        _refuse_while_updating()
         sim = _bound_sim(req.sim)
         # Refuse before standing up the kernel if the model has no key: the UI
         # shows a key prompt on this structured error, then retries the create.
@@ -738,8 +810,8 @@ def create_app(
             # The CLI checked the prepared environment before starting the server,
             # so reaching here normally means it moved while the server was up (a
             # package was installed or edited, or jutul-agent itself was upgraded).
-            # The message explains itself; pass it through as-is.
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            # The message explains itself.
+            raise _env_conflict(exc) from exc
         # The agent already carries the selection (it was built with the layer
         # above); this records it on the session, so it is persisted for a later
         # resume, visible in the trace, and readable by capability tools. The API
@@ -756,6 +828,7 @@ def create_app(
     async def resume_session(session_id: str, req: ResumeSessionRequest) -> dict[str, Any]:
         if not _is_valid_session_id(session_id):
             raise HTTPException(status_code=404, detail="no such session")
+        _refuse_while_updating()
         # Validated before anything is reattached or rebuilt, so a bad address
         # cannot leave a session half-resumed.
         host_api = _host_api_url(req.host_api)
@@ -819,7 +892,7 @@ def create_app(
             # that an image or the environment went stale while the server was
             # running, and that is an actionable launch conflict rather than an
             # internal server error the page would wait on.
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise _env_conflict(exc) from exc
         # The resumed session read its own stored selection on the way up. Defer to
         # that when the request carried none: a front end running outside the host
         # application has nothing to say about the selection, and adopting its

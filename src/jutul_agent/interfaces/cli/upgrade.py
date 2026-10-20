@@ -58,6 +58,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only update this folder's Julia environment; don't upgrade jutul-agent itself.",
     )
+    parser.add_argument(
+        "--sysimage",
+        choices=("rebuild", "off"),
+        help=(
+            "When this folder starts from a system image, rebuild it after the update "
+            "or stop using one. Asked when run from a terminal; otherwise it is rebuilt."
+        ),
+    )
     add_workspace_flags(parser)
     return parser
 
@@ -65,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run(args: argparse.Namespace) -> int:
     ws = workspace_root()
     if args.env_only:
-        return update_workspace_env(ws)
+        return update_workspace_env(ws, sysimage=args.sysimage)
 
     info = install_info()
     latest = refresh_cache(force=True)  # synchronous, bypasses the cache TTL
@@ -105,7 +113,7 @@ def run(args: argparse.Namespace) -> int:
         )
     elif latest is not None:
         print("\nYou're on the latest version.")
-    return update_workspace_env(ws)
+    return update_workspace_env(ws, sysimage=args.sysimage)
 
 
 # ---------------------------------------------------------------------------
@@ -164,8 +172,12 @@ def _report_workspace_env(ws: Path) -> None:
         print("This folder's Julia environment is up to date.")
 
 
-def update_workspace_env(ws: Path) -> int:
-    """Update this folder's Julia environment to what the installed version supports."""
+def update_workspace_env(ws: Path, *, sysimage: str | None = None) -> int:
+    """Update this folder's Julia environment to what the installed version supports.
+
+    ``sysimage`` (``"rebuild"`` or ``"off"``) answers the system image question in
+    advance; see ``decide_sysimage``.
+    """
 
     status = workspace_env_status(ws)
     if status is None:
@@ -178,16 +190,18 @@ def update_workspace_env(ws: Path) -> int:
     found, needed = _describe(outdated)
     # Flush before Julia writes to the same output, or a log shows this line last.
     print(f"This folder's Julia environment has {found}; updating it to {needed}.", flush=True)
-    rebuild_image = decide_sysimage(ws, interactive=sys.stdin.isatty())
+    rebuild_image = decide_sysimage(ws, interactive=sys.stdin.isatty(), choice=sysimage)
     return 0 if upgrade_workspace(adapter, ws, project, sim, sysimage=rebuild_image) else 1
 
 
-def decide_sysimage(ws: Path, *, interactive: bool) -> bool:
+def decide_sysimage(ws: Path, *, interactive: bool, choice: str | None = None) -> bool:
     """Whether to rebuild this folder's system image after updating its environment.
 
     The image is built from the old packages, so every launch would refuse it until
-    it is rebuilt. Rebuilding takes a while, so a terminal user chooses between that
-    and starting without an image; otherwise it is rebuilt, as ``init`` would.
+    it is rebuilt. Rebuilding takes a while, so the user chooses between that and
+    starting without an image: up front with ``choice`` (``"rebuild"`` or ``"off"``,
+    as the web UI does), or when asked in a terminal. Otherwise it is rebuilt, as
+    ``init`` would.
     """
 
     from jutul_agent import sysimage as sysimage_mod
@@ -197,25 +211,28 @@ def decide_sysimage(ws: Path, *, interactive: bool) -> bool:
     config = load_workspace_config(ws)
     if not config.sysimage:
         return False
-    if not interactive:
-        print(
-            f"This folder starts from a system image, so it will be rebuilt for the new "
-            f"packages (about {TYPICAL_BUILD_MINUTES} minutes).",
-            flush=True,
+    asked = choice is None and interactive
+    if asked:
+        rebuild = _ask(
+            f"This folder starts Julia from a system image, which must be rebuilt for the "
+            f"new packages (about {TYPICAL_BUILD_MINUTES} minutes). Rebuild it? If not, "
+            "the folder stops using one; build it later with `jutul-agent sysimage build`. "
+            "[Y/n] "
         )
-        return True
-    answer = _ask(
-        f"This folder starts Julia from a system image, which must be rebuilt for the new "
-        f"packages (about {TYPICAL_BUILD_MINUTES} minutes). Rebuild it? If not, the folder "
-        "stops using one; build it later with `jutul-agent sysimage build`. [Y/n] "
-    )
-    if answer:
+        choice = "rebuild" if rebuild else "off"
+    if choice != "off":
+        if not asked:
+            print(
+                f"This folder starts from a system image, so it will be rebuilt for the new "
+                f"packages (about {TYPICAL_BUILD_MINUTES} minutes).",
+                flush=True,
+            )
         return True
     from dataclasses import replace
 
     sysimage_mod.clear(ws)
     write_workspace_config(replace(config, sysimage=False), workspace=ws)
-    print("This folder no longer starts from a system image.")
+    print("This folder no longer starts from a system image.", flush=True)
     return False
 
 

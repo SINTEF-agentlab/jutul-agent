@@ -117,7 +117,7 @@ def test_unknown_install_still_updates_the_environment(monkeypatch, capsys) -> N
     monkeypatch.setattr(upgrade_cmd, "install_info", lambda: InstallInfo("unknown"))
     monkeypatch.setattr(upgrade_cmd, "refresh_cache", lambda force=False: "9.9.9")
     steps = []
-    monkeypatch.setattr(upgrade_cmd, "update_workspace_env", lambda ws: steps.append(ws) or 0)
+    monkeypatch.setattr(upgrade_cmd, "update_workspace_env", lambda ws, **_k: steps.append(ws) or 0)
 
     code = upgrade_cmd.run(_args(check=False))
     assert code == 0
@@ -129,7 +129,7 @@ def test_up_to_date_install_updates_the_environment(monkeypatch, capsys) -> None
     monkeypatch.setattr(upgrade_cmd, "install_info", lambda: InstallInfo("registry"))
     monkeypatch.setattr(upgrade_cmd, "refresh_cache", lambda force=False: "0.0.0")
     steps = []
-    monkeypatch.setattr(upgrade_cmd, "update_workspace_env", lambda ws: steps.append(ws) or 0)
+    monkeypatch.setattr(upgrade_cmd, "update_workspace_env", lambda ws, **_k: steps.append(ws) or 0)
 
     assert upgrade_cmd.run(_args(check=False)) == 0
     assert "latest version" in capsys.readouterr().out

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -222,11 +223,28 @@ def run(args: argparse.Namespace) -> int:
     model = args.model or config.model
     add_dirs = resolve_add_dirs(args.add_dir, ws)
 
-    from jutul_agent.update_check import notify_at_launch
+    from jutul_agent.interfaces.server.updates import (
+        RESTARTED_ENV_VAR,
+        Updater,
+        is_loopback_host,
+        restart_server,
+    )
 
-    notify_at_launch()
-    if not _env_versions_ok(args, ws, sim=sim) or not _sysimage_ready(args, ws, config, sim=sim):
-        return 1
+    if os.environ.pop(RESTARTED_ENV_VAR, None) is not None:
+        # Restarted by an update from the browser, which is waiting for this server:
+        # start, and let the page report anything the update left to fix.
+        print("Restarted after updating.", file=sys.stderr)
+        if not _sysimage_ready(args, ws, config, sim=sim):
+            print("Starting without the system image.", file=sys.stderr)
+            args.sysimage = False
+    else:
+        from jutul_agent.update_check import notify_at_launch
+
+        notify_at_launch()
+        if not _env_versions_ok(args, ws, sim=sim) or not _sysimage_ready(
+            args, ws, config, sim=sim
+        ):
+            return 1
 
     print(
         f"jutul-agent {__version__.split('+')[0]} server on http://{args.host}:{args.port} "
@@ -238,19 +256,26 @@ def run(args: argparse.Namespace) -> int:
         + ")",
         file=sys.stderr,
     )
-    uvicorn.run(
-        create_app(
-            default_sim=sim,
-            default_approval_mode=approval_mode,
-            default_model=model,
-            julia_project=args.julia_project,
-            threads=args.threads,
-            add_dirs=add_dirs,
-            ephemeral_memory=args.ephemeral_memory,
-            sysimage=args.sysimage,
-            base_path=args.base_path,
-        ),
-        host=args.host,
-        port=args.port,
+    updater = Updater(ws, local=is_loopback_host(args.host))
+    app = create_app(
+        default_sim=sim,
+        default_approval_mode=approval_mode,
+        default_model=model,
+        julia_project=args.julia_project,
+        threads=args.threads,
+        add_dirs=add_dirs,
+        ephemeral_memory=args.ephemeral_memory,
+        sysimage=args.sysimage,
+        base_path=args.base_path,
+        updater=updater,
     )
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=args.host, port=args.port, timeout_graceful_shutdown=5)
+    )
+    updater.bind_server(lambda: setattr(server, "should_exit", True))
+    server.run()
+    if not server.started:  # the port was taken, say; uvicorn said why
+        return 1
+    if updater.restart_requested:
+        restart_server()
     return 0

@@ -298,6 +298,16 @@ describe("version line", () => {
     act(() => store.setState({ versions: { jutul_agent: "0.2.1", update: "0.2.2", simulator: null } }));
     const update = container.querySelector(".sidebar-update");
     expect(update?.textContent).toBe("jutul-agent 0.2.2 available");
-    expect(update?.getAttribute("title")).toContain("jutul-agent upgrade");
+    expect(update?.tagName).toBe("BUTTON"); // opens the update dialog
+  });
+
+  it("offers the environment update when only that is due", () => {
+    const { store, container } = renderWithStore(<Sidebar collapsed={false} />);
+    act(() =>
+      store.setState({
+        versions: { jutul_agent: "0.2.1", update: null, simulator: null, env_update: true },
+      }),
+    );
+    expect(container.querySelector(".sidebar-update")?.textContent).toBe("Update environment");
   });
 });
