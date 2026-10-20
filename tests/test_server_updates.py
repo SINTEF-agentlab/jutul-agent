@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-import time
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -121,6 +121,15 @@ class _Manager:
         self.closed = True
 
 
+def _join_update_thread() -> None:
+    # The state flips to "restarting" before the server is stopped, so wait for
+    # the whole job rather than for the state.
+    for thread in threading.enumerate():
+        if thread.name == "jutul-agent-update":
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+
+
 @pytest.fixture
 def run_update(monkeypatch):
     """Start an update whose commands exit with ``codes``, and wait for it.
@@ -140,9 +149,7 @@ def run_update(monkeypatch):
         updater._version_at_start = versions[0]
         monkeypatch.setattr(updates, "_installed_version", lambda: versions[1])
         asyncio.run(updater.start(manager, install=install, sysimage=sysimage))
-        deadline = time.monotonic() + 5
-        while updater._job.state == "running" and time.monotonic() < deadline:
-            time.sleep(0.01)
+        _join_update_thread()
         return ran
 
     return run
@@ -223,9 +230,7 @@ def test_an_unexpected_error_ends_the_update(tmp_path, monkeypatch) -> None:
     updater = _updater(tmp_path)
     monkeypatch.setattr(updater, "_step", broken_step)
     asyncio.run(updater.start(_Manager(), install=False, sysimage=None))
-    deadline = time.monotonic() + 5
-    while updater.running and time.monotonic() < deadline:
-        time.sleep(0.01)
+    _join_update_thread()
     assert updater._job.state == "failed" and "boom" in updater._job.error
 
 
