@@ -200,6 +200,28 @@ def test_disk_resume_reports_stale_sysimage_as_conflict(tmp_path: Path) -> None:
     assert "--no-sysimage" in response.json()["detail"]
 
 
+@pytest.mark.parametrize("endpoint", ["create", "resume"])
+def test_outdated_environment_is_a_conflict_not_a_server_error(
+    tmp_path: Path, endpoint: str
+) -> None:
+    """The page shows the explanation instead of waiting on a failed request."""
+    from jutul_agent.simulators.env_setup import EnvSetupError
+
+    async def outdated_factory(**_kwargs) -> SessionHost:
+        raise EnvSetupError("has JutulDarcy 0.3.12, but requires JutulDarcy 0.4")
+
+    manager = SessionManager(host_factory=outdated_factory)
+    app = create_app(manager, default_sim="jutuldarcy", default_model="ollama:qwen3")
+    with TestClient(app) as client:
+        if endpoint == "create":
+            response = client.post("/sessions", json={})
+        else:
+            response = client.post(f"/sessions/{default_session_id()}/resume", json={})
+
+    assert response.status_code == 409
+    assert "requires JutulDarcy 0.4" in response.json()["detail"]
+
+
 @pytest.mark.parametrize(
     ("model", "env_var"),
     [

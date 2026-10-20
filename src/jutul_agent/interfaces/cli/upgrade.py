@@ -1,8 +1,13 @@
-"""``jutul-agent upgrade``: update the install, the right way for how it was installed.
+"""``jutul-agent upgrade``: bring the install and this folder's Julia env up to date.
 
-One command users can run to get the latest, instead of remembering whether they
-did ``uv tool install`` or a dev checkout. ``--check`` just reports the latest
-without changing anything.
+Two things can fall behind. The install: a newer jutul-agent may be released. The
+workspace: its Julia environment keeps the simulator versions it resolved, so after
+an upgrade it can be older than the bundled skills expect. One command handles both,
+in order: upgrade jutul-agent the right way for how it was installed, then update
+the current folder's Julia environment to what that version supports.
+
+``--check`` reports both without changing anything; ``--env-only`` skips the first
+step (also how a freshly upgraded install is asked to do the second).
 """
 
 from __future__ import annotations
@@ -12,83 +17,246 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from jutul_agent import __version__
 from jutul_agent.interfaces.cli._helpers import add_workspace_flags
+from jutul_agent.paths import workspace_root
 from jutul_agent.update_check import (
-    InstallInfo,
     install_info,
+    is_newer,
     refresh_cache,
     upgrade_command,
 )
 
-# Printed after a successful upgrade: a new template ships with the package, but
-# existing workspace envs are only rebuilt from it on request.
-_REBUILD_HINT = (
-    "If a workspace was set up with an older version, rebuild its Julia env with "
-    "`jutul-agent init --sim <name> --force`."
+# The Windows upgrade finishes after this process exits, so the new version updates
+# the workspace when it next launches there instead.
+_NEXT_LAUNCH_HINT = (
+    "A workspace whose Julia environment the new version needs updated offers to do "
+    "it the next time you launch there (or run `jutul-agent upgrade --env-only`)."
 )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jutul-agent upgrade",
-        description="Upgrade jutul-agent to the latest version.",
+        description=(
+            "Upgrade jutul-agent to the latest release, then bring this folder's "
+            "Julia environment up to the simulator versions it supports."
+        ),
     )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Only report the latest available version; don't upgrade.",
+        help=(
+            "Report the installed and latest versions and this folder's environment; "
+            "change nothing."
+        ),
+    )
+    parser.add_argument(
+        "--env-only",
+        action="store_true",
+        help="Only update this folder's Julia environment; don't upgrade jutul-agent itself.",
     )
     add_workspace_flags(parser)
     return parser
 
 
 def run(args: argparse.Namespace) -> int:
+    ws = workspace_root()
+    if args.env_only:
+        return update_workspace_env(ws)
+
     info = install_info()
     latest = refresh_cache(force=True)  # synchronous, bypasses the cache TTL
-
     print(f"Installed: {__version__}")
-    if latest is not None:
-        print(f"Latest:    {latest}")
-    else:
-        print("Latest:    unknown (offline, or no release published yet)")
+    print(f"Latest:    {latest or 'unknown (offline, or no release published yet)'}")
+    newer = latest is not None and is_newer(latest)
 
     if args.check:
-        return _report_check(info, latest)
+        if newer:
+            print(f"\nA newer version is available. Upgrade with `{upgrade_command(info)}`.")
+        elif latest is not None:
+            print("\nYou're on the latest version.")
+        _report_workspace_env(ws)
+        return 0
 
-    if info.method == "editable":
-        return _report_editable(info)
-    if info.method == "unknown":
+    if newer and info.method not in {"editable", "unknown"}:
+        # Upgrade the install, then let the *new* version update the environment:
+        # this process still runs the old code and the old simulator templates.
+        code = _run_uv_tool_upgrade()
+        if code != 0 or os.name == "nt":
+            return code
+        return _env_step_with_new_install(ws)
+
+    if newer and info.method == "editable":
+        where = f" (in {info.location})" if info.location else ""
         print(
-            "\njutul-agent isn't installed as a managed package, so there's nothing "
-            "to upgrade here. Install it with `uv tool install jutul-agent` to get "
-            "`jutul-agent upgrade`.",
+            f"\nThis is a development checkout{where}. Update it with "
+            "`git pull && uv sync`, then run `jutul-agent upgrade` again to update "
+            "this folder's Julia environment."
+        )
+        return 0
+    if newer:
+        print(
+            "\njutul-agent isn't installed as a managed package, so it can't upgrade "
+            "itself. Install it with `uv tool install jutul-agent`.",
             file=sys.stderr,
         )
-        return 1
-    return _run_uv_tool_upgrade()
-
-
-def _report_check(info: InstallInfo, latest: str | None) -> int:
-    from jutul_agent.update_check import is_newer
-
-    if latest is not None and is_newer(latest):
-        print(f"\nA newer version is available. Upgrade with `{upgrade_command(info)}`.")
     elif latest is not None:
         print("\nYou're on the latest version.")
-    return 0
+    return update_workspace_env(ws)
 
 
-def _report_editable(info: InstallInfo) -> int:
-    where = f" (in {info.location})" if info.location else ""
-    print(
-        f"\nThis is an editable/dev checkout{where}. Upgrade it with:\n"
-        "    git pull && uv sync\n"
-        f"{_REBUILD_HINT}",
-        file=sys.stderr,
+# ---------------------------------------------------------------------------
+# The workspace's Julia environment.
+
+
+def workspace_env_status(ws: Path):
+    """``(adapter, project, sim, outdated)`` for a managed workspace env, else ``None``.
+
+    ``outdated`` lists ``(package, resolved, required)`` for each package the env
+    resolved outside what the installed jutul-agent supports. A folder that is not a
+    workspace, or whose Julia project the user owns, has nothing to update here.
+    """
+
+    from jutul_agent.interfaces.cli._helpers import known_packages_map
+    from jutul_agent.simulators import registry
+    from jutul_agent.workspace import (
+        auto_detect_simulator,
+        load_workspace_config,
+        outdated_env_packages,
+        resolve_julia_project,
+        user_owns_root_project,
     )
-    return 0
+
+    project = resolve_julia_project(ws)
+    if user_owns_root_project(ws) or not (project / "Project.toml").exists():
+        return None
+    sim = load_workspace_config(ws).simulator or auto_detect_simulator(known_packages_map(), ws)
+    if sim is None:
+        return None
+    try:
+        adapter = registry.get(sim)
+    except KeyError:
+        return None
+    return adapter, project, sim, outdated_env_packages(project, adapter.julia_env_template_path)
+
+
+def _describe(outdated) -> tuple[str, str]:
+    found = ", ".join(f"{package} {version}" for package, version, _ in outdated)
+    needed = ", ".join(f"{package} {spec}" for package, _, spec in outdated)
+    return found, needed
+
+
+def _report_workspace_env(ws: Path) -> None:
+    status = workspace_env_status(ws)
+    if status is None:
+        return
+    _, _, _, outdated = status
+    if outdated:
+        found, needed = _describe(outdated)
+        print(
+            f"This folder's Julia environment has {found}; this version needs {needed}. "
+            "Update it with `jutul-agent upgrade`."
+        )
+    else:
+        print("This folder's Julia environment is up to date.")
+
+
+def update_workspace_env(ws: Path) -> int:
+    """Update this folder's Julia environment to what the installed version supports."""
+
+    status = workspace_env_status(ws)
+    if status is None:
+        print("No jutul-agent managed Julia environment in this folder, so nothing else to update.")
+        return 0
+    adapter, project, sim, outdated = status
+    if not outdated:
+        print("This folder's Julia environment is up to date.")
+        return 0
+    found, needed = _describe(outdated)
+    # Flush before Julia writes to the same output, or a log shows this line last.
+    print(f"This folder's Julia environment has {found}; updating it to {needed}.", flush=True)
+    rebuild_image = decide_sysimage(ws, interactive=sys.stdin.isatty())
+    return 0 if upgrade_workspace(adapter, ws, project, sim, sysimage=rebuild_image) else 1
+
+
+def decide_sysimage(ws: Path, *, interactive: bool) -> bool:
+    """Whether to rebuild this folder's system image after updating its environment.
+
+    The image is built from the old packages, so every launch would refuse it until
+    it is rebuilt. Rebuilding takes a while, so a terminal user chooses between that
+    and starting without an image; otherwise it is rebuilt, as ``init`` would.
+    """
+
+    from jutul_agent import sysimage as sysimage_mod
+    from jutul_agent.sysimage_build import TYPICAL_BUILD_MINUTES
+    from jutul_agent.workspace import load_workspace_config, write_workspace_config
+
+    config = load_workspace_config(ws)
+    if not config.sysimage:
+        return False
+    if not interactive:
+        print(
+            f"This folder starts from a system image, so it will be rebuilt for the new "
+            f"packages (about {TYPICAL_BUILD_MINUTES} minutes).",
+            flush=True,
+        )
+        return True
+    answer = _ask(
+        f"This folder starts Julia from a system image, which must be rebuilt for the new "
+        f"packages (about {TYPICAL_BUILD_MINUTES} minutes). Rebuild it? If not, the folder "
+        "stops using one; build it later with `jutul-agent sysimage build`. [Y/n] "
+    )
+    if answer:
+        return True
+    from dataclasses import replace
+
+    sysimage_mod.clear(ws)
+    write_workspace_config(replace(config, sysimage=False), workspace=ws)
+    print("This folder no longer starts from a system image.")
+    return False
+
+
+def _ask(prompt: str) -> bool:
+    try:
+        return input(prompt).strip().lower() in ("", "y", "yes")
+    except EOFError:
+        return False
+
+
+def upgrade_workspace(adapter, ws: Path, project: Path, sim: str, *, sysimage: bool) -> bool:
+    """Update the workspace env in place, then rebuild its system image if asked to."""
+
+    from jutul_agent.interfaces.cli.init import _build_sysimage
+    from jutul_agent.simulators.env_setup import EnvSetupError, upgrade_env
+    from jutul_agent.workspace import load_workspace_config
+
+    try:
+        upgrade_env(adapter, ws, project, sim)
+    except EnvSetupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return False
+    print(f"Updated the {adapter.display_name} environment at {project}.")
+    return not sysimage or _build_sysimage(adapter, ws, project, load_workspace_config(ws))
+
+
+def _env_step_with_new_install(ws: Path) -> int:
+    """Run the environment update with the newly installed jutul-agent."""
+
+    # The launcher this process started from: uv has just upgraded it in place.
+    # Looking it up on PATH instead could find another install entirely.
+    launcher = Path(sys.argv[0])
+    exe = str(launcher) if launcher.name.startswith("jutul-agent") and launcher.exists() else None
+    exe = exe or shutil.which("jutul-agent")
+    if exe is None:
+        print(f"\n{_NEXT_LAUNCH_HINT}")
+        return 0
+    print("\n$ jutul-agent upgrade --env-only", flush=True)
+    return subprocess.run(
+        [exe, "upgrade", "--env-only", "--workspace", str(ws)], check=False
+    ).returncode
 
 
 def _run_uv_tool_upgrade() -> int:
@@ -112,9 +280,7 @@ def _run_uv_tool_upgrade() -> int:
             f"\nerror: upgrade failed (uv exited {result.returncode}).",
             file=sys.stderr,
         )
-        return result.returncode
-    print(f"\n{_REBUILD_HINT}")
-    return 0
+    return result.returncode
 
 
 def _upgrade_detached_windows(argv: list[str]) -> int:
@@ -141,6 +307,6 @@ def _upgrade_detached_windows(argv: list[str]) -> int:
     print(
         "\nUpgrading in a new window. Windows can't replace jutul-agent's own "
         "running executable, so this process will exit to release it — reopen "
-        f"jutul-agent once the other window finishes.\n{_REBUILD_HINT}"
+        f"jutul-agent once the other window finishes.\n{_NEXT_LAUNCH_HINT}"
     )
     return 0

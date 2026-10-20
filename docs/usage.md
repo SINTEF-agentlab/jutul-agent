@@ -60,8 +60,9 @@ builds what's missing (the ~minutes wait moves to first use). `--source-path`
 dev-links the simulator to a local checkout the agent can read and edit at its
 real path (a dev checkout, so it is writable, unlike a registry install in the
 shared depot). This overrides simulator compat only in managed envs.
-`--force` rebuilds the env from the template, the standard fix
-after upgrading jutul-agent. `setup` is an alias for `init`. If you skip `init`
+`--force` rebuilds the env from the template, discarding packages added to it;
+`jutul-agent upgrade` updates it in place instead (see [Upgrading](#upgrading)).
+`setup` is an alias for `init`. If you skip `init`
 entirely, the first run bootstraps the workspace and auto-detects the simulator
 from a `Project.toml` when it can.
 
@@ -75,12 +76,15 @@ next run.
 jutul-agent is actively developed, so keep it current:
 
 ```sh
-jutul-agent upgrade          # upgrade to the latest
-jutul-agent upgrade --check  # just report the latest vs what's installed
+jutul-agent upgrade          # upgrade jutul-agent, then this folder's Julia environment
+jutul-agent upgrade --check  # just report what's installed, what's latest, and the folder's env
 ```
 
 `upgrade` does the right thing for how you installed: a tool install runs
 `uv tool upgrade jutul-agent`; a dev checkout is told to `git pull && uv sync`.
+Then, run in a workspace, it brings that folder's Julia environment up to the
+simulator versions the installed jutul-agent supports (`--env-only` does just
+this part).
 On Windows the running executable can't replace itself, so the upgrade runs in
 a new console window and jutul-agent exits to release the file; reopen it when
 that window finishes.
@@ -88,13 +92,20 @@ At launch, jutul-agent also prints a one-line notice when a newer version is
 available (a background check, cached for a day; it never delays startup). Turn
 the notice off with `JUTUL_AGENT_NO_UPDATE_CHECK=1`.
 
-An upgrade ships new simulator env templates, but existing workspace envs are
-only rebuilt from them on request. When a workspace's env was built from an
-older template, launch (and `jutul-agent doctor`) say so; rebuild it with:
+An upgrade ships new simulator env templates, but existing workspace envs keep
+the packages they resolved. When a workspace's simulator is older than the
+installed jutul-agent supports, launch refuses to start and, from a terminal,
+offers to update the env in place. To do it yourself:
 
 ```sh
-jutul-agent init --sim <name> --force
+jutul-agent upgrade --env-only        # in place, keeping packages added to the env
+jutul-agent init --sim <name> --force  # from scratch
 ```
+
+If the folder starts from a [system image](sysimage.md), the update also has to
+rebuild it (about 20 minutes); from a terminal you can choose to stop using an
+image instead. Other template changes are reported at launch (and by
+`jutul-agent doctor`) without stopping it.
 
 ## Adding folders
 

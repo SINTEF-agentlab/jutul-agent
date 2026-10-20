@@ -47,7 +47,8 @@ def build_parser(prog: str = "jutul-agent init") -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Replace an existing workspace Julia env with a fresh copy of the "
-            "simulator template (use after upgrading jutul-agent)."
+            "simulator template, discarding packages added to it. To update it in "
+            "place instead, run `jutul-agent upgrade`."
         ),
     )
     # Precompile is on by default: a fresh workspace should be ready for any

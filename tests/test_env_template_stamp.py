@@ -178,3 +178,21 @@ def test_doctor_passes_current_env(tmp_path: Path) -> None:
     report = doctor._Report()
     doctor._check_env_template_current(report, ws, env_dir, sim)
     assert report.worst == doctor.PASS
+
+
+def test_doctor_fails_an_outdated_simulator(tmp_path: Path, capsys) -> None:
+    """The report users paste names the versions and the command that fixes them."""
+    from jutul_agent.interfaces.cli import doctor
+    from jutul_agent.simulators import registry
+
+    ws, env_dir = _managed_env(tmp_path)
+    write_env_template_stamp(env_dir, registry.get("jutuldarcy").julia_env_template_path)
+    (env_dir / "Manifest.toml").write_text(
+        '[[deps.JutulDarcy]]\nversion = "0.3.12"\n', encoding="utf-8"
+    )
+
+    report = doctor._Report()
+    doctor._check_env_template_current(report, ws, env_dir, "jutuldarcy")
+    assert report.worst == doctor.FAIL
+    out = capsys.readouterr().out
+    assert "JutulDarcy 0.3.12" in out and "jutul-agent upgrade" in out

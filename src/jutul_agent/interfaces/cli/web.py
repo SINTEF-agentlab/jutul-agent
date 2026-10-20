@@ -118,6 +118,18 @@ def _resolve_simulator(args: argparse.Namespace) -> str | None:
     return sim
 
 
+def _env_versions_ok(args: argparse.Namespace, ws: Path, *, sim: str) -> bool:
+    """Refuse a workspace env older than this install supports, before binding.
+
+    Without a usable system image the env is prepared per session, so the same
+    check inside that preparation would only fail once the browser is open.
+    """
+    from jutul_agent.interfaces.cli._helpers import env_versions_ok
+    from jutul_agent.simulators import registry
+
+    return env_versions_ok(registry.get(sim), ws, args.julia_project, sim)
+
+
 def _sysimage_ready(
     args: argparse.Namespace, ws: Path, config: WorkspaceConfig, *, sim: str
 ) -> bool:
@@ -209,7 +221,7 @@ def run(args: argparse.Namespace) -> int:
     model = args.model or config.model
     add_dirs = resolve_add_dirs(args.add_dir, ws)
 
-    if not _sysimage_ready(args, ws, config, sim=sim):
+    if not _env_versions_ok(args, ws, sim=sim) or not _sysimage_ready(args, ws, config, sim=sim):
         return 1
 
     print(

@@ -56,6 +56,7 @@ from jutul_agent.interfaces.server import protocol
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
 from jutul_agent.preview import TOOL_STREAM_RENDER_INTERVAL, TOOL_STREAM_TAIL_CAP
 from jutul_agent.session_host import SessionHost
+from jutul_agent.simulators.env_setup import EnvSetupError
 from jutul_agent.sysimage import SysimageUnavailable
 from jutul_agent.trace import schema
 
@@ -703,11 +704,11 @@ def create_app(
             )
         except KeyError as exc:  # unknown simulator
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except SysimageUnavailable as exc:
+        except (SysimageUnavailable, EnvSetupError) as exc:
             # The CLI checked the prepared environment before starting the server,
             # so reaching here normally means it moved while the server was up (a
-            # package was installed or edited). The message explains itself; pass
-            # it through as-is.
+            # package was installed or edited, or jutul-agent itself was upgraded).
+            # The message explains itself; pass it through as-is.
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         # The agent already carries the selection (it was built with the layer
         # above); this records it on the session, so it is persisted for a later
@@ -783,10 +784,11 @@ def create_app(
             )
         except (KeyError, FileNotFoundError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except SysimageUnavailable as exc:
+        except (SysimageUnavailable, EnvSetupError) as exc:
             # Match fresh-session creation: environment preparation can reveal
-            # that an image went stale while the server was running, and that is
-            # an actionable launch conflict rather than an internal server error.
+            # that an image or the environment went stale while the server was
+            # running, and that is an actionable launch conflict rather than an
+            # internal server error the page would wait on.
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         # The resumed session read its own stored selection on the way up. Defer to
         # that when the request carried none: a front end running outside the host

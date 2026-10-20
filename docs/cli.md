@@ -94,7 +94,7 @@ included, so the first session in any interface is fast.
 | `--sim <name>` | Simulator to bootstrap (omit to auto-detect) |
 | `--source-path <path>` | `Pkg.develop` a local checkout of the simulator package (persisted to the workspace config) |
 | `--no-precompile` | Skip the bake — bootstrap config + env only; the first session builds the rest |
-| `--force` | Replace an existing workspace env with a fresh template copy (after upgrading jutul-agent) |
+| `--force` | Replace an existing workspace env with a fresh template copy, discarding packages added to it (to update it in place instead, use `jutul-agent upgrade`) |
 | `--sysimage` | Also build a [system image](sysimage.md) for this folder, and start from it from now on. Adds tens of minutes to `init` |
 
 ## jutul-agent sysimage
@@ -149,20 +149,33 @@ overrides, since those take precedence over the saved one.
 
 ## jutul-agent upgrade
 
-Upgrade jutul-agent to the latest version, doing the right thing for how it
-was installed: a tool install runs `uv tool upgrade jutul-agent`; a dev
-checkout is pointed at `git pull && uv sync`. After upgrading, rebuild any
-workspace env that was set up with an older version
-(`jutul-agent init --sim <name> --force`).
+Bring everything up to date, in two steps:
+
+1. **jutul-agent itself.** If a newer release exists, upgrade it the right way
+   for how it was installed: a tool install runs `uv tool upgrade jutul-agent`;
+   a dev checkout is pointed at `git pull && uv sync`.
+2. **This folder's Julia environment.** A workspace env keeps the simulator
+   versions it resolved, so after an upgrade it can be older than the bundled
+   skills expect. If it is, update it in place to what the (new) version
+   supports, keeping packages added to it, and rebuild the folder's system
+   image if it uses one (from a terminal, you choose between rebuilding it and
+   no longer using one).
 
 ```sh
-jutul-agent upgrade           # upgrade to the latest
-jutul-agent upgrade --check   # report latest vs installed, change nothing
+jutul-agent upgrade             # both steps
+jutul-agent upgrade --check     # report both, change nothing
+jutul-agent upgrade --env-only  # only this folder's Julia environment
 ```
 
 | Option | Meaning |
 |---|---|
-| `--check` | Only report the latest available version; don't upgrade |
+| `--check` | Report the installed and latest versions and this folder's environment; change nothing |
+| `--env-only` | Only update this folder's Julia environment |
+
+Use `jutul-agent init --force` instead to rebuild a workspace's environment
+from scratch. A launch in a workspace whose simulator is older than the
+installed version supports refuses to start, names both versions, and from a
+terminal offers to run the update.
 
 jutul-agent also checks for updates at launch and prints a one-line notice
 when a newer version exists (cached for a day; runs in the background so it

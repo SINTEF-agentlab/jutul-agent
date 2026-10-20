@@ -324,6 +324,85 @@ def ensure_env_template_stamp(env_dir: Path, template_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Simulator version floors (an upgrade must not run against an outdated env).
+
+Version = tuple[int, int, int]
+
+
+def _version(text: str) -> Version | None:
+    """``"0.3.12"`` (or ``"0.4.1-DEV"``) as a comparable tuple, or ``None``."""
+
+    parts = text.split("-")[0].split("+")[0].split(".")
+    if not parts or len(parts) > 3 or not all(p.isdigit() for p in parts):
+        return None
+    numbers = [int(p) for p in parts] + [0] * (3 - len(parts))
+    return numbers[0], numbers[1], numbers[2]
+
+
+def compat_ranges(spec: str) -> list[tuple[Version, Version]] | None:
+    """Half-open ranges of a Julia ``[compat]`` entry, or ``None`` if not understood.
+
+    Handles the caret form the templates use (``"0.4"``, ``"^0.5.4"``, and comma
+    separated unions): the first nonzero component may not change, so ``"0.4"``
+    is ``[0.4.0, 0.5.0)`` and ``"1.2"`` is ``[1.2.0, 2.0.0)``.
+    """
+
+    ranges = []
+    for part in spec.split(","):
+        part = part.strip().removeprefix("^")
+        low = _version(part)
+        if low is None or "-" in part or "+" in part:
+            return None
+        given = [int(p) for p in part.split(".")]
+        bump = next((i for i, n in enumerate(given) if n != 0), len(given) - 1)
+        high = given[: bump + 1]
+        high[bump] += 1
+        high += [0] * (3 - len(high))
+        ranges.append((low, (high[0], high[1], high[2])))
+    return ranges
+
+
+def _manifest_entries(env_dir: Path) -> dict[str, dict]:
+    """Each package's manifest entry, keyed by name (format 1 and 2)."""
+
+    try:
+        data = tomllib.loads((env_dir / "Manifest.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    packages = data.get("deps", data)
+    return {
+        name: entries[0]
+        for name, entries in packages.items()
+        if isinstance(entries, list) and entries and isinstance(entries[0], dict)
+    }
+
+
+def outdated_env_packages(env_dir: Path, template_path: Path) -> list[tuple[str, str, str]]:
+    """Packages ``env_dir`` resolved outside the installed template's ``[compat]``.
+
+    Returns ``(package, resolved version, required compat)`` for each. A package the
+    env has not resolved, or uses from a local checkout (a manifest ``path``), is
+    not checked: the install step handles the first, and the user chose the second.
+    """
+
+    try:
+        compat = tomllib.loads((template_path / "Project.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+    entries = _manifest_entries(env_dir)
+    outdated = []
+    for package, spec in compat.get("compat", {}).items():
+        entry = entries.get(package)
+        ranges = compat_ranges(spec) if isinstance(spec, str) else None
+        if package == "julia" or entry is None or "path" in entry or ranges is None:
+            continue
+        version = _version(str(entry.get("version", "")))
+        if version is not None and not any(low <= version < high for low, high in ranges):
+            outdated.append((package, str(entry["version"]), spec))
+    return outdated
+
+
+# ---------------------------------------------------------------------------
 # Path helpers.
 
 
