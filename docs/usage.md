@@ -89,8 +89,9 @@ On Windows the running executable can't replace itself, so the upgrade runs in
 a new console window and jutul-agent exits to release the file; reopen it when
 that window finishes.
 At launch, jutul-agent also prints a one-line notice when a newer version is
-available (a background check, cached for a day; it never delays startup). Turn
-the notice off with `JUTUL_AGENT_NO_UPDATE_CHECK=1`.
+available (a background check, cached for a day; it never delays startup), and
+the web UI shows the jutul-agent and simulator versions at the foot of the
+sidebar. Turn the check off with `JUTUL_AGENT_NO_UPDATE_CHECK=1`.
 
 An upgrade ships new simulator env templates, but existing workspace envs keep
 the packages they resolved. When a workspace's simulator is older than the

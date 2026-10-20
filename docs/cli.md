@@ -177,9 +177,12 @@ from scratch. A launch in a workspace whose simulator is older than the
 installed version supports refuses to start, names both versions, and from a
 terminal offers to run the update.
 
-jutul-agent also checks for updates at launch and prints a one-line notice
-when a newer version exists (cached for a day; runs in the background so it
-never delays startup). Disable it with `JUTUL_AGENT_NO_UPDATE_CHECK=1`.
+jutul-agent also checks for updates when the web UI and the terminal UI start,
+and prints a one-line notice when a newer version exists (cached for a day;
+runs in the background so it never delays startup). The web UI shows the
+jutul-agent and simulator versions at the foot of the sidebar, with a quiet
+"available" note when a newer release exists. Disable the check with
+`JUTUL_AGENT_NO_UPDATE_CHECK=1`.
 
 ## jutul-agent transcript
 

@@ -43,6 +43,14 @@ export interface SimulatorsResponse {
   branding?: Branding | null;
 }
 
+/** What the server runs, from `GET /version`. Each part is `null` when unknown. */
+export interface VersionInfo {
+  jutul_agent: string | null;
+  /** A newer jutul-agent release, when the update check knows of one. */
+  update: string | null;
+  simulator: { package: string; version: string | null } | null;
+}
+
 export interface ModelsResponse {
   default: string | null;
   providers: string[];
@@ -115,6 +123,9 @@ export const api = {
       default: null,
       details: {},
     }),
+
+  version: () =>
+    getJSON<VersionInfo>("/version", { jutul_agent: null, update: null, simulator: null }),
 
   models: () =>
     getJSON<ModelsResponse>("/models", { default: null, providers: [], models: [] }),

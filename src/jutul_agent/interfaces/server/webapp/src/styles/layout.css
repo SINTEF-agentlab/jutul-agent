@@ -196,6 +196,24 @@
   overflow-y: auto;
   padding: 0 0.5rem 0.7rem;
 }
+.sidebar-foot {
+  flex: none;
+  padding: 0.45rem 1rem 0.6rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.sidebar-versions,
+.sidebar-update {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-update {
+  margin-top: 0.15rem;
+  color: var(--accent);
+  cursor: help;
+}
 .history-empty {
   color: var(--muted);
   font-size: 0.82rem;

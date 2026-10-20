@@ -12,6 +12,7 @@ import contextlib
 import sys
 from typing import TYPE_CHECKING
 
+from jutul_agent import __version__
 from jutul_agent.interfaces.cli._helpers import add_session_flags, add_workspace_flags
 
 if TYPE_CHECKING:
@@ -221,11 +222,15 @@ def run(args: argparse.Namespace) -> int:
     model = args.model or config.model
     add_dirs = resolve_add_dirs(args.add_dir, ws)
 
+    from jutul_agent.update_check import notify_at_launch
+
+    notify_at_launch()
     if not _env_versions_ok(args, ws, sim=sim) or not _sysimage_ready(args, ws, config, sim=sim):
         return 1
 
     print(
-        f"jutul-agent server on http://{args.host}:{args.port} (simulator: {sim}"
+        f"jutul-agent {__version__.split('+')[0]} server on http://{args.host}:{args.port} "
+        f"(simulator: {sim}"
         + (f", model: {model}" if model else "")
         + (f", approval: {approval_mode}" if approval_mode else "")
         + (f", +{len(add_dirs)} dir(s)" if add_dirs else "")
