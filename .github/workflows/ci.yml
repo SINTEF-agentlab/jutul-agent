@@ -27,14 +27,21 @@ jobs:
         run: uv run ruff format --check .
 
   test:
-    name: test (${{ matrix.os }})
+    name: test (${{ matrix.os }}, ${{ matrix.python }})
     strategy:
       # Report every OS even if one fails, so a Windows-only break doesn't
       # mask a macOS-only one.
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.12"]
+        include:
+          # `uv tool install` uses the newest Python it finds, often 3.14.
+          - os: ubuntu-latest
+            python: "3.14"
     runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +49,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install ${{ matrix.python }}
 
       - name: Install dependencies
         run: uv sync --locked --extra eval
