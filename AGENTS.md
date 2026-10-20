@@ -164,3 +164,13 @@ silently at runtime. The contacts:
   `deepagents.profiles.harness.harness_profiles._harness_profile_for_model`
   to assert our profile resolves for built model instances. It also pins the
   exact tool set the framework installs, since a bump can add or drop one.
+
+## WGLMakie private-surface contacts
+
+Live web plots render through `julia_runtime/JutulAgent/src/web_views.jl`: a new
+browser connection closes the figure's earlier view and drops WGLMakie's cached
+render data, because WGLMakie 0.13 closes a shared scene when any view closes. It
+calls `WGLMakie.render_with_init` and `delete_wgl_robj!`, reads `Screen.session`,
+and deletes the `:glyph_data` plot attribute. It runs on WGLMakie 0.13.13 up to
+0.14 and falls back to `WithConfig` elsewhere; `tests/integration/web_views.jl`
+asserts CI's resolved version is in that range.

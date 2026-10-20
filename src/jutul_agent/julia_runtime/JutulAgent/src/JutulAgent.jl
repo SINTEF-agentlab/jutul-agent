@@ -17,6 +17,7 @@ import GLMakie
 
 include("ensemble.jl")   # submodule JutulAgentEnsemble (Distributed addprocs + pmap)
 include("plots.jl")      # submodule JutulAgentPlots (native and web figure capture)
+include("web_views.jl")  # submodule JutulAgentWebViews (live browser views)
 
 using .JutulAgentEnsemble: run_ensemble, warm_addprocs
 export run_ensemble, warm_addprocs
