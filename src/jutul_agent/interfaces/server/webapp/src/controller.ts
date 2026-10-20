@@ -170,7 +170,7 @@ export class Controller {
     this.refreshContextWindow();
     this.watchHostContext();
     await this.startSession();
-    this.noteFinishedUpdate();
+    await this.noteFinishedUpdate();
   }
 
   /** Forward later changes to the host application's selection to the session.
@@ -338,8 +338,10 @@ export class Controller {
   /** Reload into the new server once it answers; the page it serves may be new too. */
   private async waitForRestart(boot: string | null): Promise<void> {
     this.s.setUpdate({ phase: "restarting" });
-    // Starting can include preparing the Julia environment.
-    const deadline = Date.now() + 10 * 60_000;
+    // Starting can include preparing the Julia environment. In a separate window the
+    // whole update runs first, maybe rebuilding a system image.
+    const separateWindow = this.s.update.status?.separate_window ?? false;
+    const deadline = Date.now() + (separateWindow ? 60 : 10) * 60_000;
     while (Date.now() < deadline) {
       await sleep(1500);
       const versions = await api.version();
@@ -356,12 +358,14 @@ export class Controller {
     this.updating = false;
     this.s.setUpdate({
       phase: "failed",
-      error: "jutul-agent hasn't come back after updating. Check the terminal it runs in.",
+      error: separateWindow
+        ? "jutul-agent hasn't come back after updating. Check the window it updates in."
+        : "jutul-agent hasn't come back after updating. Check the terminal it runs in.",
     });
   }
 
-  /** After the reload into an updated server, say so once. */
-  private noteFinishedUpdate(): void {
+  /** After the reload into an updated server, say once how the update went. */
+  private async noteFinishedUpdate(): Promise<void> {
     let version: string | null = null;
     try {
       version = sessionStorage.getItem(UPDATED_KEY);
@@ -369,11 +373,15 @@ export class Controller {
     } catch {
       return;
     }
-    if (version !== null) {
-      this.s.addSysNote(
-        version ? `Updated to jutul-agent ${version}.` : "jutul-agent was updated.",
-      );
+    if (version === null) return;
+    // The new server keeps the outcome: this page may not have seen the update run.
+    const status = await api.updateStatus();
+    const job = status?.job;
+    if (job?.state === "failed") {
+      this.s.setUpdate({ open: true, status, phase: "failed", lines: job.lines, error: job.error });
+      return;
     }
+    this.s.addSysNote(version ? `Updated to jutul-agent ${version}.` : "jutul-agent was updated.");
   }
 
   // Deliver a prompt held while no socket was open (see `queuedPrompt`). The socket

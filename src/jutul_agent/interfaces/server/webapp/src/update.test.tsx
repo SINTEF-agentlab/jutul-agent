@@ -11,6 +11,7 @@ const status = (patch: Partial<UpdateStatus> = {}): UpdateStatus => ({
   local: true,
   can_install: true,
   install_note: null,
+  separate_window: false,
   env: { outdated: [], sysimage: false },
   job: null,
   ...patch,
@@ -141,5 +142,83 @@ describe("running an update", () => {
     expect(reload).toHaveBeenCalledTimes(1);
     expect(sessionStorage.getItem("ja_updated")).toBe("0.2.2");
     sessionStorage.clear();
+  });
+
+  it("waits for an update that continues in a separate window", async () => {
+    vi.useFakeTimers();
+    const { controller, store } = renderWithStore(<UpdateDialog />);
+    store.setState({
+      versions: { jutul_agent: "0.2.1", update: "0.2.2", simulator: null, boot: "a" },
+    });
+    const separate = (patch: Partial<UpdateStatus> = {}) =>
+      status({ separate_window: true, ...patch });
+    vi.spyOn(api, "updateStatus")
+      .mockResolvedValueOnce(separate())
+      .mockResolvedValueOnce(separate({ job: job({ state: "restarting", next: 0 }) }))
+      .mockResolvedValue(null); // the server exited
+    vi.spyOn(api, "startUpdate").mockResolvedValue(separate({ job: job({}) }));
+    vi.spyOn(api, "version").mockResolvedValue({ jutul_agent: null, update: null, simulator: null });
+
+    await act(async () => controller.openUpdate());
+    expect(screen.getByText(/updates in a separate window/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByText("Update"));
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(screen.getByRole("status").textContent).toContain("updating in a separate window");
+    // The whole update runs before the server is back, so the page waits longer.
+    await act(async () => vi.advanceTimersByTimeAsync(30 * 60_000));
+    expect(store.getState().update.phase).toBe("restarting");
+  });
+});
+
+describe("after the reload into the restarted server", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    sessionStorage.clear();
+  });
+
+  async function reload(outcome: UpdateJob) {
+    sessionStorage.setItem("ja_updated", "0.2.2");
+    const rendered = renderWithStore(<UpdateDialog />);
+    const { controller } = rendered;
+    vi.spyOn(api, "simulators").mockResolvedValue({
+      simulators: ["jutuldarcy"],
+      default: "jutuldarcy",
+      details: {},
+    });
+    vi.spyOn(api, "models").mockResolvedValue({ default: null, providers: [], models: [] });
+    vi.spyOn(api, "credentials").mockResolvedValue([]);
+    vi.spyOn(api, "liveModels").mockResolvedValue({ models: [] });
+    vi.spyOn(api, "version").mockResolvedValue({
+      jutul_agent: "0.2.2",
+      update: null,
+      simulator: null,
+    });
+    vi.spyOn(api, "updateStatus").mockResolvedValue(status({ latest: null, job: outcome }));
+    vi.spyOn(controller, "startSession").mockResolvedValue();
+    vi.spyOn(controller, "refreshHistory").mockResolvedValue();
+    vi.spyOn(controller, "refreshContextWindow").mockResolvedValue();
+    await act(async () => controller.init());
+    return rendered;
+  }
+
+  it("says it was updated", async () => {
+    const { store } = await reload(job({ state: "done" }));
+    expect(store.getState().update.open).toBe(false);
+    expect(store.getState().items.at(-1)).toMatchObject({ text: "Updated to jutul-agent 0.2.2." });
+  });
+
+  it("shows an update that failed while no page could follow it", async () => {
+    const { container } = await reload(
+      job({
+        state: "failed",
+        error: "jutul-agent could not be upgraded. See the output above.",
+        lines: ["$ uv tool upgrade jutul-agent", "error: no network"],
+      }),
+    );
+    expect(screen.getByText("The update didn't finish.")).toBeTruthy();
+    expect(container.querySelector(".update-error")?.textContent).toContain("could not be upgraded");
+    expect(container.querySelector(".update-log")?.textContent).toContain("error: no network");
   });
 });

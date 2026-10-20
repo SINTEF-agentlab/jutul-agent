@@ -82,6 +82,8 @@ export interface UpdateStatus {
   /** jutul-agent can upgrade itself from here; otherwise `install_note` says how. */
   can_install: boolean;
   install_note: string | null;
+  /** Upgrading jutul-agent continues in a separate window, which it then runs in. */
+  separate_window: boolean;
   env: { outdated: OutdatedPackage[]; sysimage: boolean } | null;
   job: UpdateJob | null;
 }

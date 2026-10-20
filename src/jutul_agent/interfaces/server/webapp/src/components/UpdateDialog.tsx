@@ -83,13 +83,22 @@ export function UpdateDialog() {
                 <p className="update-sub">
                   Open chats are closed while it runs; their conversations are kept. This takes a
                   few minutes.
-                  {plan!.action.install && " jutul-agent then restarts and this page reloads."}
+                  {plan!.action.install &&
+                    (status.separate_window
+                      ? " jutul-agent then closes, updates in a separate window and runs there" +
+                        " after. This page reloads when it's back."
+                      : " jutul-agent then restarts and this page reloads.")}
                 </p>
               )}
             </>
           )
         ) : (
-          <Progress lines={update.lines} phase={phase} error={update.error} />
+          <Progress
+            lines={update.lines}
+            phase={phase}
+            error={update.error}
+            separateWindow={status?.separate_window ?? false}
+          />
         )}
 
         <div className="modal-foot">
@@ -189,10 +198,12 @@ function Progress({
   lines,
   phase,
   error,
+  separateWindow,
 }: {
   lines: string[];
   phase: string;
   error: string | null;
+  separateWindow: boolean;
 }) {
   const ref = useRef<HTMLPreElement>(null);
   const [follow, setFollow] = useState(true);
@@ -213,7 +224,11 @@ function Progress({
         )}
         {phase === "restarting" && (
           <>
-            <span className="spinner" /> Restarting jutul-agent. This page reloads when it's back.
+            <span className="spinner" />{" "}
+            {separateWindow
+              ? "jutul-agent is updating in a separate window."
+              : "Restarting jutul-agent."}{" "}
+            This page reloads when it's back.
           </>
         )}
         {phase === "done" && "Done. Close this to carry on."}
