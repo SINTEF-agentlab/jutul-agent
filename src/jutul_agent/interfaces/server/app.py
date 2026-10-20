@@ -525,6 +525,36 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"provider": info.name, "env_var": info.key_env_var, "path": str(path)}
 
+    @app.get("/version")
+    def version_info() -> dict[str, Any]:
+        """What this server runs, for the quiet version line in the UI.
+
+        The jutul-agent version, a newer release when the update check knows of
+        one, and the simulator version this folder's Julia environment resolved.
+        Each part is best-effort: an unknown one is ``None``, never an error.
+        """
+        from jutul_agent import __version__
+        from jutul_agent.paths import workspace_root
+        from jutul_agent.simulators import registry
+        from jutul_agent.update_check import is_enabled, pending_update, refresh_if_stale
+        from jutul_agent.workspace import resolve_julia_project, resolved_package_version
+
+        simulator = None
+        if default_sim is not None:
+            package = registry.get(default_sim).primary_package
+            project = julia_project or resolve_julia_project(workspace_root())
+            simulator = {
+                "package": package,
+                "version": resolved_package_version(project, package),
+            }
+        # A server can run for days, so it keeps its own view of releases current.
+        refresh_if_stale()
+        return {
+            "jutul_agent": __version__.split("+")[0],
+            "update": pending_update() if is_enabled() else None,
+            "simulator": simulator,
+        }
+
     @app.get("/simulators")
     def list_simulators() -> dict[str, Any]:
         from jutul_agent.simulators import registry

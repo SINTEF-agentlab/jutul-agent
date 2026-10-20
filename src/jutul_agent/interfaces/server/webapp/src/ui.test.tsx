@@ -277,3 +277,27 @@ describe("switching sessions", () => {
     vi.restoreAllMocks();
   });
 });
+
+describe("version line", () => {
+  it("names jutul-agent and the simulator quietly, and an available update", () => {
+    const { store, container } = renderWithStore(<Sidebar collapsed={false} />);
+    expect(container.querySelector(".sidebar-foot")).toBeNull();
+    act(() =>
+      store.setState({
+        versions: {
+          jutul_agent: "0.2.1",
+          update: null,
+          simulator: { package: "JutulDarcy", version: "0.4.0" },
+        },
+      }),
+    );
+    expect(container.querySelector(".sidebar-versions")?.textContent).toBe(
+      "jutul-agent 0.2.1 · JutulDarcy 0.4.0",
+    );
+    expect(container.querySelector(".sidebar-update")).toBeNull();
+    act(() => store.setState({ versions: { jutul_agent: "0.2.1", update: "0.2.2", simulator: null } }));
+    const update = container.querySelector(".sidebar-update");
+    expect(update?.textContent).toBe("jutul-agent 0.2.2 available");
+    expect(update?.getAttribute("title")).toContain("jutul-agent upgrade");
+  });
+});

@@ -263,6 +263,16 @@ def _refresh_in_background() -> None:
     thread.start()
 
 
+def refresh_if_stale() -> None:
+    """Refresh the cache in the background when it is missing or a day old."""
+
+    if not is_enabled():
+        return
+    cached = _read_cache()
+    if cached is None or not _cache_is_fresh(cached[0]):
+        _refresh_in_background()
+
+
 def notify_at_launch(stream=None) -> None:
     """Print a one-line upgrade notice when a newer version is known.
 
@@ -290,6 +300,4 @@ def notify_at_launch(stream=None) -> None:
             file=stream,
         )
 
-    cached = _read_cache()
-    if cached is None or not _cache_is_fresh(cached[0]):
-        _refresh_in_background()
+    refresh_if_stale()

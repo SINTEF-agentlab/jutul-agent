@@ -377,6 +377,13 @@ def _manifest_entries(env_dir: Path) -> dict[str, dict]:
     }
 
 
+def resolved_package_version(env_dir: Path, package: str) -> str | None:
+    """The version of ``package`` the env's manifest resolved, if any."""
+
+    version = _manifest_entries(env_dir).get(package, {}).get("version")
+    return str(version) if version is not None else None
+
+
 def outdated_env_packages(env_dir: Path, template_path: Path) -> list[tuple[str, str, str]]:
     """Packages ``env_dir`` resolved outside the installed template's ``[compat]``.
 

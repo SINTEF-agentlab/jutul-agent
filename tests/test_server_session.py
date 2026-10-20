@@ -222,6 +222,27 @@ def test_outdated_environment_is_a_conflict_not_a_server_error(
     assert "requires JutulDarcy 0.4" in response.json()["detail"]
 
 
+def test_version_reports_the_install_and_the_simulator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jutul_agent import update_check
+
+    env = tmp_path / "env"
+    env.mkdir()
+    (env / "Manifest.toml").write_text('[[deps.JutulDarcy]]\nversion = "0.4.0"\n', encoding="utf-8")
+    monkeypatch.setattr(update_check, "refresh_if_stale", lambda: None)
+    monkeypatch.setattr(update_check, "pending_update", lambda: "9.9.9")
+    app = create_app(_manager(echo_agent, tmp_path), default_sim="jutuldarcy", julia_project=env)
+    with TestClient(app) as client:
+        info = client.get("/version").json()
+    assert info["jutul_agent"] and "+" not in info["jutul_agent"]
+    assert info["simulator"] == {"package": "JutulDarcy", "version": "0.4.0"}
+    assert info["update"] == "9.9.9"
+    monkeypatch.setenv(update_check.DISABLE_ENV_VAR, "1")
+    with TestClient(app) as client:
+        assert client.get("/version").json()["update"] is None
+
+
 @pytest.mark.parametrize(
     ("model", "env_var"),
     [

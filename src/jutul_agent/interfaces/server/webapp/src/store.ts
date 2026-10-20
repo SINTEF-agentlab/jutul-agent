@@ -5,7 +5,14 @@
 
 import { createStore } from "zustand/vanilla";
 
-import type { Branding, CredentialInfo, HistoryEntry, ModelInfo, SimDetails } from "./api";
+import type {
+  Branding,
+  CredentialInfo,
+  HistoryEntry,
+  ModelInfo,
+  SimDetails,
+  VersionInfo,
+} from "./api";
 import { framePool } from "./canvas/framePool";
 import { formatTokens } from "./format";
 import type { InterruptAction, ReplayMessage, ServerMessage } from "./protocol";
@@ -106,6 +113,8 @@ export interface SessionState {
   simDetails: Record<string, SimDetails>;
   // Set when an installed capability names the UI instead of the simulator.
   branding: Branding | null;
+  // What the server runs, for the version line in the sidebar.
+  versions: VersionInfo | null;
   model: string | null;
   models: ModelInfo[];
   contextWindow: number | null;
@@ -183,6 +192,7 @@ const initialState: SessionState = {
   sim: null,
   simDetails: {},
   branding: null,
+  versions: null,
   model: null,
   models: [],
   contextWindow: null,
@@ -575,6 +585,7 @@ export function createSessionStore() {
           sim: s.sim,
           simDetails: s.simDetails,
           branding: s.branding,
+          versions: s.versions,
           model: s.model,
           models: s.models,
           contextWindow: s.contextWindow,

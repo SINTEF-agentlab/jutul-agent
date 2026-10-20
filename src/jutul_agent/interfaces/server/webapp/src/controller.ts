@@ -143,16 +143,18 @@ export class Controller {
   // --- startup --------------------------------------------------------------
 
   async init(): Promise<void> {
-    const [sims, models, credentials] = await Promise.all([
+    const [sims, models, credentials, versions] = await Promise.all([
       api.simulators(),
       api.models(),
       api.credentials(),
+      api.version(),
     ]);
     const names = sims.simulators || [];
     this.store.setState({
       sim: sims.default || names[0] || "jutuldarcy",
       simDetails: sims.details || {},
       branding: sims.branding || null,
+      versions,
       model: models.default ?? null,
       models: models.models || [],
       credentials,
@@ -233,7 +235,14 @@ export class Controller {
       this.s.addSysNote(message, "warn");
     } finally {
       this.starting = false;
+      // Starting a session prepares the Julia environment, which can update it.
+      this.refreshVersions();
     }
+  }
+
+  /** Re-read what the server runs, after anything that may have changed it. */
+  private refreshVersions(): void {
+    void api.version().then((versions) => this.store.setState({ versions }));
   }
 
   // Deliver a prompt held while no socket was open (see `queuedPrompt`). The socket
@@ -658,16 +667,33 @@ export class Controller {
     // correct, so reattach without wiping and re-fetching the conversation.
     const reconnecting = id === this.s.sessionId;
     this.transport.close();
-    this.store.setState({ meta: `resuming ${this.s.sim ?? ""}…` });
-    const body = await api.resumeSession(id, {
-      sim: this.s.sim || undefined,
-      model: this.s.model || undefined,
-      // An older session reopened from the sidebar is brought up to date with
-      // what the application has selected now, and pointed at where it listens
-      // now, rather than what it had when the conversation was last touched.
-      host_context: hostContext.current() ?? undefined,
-      host_api: hostApiUrl ?? undefined,
-    });
+    const resuming = `resuming ${this.s.sim ?? ""}…`;
+    this.store.setState({ meta: resuming });
+    // A reattach answers at once, but a resume from disk prepares the Julia
+    // environment first, which can take minutes after an update. Say so rather
+    // than leave a bare "resuming…" that looks stuck.
+    const slow = setTimeout(() => {
+      if (!stale()) {
+        this.store.setState({
+          meta: `${resuming} (preparing its environment, this can take a few minutes)`,
+        });
+      }
+    }, 3000);
+    let body: { session_id: string; kernel_restarted: boolean };
+    try {
+      body = await api.resumeSession(id, {
+        sim: this.s.sim || undefined,
+        model: this.s.model || undefined,
+        // An older session reopened from the sidebar is brought up to date with
+        // what the application has selected now, and pointed at where it listens
+        // now, rather than what it had when the conversation was last touched.
+        host_context: hostContext.current() ?? undefined,
+        host_api: hostApiUrl ?? undefined,
+      });
+    } finally {
+      clearTimeout(slow);
+      this.refreshVersions();
+    }
     if (stale()) return;
     // Liveness is already decided by the time the resume answers, so mark it now
     // rather than after the replay below, which waits on the whole conversation.

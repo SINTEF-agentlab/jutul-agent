@@ -112,6 +112,7 @@ turn.
 | `GET` | `/credentials` | Which providers have keys, and whether a shell variable shadows a saved one |
 | `POST` | `/credentials` | Save a provider API key (used by the missing-key prompt) |
 | `GET` | `/simulators` | List installed simulators (the server is bound to one, returned as `default`), each with its display name and starter prompts, plus the `branding` an installed capability puts in their place |
+| `GET` | `/version` | The jutul-agent version, a newer release if the update check knows of one, and the simulator version the folder's Julia environment resolved (each `null` when unknown) |
 
 ## The wire protocol
 
