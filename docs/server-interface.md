@@ -395,6 +395,30 @@ isolated process. Until that isolation is in place the service should not be
 exposed to untrusted users, because the agent has real access to the machine it
 runs on.
 
+### Which pages may use it
+
+A browser lets any website send requests to `127.0.0.1` and open WebSockets to
+it, so the server turns away pages that aren't its own. A WebSocket, or a request
+that changes something, is only answered when the browser's `Origin` is the
+server's own: the host the request was sent to, or the `X-Forwarded-Host` a
+reverse proxy passed on. A server bound to localhost also answers only to
+localhost names, so a site can't point its own domain at `127.0.0.1` and pass as
+the server's page. Programs that aren't browsers send no `Origin` and are not
+affected.
+
+A front end served from another origin (your own web app, say) must be allowed
+by name:
+
+```sh
+jutul-agent --allowed-origin https://app.example.org
+```
+
+Behind a reverse proxy (`--base-path`), the `Host` check is off, since the
+proxy's public name arrives there, but `Origin` is still checked. A proxy that
+rewrites `Host` should pass the original on in `X-Forwarded-Host`; otherwise
+allow its public origin with `--allowed-origin`. The server log names any origin
+it refuses, with the flag to allow it.
+
 ## The example app
 
 The repository includes a small, runnable example under `examples/` that

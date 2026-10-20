@@ -18,10 +18,12 @@ export default defineConfig({
   server: {
     // `vite dev` proxies API + WebSocket calls to a locally running FastAPI server
     // so the dev UI drives a real backend. Override the target with JA_DEV_BACKEND.
+    // The server only answers its own pages, and this one is Vite's, so the proxy
+    // drops the page's Origin and calls the server as a plain client.
     proxy: {
-      "/sessions": { target: backend(), changeOrigin: true, ws: true },
-      "/models": { target: backend(), changeOrigin: true },
-      "/simulators": { target: backend(), changeOrigin: true },
+      "/sessions": { target: backend(), changeOrigin: true, ws: true, configure: dropOrigin },
+      "/models": { target: backend(), changeOrigin: true, configure: dropOrigin },
+      "/simulators": { target: backend(), changeOrigin: true, configure: dropOrigin },
     },
   },
   test: {
@@ -32,6 +34,16 @@ export default defineConfig({
     clearMocks: true,
   },
 });
+
+// The proxy's request events, typed loosely: the http-proxy types aren't a dependency.
+interface ProxyEvents {
+  on(event: "proxyReq" | "proxyReqWs", listener: (req: { removeHeader(name: string): void }) => void): void;
+}
+
+function dropOrigin(proxy: ProxyEvents): void {
+  proxy.on("proxyReq", (req) => req.removeHeader("origin"));
+  proxy.on("proxyReqWs", (req) => req.removeHeader("origin"));
+}
 
 function backend(): string {
   return process.env.JA_DEV_BACKEND || "http://127.0.0.1:8181";

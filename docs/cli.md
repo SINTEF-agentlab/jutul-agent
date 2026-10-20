@@ -51,6 +51,7 @@ changed per session in the UI.
 | `--sysimage` / `--no-sysimage` | Start sessions from the folder's [system image](sysimage.md), or skip it, overriding the folder's setting |
 | `--host <addr>` | Address to bind (default `127.0.0.1`, localhost only) |
 | `--port <n>` | Port to bind (default `8742`) |
+| `--allowed-origin <origin>` | Let pages from another origin use the server (repeatable). Only its own pages may by default; see [which pages may use it](server-interface.md#which-pages-may-use-it) |
 
 ### jutul-agent tui
 
