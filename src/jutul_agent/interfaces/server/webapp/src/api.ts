@@ -71,9 +71,14 @@ export class ApiError extends Error {
   }
 }
 
+// Endpoints use unprefixed paths; apply the deployment prefix only at this boundary.
+function request(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(withBase(path), init);
+}
+
 async function getJSON<T>(url: string, fallback: T): Promise<T> {
   try {
-    const resp = await fetch(url);
+    const resp = await request(url);
     if (!resp.ok) return fallback;
     return (await resp.json()) as T;
   } catch {
@@ -82,7 +87,7 @@ async function getJSON<T>(url: string, fallback: T): Promise<T> {
 }
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
-  const resp = await fetch(url, {
+  const resp = await request(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -105,20 +110,20 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
 
 export const api = {
   simulators: () =>
-    getJSON<SimulatorsResponse>(withBase("/simulators"), {
+    getJSON<SimulatorsResponse>("/simulators", {
       simulators: [],
       default: null,
       details: {},
     }),
 
   models: () =>
-    getJSON<ModelsResponse>(withBase("/models"), { default: null, providers: [], models: [] }),
+    getJSON<ModelsResponse>("/models", { default: null, providers: [], models: [] }),
 
   liveModels: () => getJSON<{ models: ModelInfo[] }>("/models/live", { models: [] }),
 
   credentials: async (): Promise<CredentialInfo[]> => {
     const data = await getJSON<{ path: string; providers: CredentialInfo[] }>(
-      withBase("/credentials"),
+      "/credentials",
       {
         path: "",
         providers: [],
@@ -128,20 +133,20 @@ export const api = {
   },
 
   setCredential: (provider: string, value: string) =>
-    postJSON<{ provider: string; env_var: string; path: string }>(withBase("/credentials"), {
+    postJSON<{ provider: string; env_var: string; path: string }>("/credentials", {
       provider,
       value,
     }),
 
   modelWindow: (model: string) =>
     getJSON<{ model: string; window: number | null }>(
-      withBase(`/models/window?model=${encodeURIComponent(model)}`),
+      `/models/window?model=${encodeURIComponent(model)}`,
       { model, window: null },
     ),
 
   history: async (limit = 40): Promise<HistoryEntry[]> => {
     const data = await getJSON<{ sessions: HistoryEntry[] }>(
-      withBase(`/sessions/history?limit=${limit}`),
+      `/sessions/history?limit=${limit}`,
       { sessions: [] },
     );
     return data.sessions;
@@ -149,7 +154,7 @@ export const api = {
 
   messages: async (id: string): Promise<ReplayMessage[]> => {
     const data = await getJSON<{ messages: ReplayMessage[] }>(
-      withBase(`/sessions/${id}/messages`),
+      `/sessions/${id}/messages`,
       { messages: [] },
     );
     return data.messages;
@@ -166,27 +171,27 @@ export const api = {
     model?: string;
     host_context?: HostContext;
     host_api?: string;
-  }) => postJSON<{ session_id: string }>(withBase("/sessions"), body),
+  }) => postJSON<{ session_id: string }>("/sessions", body),
 
   resumeSession: (
     id: string,
     body: { sim?: string; model?: string; host_context?: HostContext; host_api?: string },
   ) =>
     postJSON<{ session_id: string; kernel_restarted: boolean }>(
-      withBase(`/sessions/${id}/resume`),
+      `/sessions/${id}/resume`,
       body,
     ),
 
   deleteSession: (id: string) =>
-    fetch(withBase(`/sessions/${id}`), { method: "DELETE" }).catch(() => undefined),
+    request(`/sessions/${id}`, { method: "DELETE" }).catch(() => undefined),
 
   context: (id: string) =>
-    getJSON<{ markdown: string }>(withBase(`/sessions/${id}/context`), { markdown: "" }),
+    getJSON<{ markdown: string }>(`/sessions/${id}/context`, { markdown: "" }),
 
   uploadFile: async (id: string, file: File): Promise<{ path: string }> => {
     const fd = new FormData();
     fd.append("file", file);
-    const resp = await fetch(withBase(`/sessions/${id}/upload`), { method: "POST", body: fd });
+    const resp = await request(`/sessions/${id}/upload`, { method: "POST", body: fd });
     if (!resp.ok) throw new Error(await resp.text().catch(() => resp.statusText));
     return (await resp.json()) as { path: string };
   },

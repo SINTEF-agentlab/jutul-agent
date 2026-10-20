@@ -18,6 +18,7 @@ import re
 import sys
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from html import escape
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote, urlparse
@@ -1189,8 +1190,16 @@ def create_app(
     if ui and ui_dir is not None:
         _register_web_mime_types()
         index_html = (ui_dir / "index.html").read_text(encoding="utf-8")
+        # Vite emits relative assets. Use public paths so /restricted and
+        # /restricted/ both load, without relying on the proxy to redirect.
+        assets_url = escape(public_url(base, "/assets/"), quote=True)
+        index_html = re.sub(
+            r"""((?:src|href)=["'])\./assets/""",
+            lambda match: match[1] + assets_url,
+            index_html,
+        )
         # Inject the public base path so the SPA prefixes API/WebSocket URLs.
-        inject = f'<script>window.__JUTUL_BASE_PATH__={json.dumps(base)};</script>'
+        inject = f"<script>window.__JUTUL_BASE_PATH__={json.dumps(base)};</script>"
         if "<!--jutul-base-path-->" in index_html:
             index_html = index_html.replace("<!--jutul-base-path-->", inject)
         elif "</head>" in index_html:
@@ -1241,9 +1250,7 @@ def artifact_wire_events(
         url = _artifact_url(session_id, str(payload.get("path") or ""), base_path=base_path)
         live_url = payload.get("live_url") if live else None
         poster = payload.get("poster")
-        poster_url = (
-            _artifact_url(session_id, str(poster), base_path=base_path) if poster else None
-        )
+        poster_url = _artifact_url(session_id, str(poster), base_path=base_path) if poster else None
         kind = payload.get("kind")
         # A plot or report is a canvas view; a bare image or file is a plain artifact.
         if live_url or payload.get("mime") == "text/html" or kind in ("plot", "report"):
@@ -1333,9 +1340,7 @@ def replay_events(
             )
         elif ev.kind == schema.ARTIFACT:
             items.extend(
-                artifact_wire_events(
-                    [ev.payload], session_id, live=live, base_path=base_path
-                )
+                artifact_wire_events([ev.payload], session_id, live=live, base_path=base_path)
             )
     return items
 
@@ -1856,12 +1861,10 @@ class _StreamState:
                 # instead of leaving the figure's layout behind the window's.
                 route_id = url.rsplit("/viz/", 1)[-1]
                 w, h = size_px or size or [1200, 800]
-                url = (
-                    public_url(
-                        self._host.session.base_path,
-                        f"/popout/{self._host.session.session_id}"
-                        f"?route={quote(route_id)}&w={int(w)}&h={int(h)}",
-                    )
+                url = public_url(
+                    self._host.session.base_path,
+                    f"/popout/{self._host.session.session_id}"
+                    f"?route={quote(route_id)}&w={int(w)}&h={int(h)}",
                 )
                 self._popouts[url] = route_id
             await self._end_turn(protocol.popout_ready_to_wire(record, url))

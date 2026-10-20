@@ -9,8 +9,11 @@ maps ``.js`` to ``text/plain``).
 from __future__ import annotations
 
 import re
+from urllib.parse import urljoin
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.responses import Response
 
 from jutul_agent.interfaces.server.app import WEB_DIST_DIR, _ui_dir, create_app
 
@@ -39,6 +42,37 @@ def test_serves_spa_with_base_path_injected() -> None:
     with TestClient(create_app(ui=True, base_path="/restricted")) as client:
         body = client.get("/").text
         assert 'window.__JUTUL_BASE_PATH__="/restricted"' in body
+
+
+@pytest.mark.parametrize("prefix", ["", "/restricted", "/nested/prefix"])
+@pytest.mark.parametrize("trailing_slash", ["", "/"])
+def test_assets_load_through_prefix_stripping_proxy(prefix: str, trailing_slash: str) -> None:
+    app = create_app(base_path=prefix)
+
+    async def proxy(scope, receive, send):
+        if scope["type"] == "http":
+            path = scope["path"]
+            if prefix and path != prefix and not path.startswith(prefix + "/"):
+                await Response(status_code=404)(scope, receive, send)
+                return
+            path = path[len(prefix) :] or "/"
+            scope = {**scope, "path": path, "raw_path": path.encode()}
+        await app(scope, receive, send)
+
+    with TestClient(proxy) as client:
+        public_path = prefix + trailing_slash or "/"
+        page = client.get(public_path)
+        assert page.status_code == 200
+        assets = re.findall(r'(?:src|href)="([^"]*/assets/[^"]+)"', page.text)
+        assert any(url.endswith(".js") for url in assets)
+        assert any(url.endswith(".css") for url in assets)
+        for asset in assets:
+            # Resolve like a browser, then fetch through the same public proxy.
+            url = urljoin(str(page.url), asset)
+            response = client.get(url)
+            assert response.status_code == 200
+            mime = "text/javascript" if asset.endswith(".js") else "text/css"
+            assert response.headers["content-type"].startswith(mime)
 
 
 def test_popout_wrapper_uses_base_path() -> None:
