@@ -99,3 +99,14 @@ async def test_run_julia_appends_reset_hint_on_worker_module_desync(tmp_path: Pa
     out = await _call(tool, "run_julia", code="using GeoStats")
     assert "reset_julia" in out
     assert err in out  # original error preserved
+
+
+async def test_reset_julia_forgets_the_live_plot_server(tmp_path: Path) -> None:
+    # The Bonito server and its figures go with the old state, so a replay must
+    # not offer them as live, and the proxy must not dial a dead port.
+    session = _session(FakeJulia(), tmp_path)
+    session.web_plot_port = 9123
+    session.live_routes = {"/viz/a"}
+    await _call(make_reset_julia_tool(session), "reset_julia")
+    assert session.web_plot_port is None
+    assert session.live_routes == set()

@@ -130,6 +130,13 @@ def plot_state_probe(web: bool) -> str:
     return f'println("{PLOT_STATE_MARKER}=", isdefined(Main, :GLMakie), ",true")'
 
 
+# Printed after the live figure registry changes: the routes the kernel still
+# serves, space-separated. The session keeps this list so a replay offers a live
+# view only of a figure that still exists; the rest show their posters.
+LIVE_ROUTES_MARKER = "__JUTUL_LIVE_ROUTES__"
+_PRINT_LIVE_ROUTES = f'    println("{LIVE_ROUTES_MARKER}=", join(Main.__JUTUL_WEB_ORDER__, " "))\n'
+
+
 # Printed before any fit or resize touches the figure: the size its code built
 # it at. A later re-fit (the panel changed shape under a live view) anchors its
 # squash floor to this, so refitting is idempotent and floors never ratchet.
@@ -596,6 +603,7 @@ def web_live_call(
         "        Bonito.DOM.div(JutulAgent.JutulAgentWebViews.view(_session,\n"
         f'            Main.__JUTUL_WEB_FIGS__[raw"{route}"]; resize_to = :parent);\n'
         f'            style = "{_WRAP_STYLE}")))\n'
+        + _PRINT_LIVE_ROUTES
         + (_poster_block(png_path, html_fallback=html_path) if poster else "")
         + '    "ok"\n'
         "end"
@@ -792,7 +800,7 @@ def close_web_plots_call(slot: str) -> str:
         "            catch\n"
         "            end\n"
         "        end\n"
-        "    end\n"
+        "        " + _PRINT_LIVE_ROUTES.lstrip() + "    end\n"
         '    "ok"\n'
         "end"
     )

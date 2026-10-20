@@ -280,6 +280,10 @@ class Session:
     # reverse proxy reads this to know which local port to forward a live plot's
     # traffic to, so the browser never needs its own route to that ephemeral port.
     web_plot_port: int | None = None
+    # The live figures that server still serves (its routes), as the kernel last
+    # reported them. A replay offers a live view only of these; a figure closed or
+    # released since then shows its poster instead of a dead page.
+    live_routes: set[str] = field(default_factory=set)
     # Public URL prefix the browser sees this server under (e.g. ``/restricted`` when
     # an SSO wrapper reverse-proxies the UI). Empty means the server is at ``/``.
     # Stored paths stay unprefixed; the wire layer and Bonito ``proxy_url`` apply it.

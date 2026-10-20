@@ -16,7 +16,7 @@ import contextlib
 import json
 import re
 import sys
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Collection, Sequence
 from contextlib import asynccontextmanager
 from html import escape
 from pathlib import Path
@@ -741,12 +741,11 @@ def create_app(
         views — so a reopened chat reconstructs inline exactly as it looked when
         the user left it, tool cards and all. Whether replayed plots keep their
         live URLs depends on the session: a still-running host with a live plot
-        server has its figures alive (an in-page switch back finds them), while a
-        from-disk resume restarted Julia, so its recorded live URLs are dead and
-        the embeds fall back to their saved posters. The client makes the final
-        call — it keeps a replayed view live only when it still holds the view's
-        original frame, because a fresh frame on a once-viewed figure comes up
-        corrupt.
+        server has the figures it still serves alive, while a from-disk resume
+        restarted Julia, so its recorded live URLs are dead and the embeds fall
+        back to their saved posters. A page that still holds a figure's frame (an
+        in-page switch back) keeps it; one that doesn't (after a reload) opens a
+        new view, which takes the figure over (see ``JutulAgentWebViews``).
         """
         host = manager.get(session_id)
         state_dir = host.session.state_dir if host else _session_state_dir(session_id)
@@ -762,7 +761,9 @@ def create_app(
             if host is not None
             else (getattr(app.state, "base_path", "") or "")
         )
-        return {"messages": replay_events(events, session_id, live=live, base_path=bp)}
+        routes = host.session.live_routes if live else None
+        messages = replay_events(events, session_id, live=live, live_routes=routes, base_path=bp)
+        return {"messages": messages}
 
     def _refuse_while_updating() -> None:
         if updater.running:
@@ -1334,6 +1335,7 @@ def artifact_wire_events(
     session_id: str,
     *,
     live: bool = True,
+    live_routes: Collection[str] | None = None,
     base_path: str = "",
 ) -> list[dict[str, Any]]:
     """Wire events for produced artifacts: interactive HTML as ``viz``, the rest as ``artifact``.
@@ -1347,13 +1349,20 @@ def artifact_wire_events(
     ``live_url`` is dead. The figure then falls back to its saved PNG poster, shown
     inline as a static image, instead of an embed pointing at a gone server.
 
+    ``live_routes``, when given, are the routes the live server still serves: a
+    figure closed or released since it was recorded falls back to its poster too.
+
     ``base_path`` prefixes site-relative URLs when the UI is served under a public
     path (e.g. ``/restricted``); durable artifact records stay unprefixed.
     """
     events: list[dict[str, Any]] = []
+    live_prefix = f"/live/{session_id}"
     for payload in payloads:
         url = _artifact_url(session_id, str(payload.get("path") or ""), base_path=base_path)
         live_url = payload.get("live_url") if live else None
+        if live_url and live_routes is not None:
+            route = str(live_url).removeprefix(live_prefix)
+            live_url = live_url if route in live_routes else None
         poster = payload.get("poster")
         poster_url = _artifact_url(session_id, str(poster), base_path=base_path) if poster else None
         kind = payload.get("kind")
@@ -1392,7 +1401,12 @@ def artifact_wire_events(
 
 
 def replay_events(
-    events: list[Any], session_id: str, *, live: bool = False, base_path: str = ""
+    events: list[Any],
+    session_id: str,
+    *,
+    live: bool = False,
+    live_routes: Collection[str] | None = None,
+    base_path: str = "",
 ) -> list[dict[str, Any]]:
     """Wire messages that reconstruct a recorded conversation for a resumed session.
 
@@ -1403,7 +1417,8 @@ def replay_events(
     function (not inlined in the endpoint) so the replay mapping lives in a single,
     testable place. ``live`` says whether the session's live plot server is still
     running (its figures alive); without it a recorded live URL is dead and the
-    figure falls back to its poster.
+    figure falls back to its poster. ``live_routes`` narrows that to the figures
+    the server still serves.
     """
 
     items: list[dict[str, Any]] = []
@@ -1445,7 +1460,13 @@ def replay_events(
             )
         elif ev.kind == schema.ARTIFACT:
             items.extend(
-                artifact_wire_events([ev.payload], session_id, live=live, base_path=base_path)
+                artifact_wire_events(
+                    [ev.payload],
+                    session_id,
+                    live=live,
+                    live_routes=live_routes,
+                    base_path=base_path,
+                )
             )
     return items
 
@@ -2042,13 +2063,14 @@ class _StreamState:
         if route_id is None or self._busy():
             return
         from jutul_agent.agent import plot_julia_src as jl
-        from jutul_agent.agent.plot_julia import REFIT_TIMEOUT_S
+        from jutul_agent.agent.plot_julia import REFIT_TIMEOUT_S, note_live_routes
 
         with contextlib.suppress(Exception):
-            await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 self._host.session.julia.eval(jl.close_web_plots_call(route_id)),
                 REFIT_TIMEOUT_S,
             )
+            note_live_routes(self._host.session, result.output)
 
     def _busy(self) -> bool:
         return self._host.busy or (self._turn is not None and not self._turn.done())

@@ -306,6 +306,13 @@ def _finalize_web(
     return _reply(summary, png_abs, view and has_poster)
 
 
+def note_live_routes(session: Session, output: str | None) -> None:
+    """Keep the routes the kernel reported it still serves (``LIVE_ROUTES_MARKER``)."""
+    match = re.search(rf"{jl.LIVE_ROUTES_MARKER}=(.*)", output or "")
+    if match is not None:
+        session.live_routes = set(match.group(1).split())
+
+
 def _parse_size(output: str | None, marker: str = jl.FIG_SIZE_MARKER) -> list[int] | None:
     """A figure pixel size read back from a tagged echo line: the resulting
     size by default, or the authored size via ``jl.FIG_AUTHORED_MARKER``."""
@@ -441,6 +448,7 @@ async def replot_web(
             poster=record,
         )
     )
+    note_live_routes(session, result.output)
     if result.error:
         return f"the plot code failed when re-run: {_truncate(result.error, 300)}", None, None
     size_px = _parse_size(result.output)
@@ -491,6 +499,7 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
             if flags is None or flags.group(2) != "true":
                 live_base = None
                 session.web_plot_port = None
+                session.live_routes = set()
         if not backend_loaded:
             loader = _load_web_plot_backend if web else _load_plot_backend
             err = await loader(session, adapter)
@@ -615,6 +624,7 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
                 )
                 live_url = None
             result = await session.julia.eval(call)
+            note_live_routes(session, result.output)
             if result.error:
                 return f"ERROR: {result.error}"
             return _finalize_web(
@@ -766,6 +776,7 @@ def make_close_plots_tool(session: Session, *, surface: str | None = None):
             return slot_err
         make_call = jl.close_web_plots_call if web else jl.close_windows_call
         result = await session.julia.eval(make_call(safe_slot or ""))
+        note_live_routes(session, result.output)
         if result.error:
             return f"ERROR: {result.error}"
         return f"closed plot: {safe_slot}" if safe_slot else "closed all plots"

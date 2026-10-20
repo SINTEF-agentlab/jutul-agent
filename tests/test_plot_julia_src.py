@@ -359,6 +359,36 @@ def test_live_route_lets_each_new_view_take_the_figure_over() -> None:
     assert code.index("update_state_before_display!(_fig)") < start
 
 
+def test_live_routes_are_reported_after_they_change(tmp_path) -> None:
+    # The session keeps the reported list, so a replay offers live views only of
+    # figures the kernel still serves.
+    from jutul_agent.agent.plot_julia_src import LIVE_ROUTES_MARKER, web_live_call
+
+    serve = web_live_call(
+        user_code="fig = Figure()",
+        png_path=tmp_path / "a.png",
+        html_path=tmp_path / "a.html",
+        route="/viz/a",
+    )
+    assert serve.index(LIVE_ROUTES_MARKER) > serve.index("Bonito.route!")
+    assert LIVE_ROUTES_MARKER in close_web_plots_call("a")
+    assert LIVE_ROUTES_MARKER in close_web_plots_call("")
+
+
+def test_the_session_keeps_the_reported_routes() -> None:
+    from types import SimpleNamespace
+
+    from jutul_agent.agent.plot_julia import note_live_routes
+
+    session = SimpleNamespace(live_routes={"/viz/old"})
+    note_live_routes(session, "ok\n__JUTUL_LIVE_ROUTES__=/viz/a /viz/b--pop1\n")
+    assert session.live_routes == {"/viz/a", "/viz/b--pop1"}
+    note_live_routes(session, "__JUTUL_LIVE_ROUTES__=\n")  # everything closed
+    assert session.live_routes == set()
+    note_live_routes(session, "an error before the routes changed")
+    assert session.live_routes == set()  # nothing reported, nothing changed
+
+
 def test_dropping_a_live_route_closes_its_page() -> None:
     # A re-plot of the same slot, eviction past the cap, and closing plots all
     # close the dropped figure's browser page, so its view stops holding it.
