@@ -23,10 +23,10 @@ FIMBUL = SimulatorAdapter(
         "`ates_demo()`) returns a `JutulCase` → `simulate_reservoir(case)` → "
         "inspect states (key field is `:Temperature`). Examples live under "
         "`examples/` in the installed source (`pkgdir(Fimbul)`) in three groups: "
-        "`analytical/`, `production/` (doublet, EGS, AGS, coaxial BHE), and "
+        "`analytical/`, `production/` (doublet, EGS, AGS, coaxial BHE, magmatic intrusion), and "
         "`storage/` (ATES, BTES, FTES, HTATES). Most workflows reuse "
         "JutulDarcy's grid + well constructors; its source is at "
-        "`pkgdir(JutulDarcy)` and the JutulDarcy skills/overview cover those "
+        "`pkgdir(JutulDarcy)` and its installed examples cover those "
         "primitives."
     ),
     review_hints=(
