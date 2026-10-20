@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,7 @@ from jutul_agent.interfaces.server.access import is_loopback_host, request_is_lo
 from jutul_agent.interfaces.server.app import create_app
 from jutul_agent.interfaces.server.manager import SessionManager
 from jutul_agent.interfaces.server.updates import Updater, UpdateRefused
+from jutul_agent.paths import state_home
 from jutul_agent.update_check import InstallInfo
 
 LOCAL = {"host": "127.0.0.1:8742", "origin": "http://127.0.0.1:8742"}
@@ -69,15 +71,19 @@ def _updater(tmp_path, *, local=True, restartable=True) -> Updater:
     return updater
 
 
-def test_a_uv_tool_install_can_update_itself(tmp_path, uv_tool) -> None:
-    assert _updater(tmp_path).install_blocker() is None
+@pytest.mark.parametrize("windows", [False, True])
+def test_a_uv_tool_install_can_update_itself(tmp_path, uv_tool, monkeypatch, windows) -> None:
+    monkeypatch.setattr(updates, "_on_windows", lambda: windows)
+    updater = _updater(tmp_path)
+    assert updater.install_blocker() is None
+    # Windows can't replace a running program, so it updates in a separate window.
+    assert updater.status()["separate_window"] is windows
 
 
 @pytest.mark.parametrize(
     ("change", "blocker"),
     [
         ("remote", "not-local"),
-        ("windows", "windows"),
         ("editable", "dev-checkout"),
         ("pip", "not-uv-tool"),
         ("no-uv", "no-uv"),
@@ -87,9 +93,7 @@ def test_a_uv_tool_install_can_update_itself(tmp_path, uv_tool) -> None:
 def test_installs_that_cannot_update_themselves(
     tmp_path, uv_tool, monkeypatch, change, blocker
 ) -> None:
-    if change == "windows":
-        monkeypatch.setattr(updates, "_on_windows", lambda: True)
-    elif change == "editable":
+    if change == "editable":
         monkeypatch.setattr(updates, "install_info", lambda: InstallInfo("editable"))
     elif change == "pip":
         (uv_tool / "uv-receipt.toml").unlink()
@@ -139,6 +143,7 @@ def run_update(monkeypatch):
 
         def fake_step(job, argv, *, shown=None):
             ran.append(argv)
+            job.add(f"$ {shown or ' '.join(argv)}")
             return next(exits)
 
         monkeypatch.setattr(updater, "_step", fake_step)
@@ -178,6 +183,7 @@ def test_new_version_then_environment_then_restart(tmp_path, uv_tool, run_update
     assert ran[1][:5] == [sys.executable, "-m", "jutul_agent", "upgrade", "--env-only"]
     assert updater._job.state == "restarting"
     assert updater.restart_requested and stopped == [True]
+    assert not updater.handed_off
 
 
 def test_no_restart_when_already_up_to_date(tmp_path, uv_tool, run_update) -> None:
@@ -205,6 +211,108 @@ def test_restarts_into_the_new_version_even_if_the_environment_failed(
     assert "Julia environment could not be updated" in updater._job.error
 
 
+def test_the_restarted_server_reports_how_the_update_went(tmp_path, uv_tool, run_update) -> None:
+    # The page reloads into the new server, so the failure has to be reported there.
+    run_update(_updater(tmp_path), _Manager(), install=True, codes=[0, 1], versions=("1.0", "1.1"))
+    restarted = _updater(tmp_path)
+    restarted.report_last_update()
+    job = restarted.status()["job"]
+    assert job["state"] == "failed" and "Julia environment" in job["error"]
+    assert job["lines"] == ["$ uv tool upgrade jutul-agent", "$ jutul-agent upgrade --env-only"]
+    assert not restarted.running  # sessions may start
+    # Reported once: a later restart of the server says nothing.
+    later = _updater(tmp_path)
+    later.report_last_update()
+    assert later.status()["job"] is None
+
+
+@pytest.fixture
+def helper(monkeypatch):
+    """Capture the plans handed to the update helper instead of starting it."""
+    plans: list[dict] = []
+    monkeypatch.setattr(updates, "start_helper", plans.append)
+    return plans
+
+
+def _start_and_wait(updater, manager, **kwargs) -> None:
+    asyncio.run(updater.start(manager, **kwargs))
+    _join_update_thread()
+
+
+def test_windows_hands_the_update_to_a_helper_and_exits(
+    tmp_path, uv_tool, monkeypatch, helper
+) -> None:
+    monkeypatch.setattr(updates, "_on_windows", lambda: True)
+    launcher = tmp_path / "bin" / "jutul-agent.exe"
+    launcher.parent.mkdir()
+    launcher.write_bytes(b"")
+    monkeypatch.setattr(sys, "argv", [str(launcher), "--port", "9000"])
+    stopped, manager = [], _Manager()
+    updater = _updater(tmp_path)
+    updater.bind_server(lambda: stopped.append(True))
+    monkeypatch.setattr(updater, "_step", lambda *a, **k: pytest.fail("the helper runs it"))
+
+    _start_and_wait(updater, manager, install=True, sysimage="off")
+
+    [plan] = helper
+    # The server, and the launcher it runs under, which uv replaces.
+    assert plan["wait_for"] == [os.getpid(), os.getppid()]
+    assert plan["free"] == [str(launcher)]
+    upgrade, env = (step["argv"] for step in plan["steps"])
+    assert upgrade == ["/usr/bin/uv", "tool", "upgrade", "jutul-agent"]
+    assert env[0] == str(launcher)
+    assert env[1:] == ["upgrade", "--env-only", "--workspace", str(tmp_path), "--sysimage", "off"]
+    assert plan["relaunch"] == {
+        "argv": [str(launcher), "--port", "9000"],
+        "cwd": os.getcwd(),
+        "env": {updates.RESTARTED_ENV_VAR: "1"},
+    }
+    assert Path(plan["log"]).parent == updates._update_dir()
+    # Sessions closed, then the server stops without restarting itself.
+    assert manager.closed and stopped == [True]
+    assert updater._job.state == "restarting" and updater.status()["separate_window"]
+    assert updater.handed_off and not updater.restart_requested
+
+
+def test_the_separate_window_can_be_forced_for_testing(
+    tmp_path, uv_tool, monkeypatch, helper
+) -> None:
+    monkeypatch.setenv(updates.SEPARATE_WINDOW_ENV_VAR, "1")
+    monkeypatch.setattr(sys, "argv", ["/somewhere/jutul_agent/__main__.py", "web"])
+    _start_and_wait(_updater(tmp_path), _Manager(), install=True, sysimage=None)
+
+    [plan] = helper
+    # Not started from a launcher: nothing else to wait for, and `python -m` runs it.
+    assert plan["wait_for"] == [os.getpid()] and plan["free"] == []
+    assert plan["relaunch"]["argv"] == [sys.executable, "-m", "jutul_agent", "web"]
+
+
+def test_a_helper_that_cannot_start_leaves_the_server_running(
+    tmp_path, uv_tool, monkeypatch
+) -> None:
+    def broken(_plan):
+        raise OSError("no console")
+
+    monkeypatch.setattr(updates, "_on_windows", lambda: True)
+    monkeypatch.setattr(updates, "start_helper", broken)
+    stopped = []
+    updater = _updater(tmp_path)
+    updater.bind_server(lambda: stopped.append(True))
+    _start_and_wait(updater, _Manager(), install=True, sysimage=None)
+    assert updater._job.state == "failed" and "no console" in updater._job.error
+    assert not stopped and not updater.handed_off
+
+
+def test_windows_updates_only_the_environment_in_place(
+    tmp_path, uv_tool, monkeypatch, run_update, helper
+) -> None:
+    monkeypatch.setattr(updates, "_on_windows", lambda: True)
+    updater = _updater(tmp_path)
+    ran = run_update(updater, _Manager(), install=False, codes=[0])
+    assert ran[0][:3] == [sys.executable, "-m", "jutul_agent"]
+    assert helper == [] and updater._job.state == "done"
+
+
 @pytest.mark.parametrize("reason", ["busy", "running", "remote", "blocked"])
 def test_refusals(tmp_path, uv_tool, monkeypatch, reason) -> None:
     updater = _updater(tmp_path, local=reason != "remote")
@@ -212,7 +320,7 @@ def test_refusals(tmp_path, uv_tool, monkeypatch, reason) -> None:
     if reason == "running":
         updater._job = updates.UpdateJob(install=False)
     if reason == "blocked":
-        monkeypatch.setattr(updates, "_on_windows", lambda: True)
+        monkeypatch.setattr(updates, "install_info", lambda: InstallInfo("editable"))
     with pytest.raises(UpdateRefused):
         asyncio.run(updater.start(manager, install=reason != "busy", sysimage=None))
     assert not manager.closed
@@ -346,7 +454,8 @@ def test_version_tells_the_page_about_restarts_and_the_environment(tmp_path, mon
 def _web_args(**overrides):
     from jutul_agent.interfaces.cli import web
 
-    args = web.build_parser().parse_args(["--sim", "jutuldarcy"])
+    # Keep the test's state folder: launching sets it from the arguments.
+    args = web.build_parser().parse_args(["--sim", "jutuldarcy", "--state-home", str(state_home())])
     for key, value in overrides.items():
         setattr(args, key, value)
     return args
@@ -361,7 +470,7 @@ def web_run(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     calls = SimpleNamespace(
-        checks=[], restarted=False, updater=None, ask_restart=False, ctrl_c=False
+        checks=[], restarted=False, updater=None, ask_restart=False, hand_off=False, ctrl_c=False
     )
 
     class FakeServer:
@@ -373,6 +482,7 @@ def web_run(tmp_path, monkeypatch):
 
         def run(self) -> None:
             calls.updater.restart_requested = calls.ask_restart
+            calls.updater.handed_off = calls.hand_off
             if calls.ctrl_c:  # as uvicorn re-raises it once it has shut down
                 raise KeyboardInterrupt
 
@@ -395,6 +505,14 @@ def test_the_server_restarts_after_an_update(web_run) -> None:
     assert calls.updater.local  # served on 127.0.0.1 by default
 
 
+def test_the_server_exits_once_a_helper_has_the_update(web_run, capsys) -> None:
+    web, calls = web_run
+    calls.hand_off = True
+    assert web.run(_web_args()) == 0
+    assert not calls.restarted  # the helper starts the new server
+    assert "separate window" in capsys.readouterr().err
+
+
 def test_ctrl_c_stops_the_server_cleanly(web_run) -> None:
     web, calls = web_run
     calls.ctrl_c = calls.ask_restart = True
@@ -411,11 +529,14 @@ def test_a_restarted_server_starts_even_if_something_needs_fixing(web_run, monke
     web, calls = web_run
     monkeypatch.setenv(updates.RESTARTED_ENV_VAR, "1")
     monkeypatch.setattr(web, "_sysimage_ready", lambda *a, **k: calls.checks.append("image"))
+    updates._record_outcome(["$ uv tool upgrade jutul-agent"], None)
     args = _web_args()
     assert web.run(args) == 0
     # The env check (which would refuse) is skipped; a stale image is dropped.
     assert calls.checks == ["image"] and args.sysimage is False
     assert updates.RESTARTED_ENV_VAR not in os.environ
+    # The page that asked for the update hears how it went.
+    assert calls.updater.status()["job"]["state"] == "done"
 
 
 def _guard(app):

@@ -102,8 +102,12 @@ itself, updates the folder's Julia environment, restarts, and the page reloads
 into the new version. Open chats are closed for it (their conversations are
 kept), and it waits while a session is starting or working. It only does this
 when jutul-agent runs on your own computer and was installed with `uv tool
-install`. On Windows, where a running program can't replace its own files, it
-shows the steps instead. An outdated Julia environment gets an "Update
+install`. On Windows, where a running program can't replace its own files,
+jutul-agent closes and the update runs in a new console window. jutul-agent
+then keeps running in that window (Ctrl+C there stops it), and the window's
+output is also saved in `~/.local/share/jutul-agent/update/update.log`. If an
+update fails, the page shows its output, also after it reloads into the
+restarted jutul-agent. An outdated Julia environment gets an "Update
 environment" link in the same place, on every system.
 
 An upgrade ships new simulator env templates, but existing workspace envs keep

@@ -246,7 +246,8 @@ def run(args: argparse.Namespace) -> int:
     from jutul_agent.interfaces.server.access import is_loopback_host
     from jutul_agent.interfaces.server.updates import RESTARTED_ENV_VAR, Updater, restart_server
 
-    if os.environ.pop(RESTARTED_ENV_VAR, None) is not None:
+    restarted = os.environ.pop(RESTARTED_ENV_VAR, None) is not None
+    if restarted:
         # Restarted by an update from the browser, which is waiting for this server:
         # start, and let the page report anything the update left to fix.
         print("Restarted after updating.", file=sys.stderr)
@@ -276,6 +277,8 @@ def run(args: argparse.Namespace) -> int:
     # --base-path), and bound to a loopback address.
     local = is_loopback_host(args.host) and not args.base_path
     updater = Updater(ws, local=local)
+    if restarted:
+        updater.report_last_update()
     app = create_app(
         default_sim=sim,
         default_approval_mode=approval_mode,
@@ -304,4 +307,9 @@ def run(args: argparse.Namespace) -> int:
         return 1
     if updater.restart_requested:
         restart_server()
+    if updater.handed_off:
+        print(
+            "jutul-agent is updating in a separate window, and runs there after.",
+            file=sys.stderr,
+        )
     return 0
