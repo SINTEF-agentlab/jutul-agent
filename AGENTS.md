@@ -43,7 +43,8 @@ ecosystem, built on Deep Agents.
 GitHub Actions workflows:
 
 - `ci.yml`: every push/PR. `lint` (ruff); `test` across Linux/Windows/macOS
-  (`pytest -m "not integration" -n 2 --dist loadfile`, no Julia).
+  on Python 3.12, plus Linux on 3.14, the newest Python `uv tool install` tends
+  to pick (`pytest -m "not integration" -n 2 --dist loadfile`, no Julia).
 - `simulators.yml`: runs JuliaKernel and all four simulator integration jobs
   on every PR and push to `main`, plus weekly Monday and manual runs. The
   JutulDarcy smoke job also runs real plot tests. Each smoke job instantiates

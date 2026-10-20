@@ -26,3 +26,17 @@ def test_cli_entry_does_not_import_the_agent_stack():
         f"the CLI entry now imports the agent stack ({result.stdout.strip()}); "
         "a top-level import is pulling it in. Defer it into the command that needs it."
     )
+
+
+def test_cli_hides_the_pydantic_v1_warning():
+    # The LangChain packages import pydantic.v1, which warns at the start of every
+    # command on Python 3.14+. Issuing the warning again after the entry point loads
+    # checks the filter on any Python, not only 3.14.
+    code = (
+        "import warnings, jutul_agent.__main__;"
+        "warnings.warn(\"Core Pydantic V1 functionality isn't compatible with "
+        'Python 3.14 or greater.", UserWarning)'
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "Pydantic V1" not in result.stderr
