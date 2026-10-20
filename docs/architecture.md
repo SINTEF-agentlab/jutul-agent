@@ -18,10 +18,10 @@ one trace.
 
 ## Interfaces
 
-The interface is chosen explicitly (`jutul-agent` with no arguments prints the
-chooser): `web` serves the browser UI over an HTTP + WebSocket server, `tui` is
-the Textual terminal UI, and `run "<prompt>"` runs one headless turn, which is
-what scripts, CI, and the bench use. Subcommands handle the rest: `init`
+With no command, `jutul-agent` serves the web UI over an HTTP + WebSocket
+server (`web` names it explicitly), `tui` is the Textual terminal UI, and
+`run "<prompt>"` runs one headless turn, which is what scripts, CI, and the
+bench use. Subcommands handle the rest: `init`
 bootstraps a workspace, `doctor` diagnoses a broken setup, `transcript` renders
 a past session, `eval` runs bench suites. The CLI entry points live in
 `src/jutul_agent/interfaces/cli/`, the terminal UI in `interfaces/tui/`, and the

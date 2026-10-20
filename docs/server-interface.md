@@ -32,12 +32,13 @@ flowchart LR
 
 ## The web UI
 
-`jutul-agent web` starts the server with a built-in web app: a chat interface
-that is a visual alternative to the terminal UI. The web stack ships in the core
-install, so nothing extra is needed. Point it at a simulator and open the browser:
+`jutul-agent`, run with no command, starts the server with a built-in web app:
+the chat interface jutul-agent is normally used through (`jutul-agent web` is the
+same command). The web stack ships in the core install, so nothing extra is
+needed. Point it at a simulator and open the browser:
 
 ```
-jutul-agent web --sim jutuldarcy
+jutul-agent --sim jutuldarcy
 ```
 
 Open <http://127.0.0.1:8742>. Type a task and watch the agent stream its reply,
@@ -52,7 +53,7 @@ command line is: the folder is its launch directory (or `--workspace`), and the
 simulator comes from `--sim`, the folder's saved `[workspace] simulator`, or
 auto-detection, and is then remembered for next time. Every session in that
 folder shares one simulator and one Julia environment; the UI does not switch
-simulators in place. To work with a different simulator, run `jutul-agent web`
+simulators in place. To work with a different simulator, run `jutul-agent`
 from a different folder. (A future central launcher that opens sessions across folders is a
 deliberate later step; the create/resume API already accepts a folder and a
 simulator per request, so it can grow into that without a protocol change.)

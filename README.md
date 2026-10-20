@@ -23,7 +23,7 @@ plots the results, and iterates: fixing mistakes and refining the next run.
   &nbsp;&nbsp;&nbsp;
   <img src="docs/images/web-battmo.png" alt="jutul-agent web UI: a BattMo discharge-rate investigation with plots and a report" width="47%">
 </p>
-<p align="center"><sub>The browser UI (<code>jutul-agent web</code>): chat on the left; interactive plots and reports pinned in a canvas on the right. On the left, a Fimbul geothermal doublet showing the 3D temperature field around the wells over time. On the right, a BattMo C-rate study with voltage curves, an attempts map, and a written report.</sub></p>
+<p align="center"><sub>The web UI (<code>jutul-agent</code>): chat on the left; interactive plots and reports pinned in a canvas on the right. On the left, a Fimbul geothermal doublet showing the 3D temperature field around the wells over time. On the right, a BattMo C-rate study with voltage curves, an attempts map, and a written report.</sub></p>
 
 ## Quickstart
 
@@ -36,7 +36,7 @@ jutul-agent key openai            # save a key (Anthropic, Google, and OpenRoute
 
 mkdir my-study && cd my-study
 jutul-agent init --sim battmo     # jutuldarcy | battmo | fimbul | mocca
-jutul-agent web                   # browser UI, or: tui, or run "<prompt>"
+jutul-agent                       # start the web UI (or: jutul-agent tui)
 ```
 
 Local models through [Ollama](https://ollama.com) need no key. `init`
@@ -45,8 +45,9 @@ then start in seconds, and `jutul-agent doctor` checks the setup if anything
 looks wrong. Keep it current with `jutul-agent upgrade`.
 
 One folder is bound to one simulator and its Julia environment, so use a
-separate folder for each. The browser UI opens at <http://127.0.0.1:8742> and
-runs locally for a single trusted user. The full [installation and usage
+separate folder for each. `jutul-agent` with no command serves the web UI at
+<http://127.0.0.1:8742>, locally for a single trusted user; `jutul-agent tui`
+is the terminal alternative. The full [installation and usage
 guide](https://sintef-agentlab.github.io/jutul-agent/usage/) covers workspaces,
 interfaces, and models; to work on jutul-agent itself, clone the repo (see
 [Development](#development)).

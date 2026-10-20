@@ -144,7 +144,7 @@ that break the template.
 ```sh
 mkdir try-mysim && cd try-mysim
 uv run jutul-agent init --sim mysim
-uv run jutul-agent web
+uv run jutul-agent
 ```
 
 To develop against a local checkout of the simulator package:

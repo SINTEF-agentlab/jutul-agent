@@ -561,7 +561,7 @@ def create_app(
                 status_code=409,
                 detail=(
                     f"this server is bound to simulator '{default_sim}'; run "
-                    "`jutul-agent web` from another folder to use a different simulator"
+                    "`jutul-agent` from another folder to use a different simulator"
                 ),
             )
         return default_sim

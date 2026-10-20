@@ -37,8 +37,8 @@ def build_parser(prog: str = "jutul-agent tui") -> argparse.ArgumentParser:
             "Specialized scientific agent for AD-enabled simulators built on the Jutul framework."
         ),
         epilog=(
-            "Interfaces: `jutul-agent web` (browser), `jutul-agent tui` (terminal), "
-            '`jutul-agent run "<prompt>"` (one-shot). Setup: '
+            "Interfaces: `jutul-agent` (web UI, also `jutul-agent web`), `jutul-agent tui` "
+            '(terminal), `jutul-agent run "<prompt>"` (one-shot). Setup: '
             "`jutul-agent init|setup [--sim <name>]`. Other commands: `doctor`, "
             "`upgrade`, `transcript [<id>]`, `sessions`, `review`, `eval`."
         ),
@@ -373,8 +373,8 @@ async def _headless_turn(agent: Any, session: Any, prompt: str) -> int:
             "error: this turn paused for approval, but headless mode can't prompt for it yet.\n"
             "       Re-run with `--approval-mode auto` to let the agent run tools without "
             "approval,\n"
-            "       or launch the interactive TUI (`jutul-agent`) to approve steps as "
-            "they come up.",
+            "       or start the web UI (`jutul-agent`) or the terminal UI (`jutul-agent tui`)\n"
+            "       to approve steps as they come up.",
             file=sys.stderr,
         )
         print(f"\n[session {session.session_id}]", file=sys.stderr)

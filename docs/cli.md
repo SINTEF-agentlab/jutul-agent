@@ -11,24 +11,26 @@ flags are accepted by every command:
 
 ## Interfaces
 
-`jutul-agent` has three interfaces; pick one explicitly (bare `jutul-agent`
-prints this list and exits, rather than launching one by default):
+`jutul-agent` has three interfaces. With no command it starts the web UI:
 
 | Command | Interface |
 |---|---|
-| `jutul-agent web [options]` | Browser UI (HTTP + WebSocket server + bundled web app) |
+| `jutul-agent [options]` | Web UI (HTTP + WebSocket server + bundled web app); `jutul-agent web [options]` is the same |
 | `jutul-agent tui [options]` | Terminal UI |
 | `jutul-agent run "<prompt>" [options]` | One headless turn, then exit |
 
-`jutul-agent --version` prints the version.
+`jutul-agent --help` lists the commands, and `jutul-agent --version` prints the
+version. A word that is not a command is an error, so a typo or a bare prompt
+never starts a server.
 
-### jutul-agent web
+### jutul-agent (web UI)
 
 ```sh
-jutul-agent web [--sim <name>] [--approval-mode <mode>] [--model <m>] [--host <addr>] [--port <n>]
+jutul-agent [--sim <name>] [--approval-mode <mode>] [--model <m>] [--host <addr>] [--port <n>]
 ```
 
-Serves the browser UI (default <http://127.0.0.1:8742>). One folder is bound to
+Serves the web UI (default <http://127.0.0.1:8742>). `jutul-agent web` is the
+same command with the same options. One folder is bound to
 one simulator — from `--sim`, the workspace config, or auto-detection — and the
 choice is remembered. Runs locally for a single trusted user; the protocol and
 embedding are covered in [the server interface](server-interface.md).

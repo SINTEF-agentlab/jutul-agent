@@ -25,7 +25,7 @@ OpenRouter is included. Save an API key and start the web UI:
 
 ```sh
 jutul-agent key openrouter
-jutul-agent web
+jutul-agent
 ```
 
 Then use `/model` to choose an OpenRouter model.

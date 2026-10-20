@@ -1,9 +1,10 @@
 """Top-level dispatcher for ``jutul-agent``.
 
-Dispatched on the first argument. The interface is chosen explicitly — bare
-``jutul-agent`` prints the chooser rather than silently launching one:
+Dispatched on the first argument. With no command, ``jutul-agent`` starts the
+web UI, the normal way to work:
 
-- ``jutul-agent web [--sim <name>]``         browser UI (HTTP + WebSocket server).
+- ``jutul-agent [--sim <name>]``             web UI (HTTP + WebSocket server);
+  ``jutul-agent web`` is the same command.
 - ``jutul-agent tui [--sim <name>]``         terminal UI.
 - ``jutul-agent run "<prompt>" [--sim …]``   one headless turn, then print the result.
 
@@ -27,6 +28,7 @@ directory. State (sessions, traces) lives under ``--state-home`` or its default
 from __future__ import annotations
 
 import contextlib
+import difflib
 import sys
 
 from dotenv import load_dotenv
@@ -54,17 +56,40 @@ def _force_utf8_streams() -> None:
                 reconfigure(encoding="utf-8", errors="replace")
 
 
-INTERFACE_CHOOSER = """jutul-agent — pick an interface:
+HELP = """usage: jutul-agent [<command>] [options]
 
-  jutul-agent web              Browser UI: chat with interactive plots and reports.
+With no command, jutul-agent starts the web UI for the current folder: chat
+with interactive plots and reports, in the browser at http://127.0.0.1:8742.
+
+  jutul-agent                  Web UI (`jutul-agent web` is the same).
   jutul-agent tui              Terminal UI.
   jutul-agent run "<prompt>"   Run a single turn headlessly and print the result.
 
+The web UI's options (--sim, --port, --model, ...) work with or without `web`;
+`jutul-agent web -h` lists them.
+
 Set up a folder first:  jutul-agent init --sim <name>
 Set an API key:         jutul-agent key <provider>
-More commands:           doctor, sysimage, upgrade, transcript, sessions, review, eval
-                         (add -h to any of them for options)
+More commands:          doctor, sysimage, upgrade, transcript, sessions, review, eval
+                        (add -h to any of them for options)
 """
+
+COMMANDS = (
+    "web",
+    "tui",
+    "run",
+    *sorted(init_cmd.INIT_COMMANDS),
+    "key",
+    "keys",
+    "auth",
+    "sysimage",
+    "doctor",
+    "upgrade",
+    "transcript",
+    "sessions",
+    "eval",
+    "review",
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -72,22 +97,25 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     argv = sys.argv[1:] if argv is None else argv
 
-    # The interface is explicit: bare `jutul-agent` shows the chooser, it never
-    # silently launches one (the browser UI is the common path and should be named).
-    if not argv or argv[0] in ("-h", "--help"):
-        print(INTERFACE_CHOOSER)
+    if argv and argv[0] in ("-h", "--help"):
+        print(HELP)
         return 0
 
-    if argv[0] in ("--version", "-V"):
+    if argv and argv[0] in ("--version", "-V"):
         from jutul_agent import __version__
 
         print(f"jutul-agent {__version__}")
         raise SystemExit(0)
 
-    if argv[0] == "web":
+    # No command starts the web UI, and so does a leading option: `jutul-agent
+    # --port 8800` is `jutul-agent web --port 8800`. Its parser rejects anything it
+    # doesn't know, so a stray flag fails instead of starting a server.
+    if not argv or argv[0] == "web" or argv[0].startswith("-"):
         from jutul_agent.interfaces.cli import web as web_cmd
 
-        args = web_cmd.build_parser(prog="jutul-agent web").parse_args(argv[1:])
+        named = argv[:1] == ["web"]
+        parser = web_cmd.build_parser(prog="jutul-agent web" if named else "jutul-agent")
+        args = parser.parse_args(argv[1:] if named else argv)
         return web_cmd.run(args)  # applies the workspace flags itself
 
     if argv[0] == "tui":
@@ -107,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.prompt:
             print(
                 'error: `run` needs a prompt, e.g. `jutul-agent run "compute mean([1,2,3])"`. '
-                "For an interactive session use `jutul-agent tui` or `jutul-agent web`.",
+                "For an interactive session, run `jutul-agent` (web UI) or `jutul-agent tui`.",
                 file=sys.stderr,
             )
             return 2
@@ -170,8 +198,10 @@ def main(argv: list[str] | None = None) -> int:
         apply_workspace_flags(args)
         return review_cmd.run(args)
 
-    # No interface or known command matched. Don't guess (a bare prompt or a
-    # stray flag used to launch the TUI) — name the choices instead.
-    print(f"error: unknown command or interface: {argv[0]!r}\n", file=sys.stderr)
-    print(INTERFACE_CHOOSER, file=sys.stderr)
+    # No known command matched. Don't start the web UI on a typo or a bare prompt;
+    # name the choices instead.
+    close = difflib.get_close_matches(argv[0], COMMANDS, n=1)
+    hint = f" Did you mean `jutul-agent {close[0]}`?" if close else ""
+    print(f"error: unknown command: {argv[0]!r}.{hint}\n", file=sys.stderr)
+    print(HELP, file=sys.stderr)
     return 2

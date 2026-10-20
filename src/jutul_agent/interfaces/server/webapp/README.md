@@ -1,6 +1,6 @@
 # jutul-agent web UI
 
-The browser UI for `jutul-agent web`: a React + TypeScript app built with Vite. It
+The browser UI that `jutul-agent` serves: a React + TypeScript app built with Vite. It
 talks to the FastAPI server in `../` over REST and one WebSocket per session (the
 wire protocol is `../protocol.py`, mirrored in `src/protocol.ts`).
 
@@ -28,7 +28,7 @@ npm run typecheck    # tsc --noEmit
 ```
 
 `npm run dev` proxies `/sessions`, `/models`, `/simulators` (and the WebSocket) to a
-backend at `http://127.0.0.1:8181` — run `jutul-agent web --port 8181` (or set
+backend at `http://127.0.0.1:8181` — run `jutul-agent --port 8181` (or set
 `JA_DEV_BACKEND`) alongside it to drive a real session.
 
 ## Layout
