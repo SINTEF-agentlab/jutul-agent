@@ -499,9 +499,7 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
             backend_loaded = True
         if web and live_base is None:
             started = await session.julia.eval(
-                jl.web_server_start(
-                    _free_port(), session.session_id, base_path=session.base_path
-                )
+                jl.web_server_start(_free_port(), session.session_id, base_path=session.base_path)
             )
             # The server prints its bound port on a uniquely-tagged line; read that
             # rather than scanning for digits (a startup log line could carry others).
