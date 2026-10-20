@@ -12,25 +12,31 @@ MOCCA = SimulatorAdapter(
     module_dir=Path(__file__).resolve().parent,
     package_imports=("Jutul", "Mocca"),
     primary_package="Mocca",
-    # Warms the DCB quick-start simulate_process + plot_outlet, baked at init. See
+    # Warms process simulation and native bed/stream plots, baked at init. See
     # the package's src/JutulAgentMocca.jl for the single source of the solve.
     warm_package="JutulAgentMocca",
     domain_hints=(
         "Mocca (MOdelling for Carbon Capture) simulates adsorption-based "
         "CO2 capture processes (pressure / temperature / vacuum swing "
         "adsorption) on the Jutul AD framework. Typical workflow: "
-        "`Mocca.parse_input(json_filepath)` → `(constants, info)` → "
-        "`Mocca.setup_mocca_case(constants, info)` → `(case, ts_config)` → "
-        "`Mocca.simulate_process(case; timestep_selector_cfg=ts_config, "
-        "output_substates=true)`. Built-in plotting: `Mocca.plot_outlet"
-        "(case, states, timesteps)`. Examples live under `examples/` in the "
-        "installed source (`pkgdir(Mocca)`): `dcb_haghpanah_2013_co2_n2.jl` "
-        "(direct column breakthrough), `cyclic_vsa_haghpanah_2013_co2_n2.jl` "
-        "(4-stage VSA), `custom_setup_cyclic_vsa.jl`, plus `optimization.jl` "
-        "and `history_matching.jl`. Reference JSON inputs ship beside the "
-        'package at `joinpath(pkgdir(Mocca), "..", "models", "json")`.'
+        '`Mocca.read_process("haghpanah_2013_four_stage_vsa")` → '
+        "`Mocca.simulate(process; cycles=...)` or "
+        "`Mocca.cyclic_steady_state(process)` → `Mocca.performance(result)`. "
+        "A process contains beds and flow devices; result states are keyed by "
+        "their names. Native plots cover bed histories/profiles and flowsheet "
+        "streams. Read the Mocca skills for data shapes and plot calls. "
+        "Installed examples include `getting_started.jl`, `breakthrough.jl`, "
+        "`process_from_parts.jl`, `two_bed_vsa.jl`, `optimization.jl` and "
+        "`history_matching.jl`; process and adsorbent JSON files are under "
+        "`models/library/`."
     ),
-    review_hints=("Adsorption/separation: mole fractions, purities and recoveries lie in 0..1."),
+    review_hints=(
+        "Adsorption/separation: mole fractions and purities lie in 0..1; "
+        "recovery should too at cyclic steady state. "
+        "Steady-cycle claims require result.converged; transient recovery can "
+        "include inventory carried from earlier cycles. Use performance(result) "
+        "for stream-integrated metrics, not a cell's composition."
+    ),
     example_prompts=(
         "Run the direct column breakthrough example and plot the outlet composition over time.",
         "Simulate a 4-stage VSA cycle and report the CO2 purity and recovery.",
