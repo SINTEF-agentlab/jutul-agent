@@ -134,6 +134,10 @@ def env_status(workspace: Path) -> dict[str, Any] | None:
     }
 
 
+def _on_windows() -> bool:
+    return os.name == "nt"
+
+
 def _installed_version() -> str | None:
     try:
         return version("jutul-agent")
@@ -197,7 +201,7 @@ class Updater:
         """Why the browser can't upgrade this install, or ``None`` if it can."""
         if not self.local:
             return "not-local"
-        if os.name == "nt":
+        if _on_windows():
             return "windows"
         if install_info().method == "editable":
             return "dev-checkout"

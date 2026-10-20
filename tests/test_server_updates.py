@@ -60,7 +60,7 @@ def uv_tool(tmp_path, monkeypatch):
     prefix.mkdir()
     (prefix / "uv-receipt.toml").write_text("[tool]\n", encoding="utf-8")
     monkeypatch.setattr(updates.sys, "prefix", str(prefix))
-    monkeypatch.setattr(updates.os, "name", "posix")
+    monkeypatch.setattr(updates, "_on_windows", lambda: False)
     monkeypatch.setattr(updates, "install_info", lambda: InstallInfo("registry"))
     monkeypatch.setattr(updates.shutil, "which", lambda _name: "/usr/bin/uv")
     return prefix
@@ -92,7 +92,7 @@ def test_installs_that_cannot_update_themselves(
     tmp_path, uv_tool, monkeypatch, change, blocker
 ) -> None:
     if change == "windows":
-        monkeypatch.setattr(updates.os, "name", "nt")
+        monkeypatch.setattr(updates, "_on_windows", lambda: True)
     elif change == "editable":
         monkeypatch.setattr(updates, "install_info", lambda: InstallInfo("editable"))
     elif change == "pip":
@@ -209,7 +209,7 @@ def test_refusals(tmp_path, uv_tool, monkeypatch, reason) -> None:
     if reason == "running":
         updater._job = updates.UpdateJob(install=False)
     if reason == "blocked":
-        monkeypatch.setattr(updates.os, "name", "nt")
+        monkeypatch.setattr(updates, "_on_windows", lambda: True)
     with pytest.raises(UpdateRefused):
         asyncio.run(updater.start(manager, install=reason != "busy", sysimage=None))
     assert not manager.closed
