@@ -545,7 +545,7 @@ class SessionHost:
         if sysimage_decision.blocks:
             raise sysimage_mod.SysimageUnavailable(
                 sysimage_decision,
-                command=sysimage_mod.SURFACE_COMMANDS.get(surface, "jutul-agent web"),
+                command=sysimage_mod.SURFACE_COMMANDS.get(surface, "jutul-agent"),
             )
         for note in sysimage_decision.notes:
             print(f"note: {note}", file=sys.stderr)

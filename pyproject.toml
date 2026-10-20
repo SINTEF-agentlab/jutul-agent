@@ -31,7 +31,7 @@ dependencies = [
     "pygments>=2.17",
     "textual>=8.2.6",
     "pillow>=12.2.0",
-    # The web interface (`jutul-agent web`): HTTP + WebSocket API (uvicorn) and the
+    # The web interface (plain `jutul-agent`): HTTP + WebSocket API (uvicorn) and the
     # multipart parsing FastAPI needs for the web UI's file uploads.
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",

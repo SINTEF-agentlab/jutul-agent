@@ -1,4 +1,4 @@
-"""``jutul-agent web`` subcommand: run the HTTP + WebSocket server.
+"""``jutul-agent`` (or ``jutul-agent web``): run the HTTP + WebSocket server.
 
 Front ends talk to this server to drive sessions; the wire contract is in
 docs/server-interface.md. The web stack (FastAPI + uvicorn) ships in the core
@@ -23,7 +23,11 @@ if TYPE_CHECKING:
 def build_parser(prog: str = "jutul-agent web") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Run the jutul-agent web interface (HTTP + WebSocket server + browser UI).",
+        description=(
+            "Run the jutul-agent web UI (HTTP + WebSocket server + browser app). "
+            "`jutul-agent` and `jutul-agent web` are the same command and take the same "
+            "options."
+        ),
     )
     from jutul_agent.simulators import registry
 
@@ -159,7 +163,7 @@ def _sysimage_ready(
 
     if decision.blocks:
         print(
-            f"\n{sysimage_mod.refusal(decision, command='jutul-agent web')}",
+            f"\n{sysimage_mod.refusal(decision, command='jutul-agent')}",
             file=sys.stderr,
         )
         return False

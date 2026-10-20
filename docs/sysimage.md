@@ -182,7 +182,7 @@ matching is the failure this feature exists to prevent, because nobody notices
 until the slow path is on screen in front of an audience.
 
 ```console
-$ jutul-agent web
+$ jutul-agent
 This workspace is set to run from a Julia system image, but it cannot be used:
 
   edited since the image was built:
@@ -192,10 +192,10 @@ Rebuild it with:
     jutul-agent sysimage build
 
 Or start without it, just for this run:
-    jutul-agent web --no-sysimage
+    jutul-agent --no-sysimage
 ```
 
-`--sysimage` and `--no-sysimage` work on `web`, `tui` and `run`, and override the
+`--sysimage` and `--no-sysimage` work on the web UI, `tui` and `run`, and override the
 folder's setting for one launch. `jutul-agent doctor` reports the image and the
 same diagnosis without having to trigger it.
 

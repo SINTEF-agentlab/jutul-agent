@@ -62,16 +62,98 @@ def test_default_invocation_without_sim_errors(
     assert "--sim is required" in captured.err
 
 
-def test_bare_invocation_shows_interface_chooser(capsys: pytest.CaptureFixture[str]) -> None:
-    # Bare `jutul-agent` no longer launches an interface silently; it names them.
-    assert main([]) == 0
+@pytest.fixture
+def web_runs(monkeypatch: pytest.MonkeyPatch) -> list:
+    """Record each launch of the web UI instead of starting a server."""
+    from jutul_agent.interfaces.cli import web
+
+    launched: list = []
+    monkeypatch.setattr(web, "run", lambda args: launched.append(args) or 0)
+    return launched
+
+
+@pytest.mark.parametrize(
+    ("argv", "port", "sim"),
+    [
+        ([], 8742, None),
+        (["web"], 8742, None),
+        # The web UI's options work without the command too.
+        (["--port", "8800", "--sim", "battmo"], 8800, "battmo"),
+        (["web", "--port", "8800", "--sim", "battmo"], 8800, "battmo"),
+    ],
+)
+def test_no_command_starts_the_web_ui(web_runs: list, argv: list[str], port, sim) -> None:
+    assert main(argv) == 0
+    assert [(args.port, args.sim) for args in web_runs] == [(port, sim)]
+
+
+def test_help_says_no_command_starts_the_web_ui(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--help"]) == 0
     out = capsys.readouterr().out
-    assert "jutul-agent web" in out and "jutul-agent tui" in out and 'run "<prompt>"' in out
+    assert "starts the web UI" in out and "`jutul-agent web` is the same" in out
+    assert "jutul-agent tui" in out and 'run "<prompt>"' in out
 
 
-def test_unknown_command_errors(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize(
+    ("argv", "usage"),
+    [(["--bogus"], "usage: jutul-agent [-h]"), (["web", "--bogus"], "usage: jutul-agent web")],
+)
+def test_an_unknown_option_fails_before_starting_a_server(
+    web_runs: list, capsys: pytest.CaptureFixture[str], argv: list[str], usage: str
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(argv)
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert usage in err and "unrecognized arguments: --bogus" in err
+    assert web_runs == []
+
+
+def test_unknown_command_errors(web_runs: list, capsys: pytest.CaptureFixture[str]) -> None:
+    # Neither an unknown word nor a bare prompt starts the web UI.
     assert main(["frobnicate"]) == 2
     assert "unknown command" in capsys.readouterr().err
+    assert main(["plot the voltage curve"]) == 2
+    assert web_runs == []
+
+
+def test_a_mistyped_command_names_the_likely_one(
+    web_runs: list, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["tiu"]) == 2
+    assert "Did you mean `jutul-agent tui`?" in capsys.readouterr().err
+    assert web_runs == []
+
+
+@pytest.mark.parametrize(
+    ("argv", "module", "entry"),
+    [
+        (["tui"], "run", "dispatch"),
+        (["run", "compute mean([1,2,3])"], "run", "dispatch"),
+        (["init", "--sim", "battmo"], "init", "run"),
+        (["doctor"], "doctor", "run"),
+        (["sessions"], "sessions", "run"),
+        (["upgrade", "--check"], "upgrade", "run"),
+    ],
+)
+def test_commands_dispatch_as_before(
+    web_runs: list,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    argv: list[str],
+    module: str,
+    entry: str,
+) -> None:
+    import importlib
+
+    target = importlib.import_module(f"jutul_agent.interfaces.cli.{module}")
+    called: list = []
+    monkeypatch.setattr(target, entry, lambda args: called.append(args) or 0)
+
+    workspace = ["--workspace", str(tmp_path), "--state-home", str(tmp_path / "state")]
+    assert main([*argv, *workspace]) == 0
+    assert len(called) == 1
+    assert web_runs == []
 
 
 def test_tui_rejects_a_prompt(capsys: pytest.CaptureFixture[str]) -> None:

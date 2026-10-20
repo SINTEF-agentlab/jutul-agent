@@ -12,8 +12,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jutul-agent sessions",
         description=(
-            "List this workspace's sessions, newest first. Resume one with "
-            "`jutul-agent --resume <id>` (or `--continue` for the latest)."
+            "List this workspace's sessions, newest first. Resume one from the web "
+            "UI's sidebar, or with `jutul-agent tui --resume <id>` (or `--continue` "
+            "for the latest)."
         ),
     )
     parser.add_argument(

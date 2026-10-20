@@ -1,8 +1,8 @@
 # The web UI
 
-`jutul-agent web` serves a browser interface for a session. It is the default way
-to work with the agent in a graphical setting, and the surface most users and
-extensions build on. It speaks the same [server interface](server-interface.md) any
+`jutul-agent`, run with no command, serves a browser interface for a session
+(`jutul-agent web` is the same command). It is the default way to work with the
+agent, and the surface most users and extensions build on. It speaks the same [server interface](server-interface.md) any
 front end would, and reuses the same agent core as the command line and the
 terminal UI.
 
@@ -11,7 +11,7 @@ terminal UI.
 Start it from a simulator workspace:
 
 ```sh
-jutul-agent web
+jutul-agent
 ```
 
 This serves the UI at `http://127.0.0.1:8742` by default. Open that address in a

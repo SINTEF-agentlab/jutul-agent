@@ -19,13 +19,12 @@ fixing mistakes and refining the next run.</p>
 <div class="ja-terminal">
 <div class="ja-terminal-bar"><span></span><span></span><span></span>
 <div class="ja-terminal-title">jutul-agent · my-battery-run</div></div>
-<pre><code><span class="ja-t-dim">$</span> jutul-agent tui
-<span class="ja-t-prompt">&gt;</span> Set up a constant-current discharge for the
-  chen_2020 cell and plot the voltage curve.
-
-<span class="ja-t-tool">run_julia</span>  output = solve(cell_setup)
-<span class="ja-t-tool">plot_julia</span>  voltage vs time
-<span class="ja-t-ok">saved</span> artifacts/voltage_curve.png</code></pre>
+<pre><code><span class="ja-t-dim">$</span> uv tool install jutul-agent
+<span class="ja-t-dim">$</span> jutul-agent key openai
+<span class="ja-t-dim">$</span> mkdir my-battery-run &amp;&amp; cd my-battery-run
+<span class="ja-t-dim">$</span> jutul-agent init --sim battmo
+<span class="ja-t-dim">$</span> jutul-agent
+jutul-agent server on <span class="ja-t-ok">http://127.0.0.1:8742</span> (simulator: battmo)</code></pre>
 </div>
 </div>
 
@@ -34,7 +33,7 @@ fixing mistakes and refining the next run.</p>
   &nbsp;&nbsp;&nbsp;
   <img src="images/web-battmo.png" alt="jutul-agent web UI: a BattMo discharge-rate investigation with plots and a report" width="47%">
 </p>
-<p align="center" markdown><small>The browser UI (`jutul-agent web`): chat on the left; interactive plots and
+<p align="center" markdown><small>The web UI (`jutul-agent`): chat on the left; interactive plots and
 reports pinned in a canvas on the right.</small></p>
 
 <div class="grid cards" markdown>
@@ -43,7 +42,7 @@ reports pinned in a canvas on the right.</small></p>
 
     ---
 
-    Install, initialise a workspace, drive the TUI, pick models.
+    Install, initialise a workspace, start the web UI, pick models.
 
     [:octicons-arrow-right-24: Installation and usage](usage.md) ·
     [CLI](cli.md) ·

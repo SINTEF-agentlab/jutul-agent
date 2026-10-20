@@ -22,7 +22,7 @@ uv tool install jutul-agent
 API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) can go in
 your environment or a `.env`, but you don't have to manage that file: run
 `jutul-agent key <provider>` to set or replace a key (or just `jutul-agent
-key` to see what's set), and the TUI and web UI prompt for a missing key on
+key` to see what's set), and the web UI and TUI prompt for a missing key on
 their own. Local models through [Ollama](https://ollama.com) need no key.
 `jutul-agent doctor` verifies the whole setup and prints a fix per finding.
 
@@ -34,11 +34,12 @@ Prefer a clone for working on jutul-agent itself? See
 `jutul-agent` runs in the directory you invoke it from. That directory is the
 workspace: the agent reads and writes files there, and the Julia environment
 lives in `.jutul-agent/julia-env/` inside it. Start it from a project folder.
-Initialise once per folder:
+Initialise once per folder, then start the agent there:
 
 ```sh
 mkdir my-reservoir-study && cd my-reservoir-study
 jutul-agent init --sim jutuldarcy
+jutul-agent                         # the web UI, at http://127.0.0.1:8742
 ```
 
 `init` writes `.jutul-agent/config.toml`, copies the simulator's Julia env
@@ -101,26 +102,28 @@ Add folders outside the workspace so the agent can use them with the same
 file tools:
 
 ```sh
-jutul-agent tui --add-dir ../shared-data --add-dir ~/datasets/spe10
+jutul-agent --add-dir ../shared-data --add-dir ~/datasets/spe10
 ```
 
-Inside the TUI, `/add-dir <path>` adds one immediately and `/add-dir` lists
-the folders added so far. The agent uses each at its real absolute path in
+`jutul-agent tui` takes the same flag. During a session, `/add-dir <path>`
+adds one immediately, in the web UI and the TUI; in the TUI, `/add-dir` alone
+lists the folders added so far. The agent uses each at its real absolute path in
 every tool: the file tools, `run_julia`, and `execute`. Added folders last
 for the session and are not written to config.
 
 ## Interfaces
 
-Pick an interface explicitly — bare `jutul-agent` just lists them:
+With no command, `jutul-agent` starts the web UI (`jutul-agent web` is the
+same). The terminal UI and headless runs have their own commands:
 
 ```sh
-jutul-agent web      # browser UI: chat with interactive plots and reports
-jutul-agent tui      # terminal UI
+jutul-agent                  # web UI: chat with interactive plots and reports
+jutul-agent tui              # terminal UI
 jutul-agent run "<prompt>"   # one headless turn, then exit
 ```
 
 All three are the same agent and session core, so a session started in one
-resumes in another. `jutul-agent web` is covered in
+resumes in another. The web UI is covered in [the web UI](web-ui.md) and
 [the server interface](server-interface.md); the terminal UI and headless runs
 are below.
 
@@ -161,7 +164,8 @@ side-effecting tools.
 ## Resuming a session
 
 The conversation survives the process: every session checkpoints its
-thread, so you can pick an earlier one back up.
+thread, so you can pick an earlier one back up. The web UI lists past
+sessions in its sidebar and reopens one where you left off. In the terminal:
 
 ```sh
 jutul-agent tui --continue          # reopen the most recent session
@@ -169,8 +173,6 @@ jutul-agent tui --resume            # pick from a list of recent sessions
 jutul-agent tui --resume 2026-06-12 # by id, or any unique prefix
 jutul-agent sessions                # list what's resumable
 ```
-
-(The web interface lists and resumes past sessions from its sidebar.)
 
 A resumed TUI replays the prior exchanges and the model continues with the
 full conversation. Sessions are named by start time plus a short suffix
