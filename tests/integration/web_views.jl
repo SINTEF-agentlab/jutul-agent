@@ -44,3 +44,23 @@ wgl_screens(scene) = filter(s -> s isa WGLMakie.Screen, scene.current_screens)
         close(second)
     end
 end
+
+@testset "dropping a route closes its page" begin
+    WGLMakie.activate!()
+    fig = M.Figure()
+    M.lines!(M.Axis(fig[1, 1]), 1:3)
+    page = B.Session()
+    try
+        V.view(page, fig)
+        figures = Dict{String, Any}("/viz/a" => fig, "/viz/b" => fig)
+        V.drop!(figures, "/viz/a")
+        @test !B.isclosed(page)  # still served at /viz/b
+        V.drop!(figures, "/viz/b")
+        @test isempty(figures)
+        @test B.isclosed(page)
+        # WGLMakie's own close handler ran, which stops the view's updates.
+        @test M.isclosed(fig.scene)
+    finally
+        close(page)
+    end
+end
