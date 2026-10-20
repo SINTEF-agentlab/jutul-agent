@@ -4,6 +4,8 @@ from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 def test_sysimage_preflight_prepares_env_before_final_decision(
     tmp_path: Path, monkeypatch, capsys
@@ -88,3 +90,53 @@ def test_sysimage_preflight_leaves_explicit_julia_project_alone(
         WorkspaceConfig(sysimage=True),
         sim="jutuldarcy",
     )
+
+
+def test_web_refuses_an_outdated_workspace_env_before_binding(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Without a system image the env is prepared per session, so check at launch."""
+    from types import SimpleNamespace
+
+    from jutul_agent.interfaces.cli import web
+    from jutul_agent.simulators import env_setup
+
+    def outdated(*_args):
+        raise env_setup.EnvSetupError("has Foo 0.3.12, but requires Foo 0.4")
+
+    monkeypatch.setattr(env_setup, "check_env_versions", outdated)
+    args = SimpleNamespace(julia_project=None, sysimage=None)
+    assert not web._env_versions_ok(args, tmp_path, sim="jutuldarcy")
+    assert "requires Foo 0.4" in capsys.readouterr().err
+    # A prepared env passed explicitly is the user's choice and is not checked.
+    explicit = SimpleNamespace(julia_project=tmp_path, sysimage=None)
+    assert web._env_versions_ok(explicit, tmp_path, sim="jutuldarcy")
+
+
+@pytest.mark.parametrize(
+    ("tty", "answer", "upgraded"),
+    [(False, None, False), (True, "n", False), (True, "", True), (True, "y", True)],
+)
+def test_outdated_env_offers_an_upgrade_from_a_terminal(
+    tmp_path, monkeypatch, capsys, tty, answer, upgraded
+) -> None:
+    """A terminal launch can upgrade in place and carry on; anything else stops."""
+    from types import SimpleNamespace
+
+    from jutul_agent.interfaces.cli import _helpers, upgrade
+    from jutul_agent.simulators import env_setup
+
+    def outdated(*_args):
+        raise env_setup.EnvSetupError("has Foo 0.3.12, but requires Foo 0.4")
+
+    calls = []
+    monkeypatch.setattr(env_setup, "check_env_versions", outdated)
+    monkeypatch.setattr(upgrade, "upgrade_workspace", lambda *a, **k: calls.append(k) or True)
+    monkeypatch.setattr(_helpers.sys, "stdin", SimpleNamespace(isatty=lambda: tty))
+    monkeypatch.setattr(_helpers.sys, "stderr", SimpleNamespace(isatty=lambda: tty, write=print))
+    monkeypatch.setattr("builtins.input", lambda _prompt: answer)
+
+    ok = _helpers.env_versions_ok(SimpleNamespace(), tmp_path, None, "jutuldarcy")
+
+    assert ok is upgraded
+    assert calls == ([{"sysimage": False}] if upgraded else [])

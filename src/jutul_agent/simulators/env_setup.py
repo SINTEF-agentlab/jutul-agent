@@ -42,6 +42,7 @@ from jutul_agent.workspace import (
     mark_dependency_source,
     mark_env_precompiled,
     mark_warm_source,
+    outdated_env_packages,
     recopy_warm_sources,
     resolve_julia_project,
     sync_julia_env_with_template,
@@ -397,7 +398,7 @@ def update_env(project: Path) -> None:
     reconciles stay cheap.
     """
 
-    _run_pkg(project, ["using Pkg", _REGISTRY_UPDATE, _UPDATE, _PRECOMPILE])
+    _run_pkg(project, ["using Pkg", _REGISTRY_UPDATE, _UPDATE, _PRECOMPILE], echo=False)
     mark_env_precompiled(project)
 
 
@@ -530,6 +531,7 @@ def _prepare_workspace_env_unlocked(
             _rebuild_managed_env(adapter, workspace, sim_name, reason=f"was built for {foreign}")
             return
 
+        check_env_versions(adapter, workspace, julia_project, sim_name)
         _sync_workspace_env(adapter, workspace, julia_project, sim_name)
         _refresh_warm_sources(adapter, workspace, julia_project, sim_name)
 
@@ -538,6 +540,67 @@ def _prepare_workspace_env_unlocked(
     _ensure_simulator_installed(adapter, workspace, julia_project, sim_name)
     _ensure_env_warmed(workspace, julia_project, sim_name, dependencies)
     _reconcile_env_template(adapter, workspace, julia_project, sim_name)
+
+
+def check_env_versions(
+    adapter: SimulatorAdapter, workspace: Path, julia_project: Path, sim_name: str | None
+) -> None:
+    """Refuse a managed env whose simulator is older than this install supports.
+
+    The bundled skills are written for the template's simulator versions, so an env
+    resolved under an older jutul-agent would run with guidance its simulator does
+    not support. Its ``[compat]`` came from that older template, so nothing else
+    would ever move it forward. An env the user owns (a root ``Project.toml``, or
+    one passed with ``--julia-project``) is not checked.
+    """
+
+    if user_owns_root_project(workspace):
+        return
+    outdated = outdated_env_packages(julia_project, adapter.julia_env_template_path)
+    if not outdated:
+        return
+    found = ", ".join(f"{package} {version}" for package, version, _ in outdated)
+    needed = ", ".join(f"{package} {spec}" for package, _, spec in outdated)
+    sim = f" --sim {sim_name}" if sim_name else ""
+    raise EnvSetupError(
+        f"this workspace's Julia environment has {found}, but this version of "
+        f"jutul-agent requires {needed}. Update it, keeping packages added to it:\n"
+        f"    jutul-agent upgrade\n"
+        f"or rebuild it from scratch:\n    jutul-agent init --force{sim}"
+    )
+
+
+def upgrade_env(
+    adapter: SimulatorAdapter, workspace: Path, julia_project: Path, sim_name: str | None
+) -> None:
+    """Move a managed env forward to the installed template, keeping added packages.
+
+    Brings in deps the template added, raises the ``[compat]`` of each package
+    outside the template's range to the template's, then updates and precompiles.
+    Other bounds stay, including the one a local simulator checkout removed. A
+    failed resolve restores the ``Project.toml`` and points at the clean rebuild.
+    """
+
+    with _workspace_env_lock(workspace):
+        project_toml = julia_project / "Project.toml"
+        before = project_toml.read_text(encoding="utf-8")
+        template = adapter.julia_env_template_path
+        try:
+            sync_julia_env_with_template(template, workspace=workspace)
+            data = tomllib.loads(project_toml.read_text(encoding="utf-8"))
+            outdated = outdated_env_packages(julia_project, template)
+            data.setdefault("compat", {}).update({pkg: spec for pkg, _, spec in outdated})
+            project_toml.write_text(tomli_w.dumps(data), encoding="utf-8")
+            _info(f"Upgrading the workspace's {adapter.display_name} environment...")
+            update_env(julia_project)
+        except (EnvSetupError, OSError, tomllib.TOMLDecodeError) as exc:
+            project_toml.write_text(before, encoding="utf-8")
+            rebuild = "jutul-agent init --force" + (f" --sim {sim_name}" if sim_name else "")
+            raise EnvSetupError(
+                f"could not upgrade the environment in place ({exc}). Rebuild it "
+                f"from scratch instead:\n    {rebuild}"
+            ) from exc
+        write_env_template_stamp(julia_project, template)
 
 
 def _foreign_simulator(julia_project: Path, adapter: SimulatorAdapter) -> str | None:

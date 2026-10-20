@@ -150,3 +150,30 @@ def apply_workspace_flags(args: argparse.Namespace) -> None:
 
 def known_packages_map() -> dict[str, str]:
     return {registry.get(name).primary_package: name for name in registry.names()}
+
+
+def env_versions_ok(adapter: Any, ws: Path, julia_project: Path | None, sim: str) -> bool:
+    """Refuse an outdated workspace env, offering to update it from a terminal.
+
+    An env passed with ``--julia-project`` is the user's and is not checked. When
+    the launch is interactive the user can update it in place and carry on;
+    otherwise the error names the commands to run.
+    """
+    if julia_project is not None:
+        return True
+    from jutul_agent.interfaces.cli.upgrade import _ask, decide_sysimage, upgrade_workspace
+    from jutul_agent.simulators.env_setup import EnvSetupError, check_env_versions
+    from jutul_agent.workspace import resolve_julia_project
+
+    project = resolve_julia_project(ws)
+    try:
+        check_env_versions(adapter, ws, project, sim)
+        return True
+    except EnvSetupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return False
+    if not _ask("Update it now? This takes several minutes. [Y/n] "):
+        return False
+    rebuild_image = decide_sysimage(ws, interactive=True)
+    return upgrade_workspace(adapter, ws, project, sim, sysimage=rebuild_image)

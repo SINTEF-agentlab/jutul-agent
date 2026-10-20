@@ -683,3 +683,117 @@ def test_prepare_workspace_env_warns_when_dependency_resolve_fails(
     assert "could not resolve and instantiate the capability dependencies" in err
     # The dep was still written even though the follow-up resolve failed.
     assert 'FooCap = "11111111-1111-1111-1111-111111111111"' in root.read_text(encoding="utf-8")
+
+
+def _stale_env(tmp_path: Path, *, template_compat: str, manifest: str) -> tuple[Path, Path]:
+    """A template with ``[compat]`` and a managed workspace env with ``manifest``."""
+
+    module_dir = _make_template(tmp_path)
+    (module_dir / "julia_env" / "Project.toml").write_text(
+        f'[deps]\nFoo = "uuid"\n\n[compat]\n{template_compat}', encoding="utf-8"
+    )
+    workspace = tmp_path / "ws"
+    env = workspace_julia_env(workspace)
+    env.mkdir(parents=True)
+    (env / "Project.toml").write_text('[deps]\nFoo = "uuid"\n', encoding="utf-8")
+    (env / "Manifest.toml").write_text(manifest, encoding="utf-8")
+    return module_dir, workspace
+
+
+def test_compat_ranges_follow_julia_caret_semantics() -> None:
+    from jutul_agent.workspace import compat_ranges
+
+    assert compat_ranges("0.4") == [((0, 4, 0), (0, 5, 0))]
+    assert compat_ranges("^0.5.4") == [((0, 5, 4), (0, 6, 0))]
+    assert compat_ranges("1.2") == [((1, 2, 0), (2, 0, 0))]
+    assert compat_ranges("0.0.3") == [((0, 0, 3), (0, 0, 4))]
+    assert compat_ranges("0.3, 0.4") == [((0, 3, 0), (0, 4, 0)), ((0, 4, 0), (0, 5, 0))]
+    # Forms the templates do not use are not enforced rather than misread.
+    assert compat_ranges("~0.4") is None
+    assert compat_ranges(">= 1") is None
+
+
+def test_outdated_env_packages_reports_versions_outside_the_template(tmp_path: Path) -> None:
+    from jutul_agent.workspace import outdated_env_packages
+
+    module_dir, workspace = _stale_env(
+        tmp_path,
+        template_compat='Foo = "0.4"\nBar = "0.5.4"\nBaz = "1"\nDevd = "0.4"\njulia = "1.10"\n',
+        manifest=(
+            '[[deps.Foo]]\nversion = "0.3.12"\n\n[[deps.Bar]]\nversion = "0.5.5"\n\n'
+            '[[deps.Devd]]\npath = "../Devd"\nversion = "0.9.0"\n'
+        ),
+    )
+    env = workspace_julia_env(workspace)
+    # Bar is in range, Baz is not resolved, Devd is a local checkout the user chose.
+    assert outdated_env_packages(env, module_dir / "julia_env") == [("Foo", "0.3.12", "0.4")]
+
+
+def test_prepare_workspace_env_refuses_an_outdated_simulator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An env resolved under an older template must not run with newer skills."""
+
+    module_dir, workspace = _stale_env(
+        tmp_path, template_compat='Foo = "0.4"\n', manifest='[[deps.Foo]]\nversion = "0.3.12"\n'
+    )
+    monkeypatch.setattr(env_setup, "_run_pkg", lambda *a, **k: pytest.fail("must not resolve"))
+
+    with pytest.raises(env_setup.EnvSetupError) as raised:
+        env_setup.prepare_workspace_env(
+            _adapter(module_dir),
+            workspace=workspace,
+            julia_project=workspace_julia_env(workspace),
+            sim_name="test",
+        )
+    message = str(raised.value)
+    assert "Foo 0.3.12" in message and "requires Foo 0.4" in message
+    assert "jutul-agent upgrade" in message
+    assert "jutul-agent init --force --sim test" in message
+
+
+def test_upgrade_env_raises_compat_and_updates_in_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The env keeps its own packages while taking the template's compat."""
+
+    module_dir, workspace = _stale_env(
+        tmp_path,
+        template_compat='Foo = "0.4"\nDevd = "0.4"\n',
+        manifest='[[deps.Foo]]\nversion = "0.3.12"\n\n[[deps.Devd]]\npath = "../Devd"\n',
+    )
+    env = workspace_julia_env(workspace)
+    (env / "Project.toml").write_text(
+        '[deps]\nFoo = "uuid"\nAdded = "uuid2"\n\n[compat]\nFoo = "0.3.11"\n', encoding="utf-8"
+    )
+    updated: list[Path] = []
+    monkeypatch.setattr(env_setup, "update_env", updated.append)
+
+    env_setup.upgrade_env(_adapter(module_dir), workspace, env, "test")
+
+    project = tomllib.loads((env / "Project.toml").read_text(encoding="utf-8"))
+    assert project["compat"]["Foo"] == "0.4"
+    # A local checkout's bound was removed on purpose and stays removed.
+    assert "Devd" not in project["compat"]
+    assert "Added" in project["deps"]
+    assert updated == [env]
+
+
+def test_upgrade_env_restores_the_project_when_the_update_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_dir, workspace = _stale_env(
+        tmp_path, template_compat='Foo = "0.4"\n', manifest='[[deps.Foo]]\nversion = "0.3.12"\n'
+    )
+    env = workspace_julia_env(workspace)
+    before = (env / "Project.toml").read_text(encoding="utf-8")
+
+    def conflict(_project: Path) -> None:
+        raise env_setup.EnvSetupError("Unsatisfiable requirements")
+
+    monkeypatch.setattr(env_setup, "update_env", conflict)
+
+    with pytest.raises(env_setup.EnvSetupError) as raised:
+        env_setup.upgrade_env(_adapter(module_dir), workspace, env, "test")
+    assert "jutul-agent init --force --sim test" in str(raised.value)
+    assert (env / "Project.toml").read_text(encoding="utf-8") == before

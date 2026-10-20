@@ -30,6 +30,7 @@ from jutul_agent.workspace import (
     env_declares_warm_packages,
     env_template_drifted,
     load_workspace_config,
+    outdated_env_packages,
     resolve_julia_project,
 )
 
@@ -301,6 +302,19 @@ def _check_env_template_current(
         return
 
     template = registry.get(sim_name).julia_env_template_path
+    outdated = outdated_env_packages(project, template)
+    if outdated:
+        found = ", ".join(f"{package} {version}" for package, version, _ in outdated)
+        needed = ", ".join(f"{package} {spec}" for package, _, spec in outdated)
+        report.line(
+            FAIL,
+            "Simulator version",
+            f"the env has {found}; this jutul-agent requires {needed}",
+            "Update it with `jutul-agent upgrade` (or rebuild with "
+            f"`jutul-agent init --sim {sim_name} --force`).",
+        )
+    else:
+        report.line(PASS, "Simulator version")
     if env_template_drifted(project, template):
         report.line(
             WARN,

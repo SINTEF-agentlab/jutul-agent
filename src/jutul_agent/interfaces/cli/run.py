@@ -11,6 +11,7 @@ from jutul_agent import __version__
 from jutul_agent.interfaces.cli._helpers import (
     add_session_flags,
     add_workspace_flags,
+    env_versions_ok,
     known_packages_map,
     resolve_add_dirs,
 )
@@ -222,6 +223,9 @@ async def _run_session(
         # An explicit project override is used as-is; the user owns it.
         print(f"error: --julia-project {julia_project} has no Project.toml.", file=sys.stderr)
         return 2
+
+    if not env_versions_ok(adapter, ws, args.julia_project, adapter.name):
+        return 1
 
     print(f"Workspace:     {ws}", file=sys.stderr)
     if resume_id:
