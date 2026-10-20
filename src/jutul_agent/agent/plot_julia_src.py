@@ -549,11 +549,12 @@ def web_live_call(
     scenes. The figure is stored in the session's live-figure registry (keeping
     its Observables alive) and routed on the session's Bonito server, so the
     browser gets a *live* view whose in-figure widgets run their Julia callbacks.
-    A PNG is saved best-effort as the poster/record/``view``; if no rasteriser can
-    render the scene, a self-contained WebGL HTML is exported instead, so the
-    figure still has a durable record that resumes to a viewable plot rather than
-    a dead PNG. WGLMakie is restored afterwards so client connections render with
-    it.
+    A reload or a second tab takes the figure over from the previous view
+    (``JutulAgentWebViews``). A PNG is saved best-effort as the
+    poster/record/``view``; if no rasteriser can render the scene, a
+    self-contained WebGL HTML is exported instead, so the figure still has a
+    durable record that resumes to a viewable plot rather than a dead PNG.
+    WGLMakie is restored afterwards so client connections render with it.
 
     ``poster=False`` skips the durable record entirely, for a popout replay:
     that serves a second, ephemeral figure of a plot whose record already
@@ -565,6 +566,8 @@ def web_live_call(
         + _web_figure_block(user_code)
         + _fig_size_block(size, fit)
         + "    WGLMakie.activate!(resize_to = :parent)\n"
+        # Lay the figure out once; each browser view then keeps the user's zoom.
+        + "    WGLMakie.Makie.update_state_before_display!(_fig)\n"
         + f'    Main.__JUTUL_WEB_FIGS__[raw"{route}"] = _fig\n'
         # Move the route to the end of the recency list (a re-plot on the same slot
         # reuses its route, so drop any earlier entry rather than double-listing it).
@@ -584,10 +587,11 @@ def web_live_call(
         "            end\n"
         "        end\n"
         "    end\n"
-        f'    Bonito.route!(Main.__JUTUL_WEB_SERVER__, raw"{route}" => Bonito.App(() ->\n'
-        # A later plot can change the global screen config before this route is
-        # opened or reloaded. Bind resizing to the served figure itself.
-        "        Bonito.DOM.div(WGLMakie.WithConfig(\n"
+        f'    Bonito.route!(Main.__JUTUL_WEB_SERVER__, raw"{route}" => Bonito.App(_session ->\n'
+        # A reload or a second tab takes the figure over from the previous view. A
+        # later plot can change the global screen config before this route is opened
+        # or reloaded, so bind resizing to the view itself.
+        "        Bonito.DOM.div(JutulAgent.JutulAgentWebViews.view(_session,\n"
         f'            Main.__JUTUL_WEB_FIGS__[raw"{route}"]; resize_to = :parent);\n'
         f'            style = "{_WRAP_STYLE}")))\n'
         + (_poster_block(png_path, html_fallback=html_path) if poster else "")

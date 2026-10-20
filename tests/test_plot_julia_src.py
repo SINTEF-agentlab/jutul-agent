@@ -344,6 +344,20 @@ def test_every_resize_survives_a_figure_whose_browser_session_died() -> None:
         assert code.index("resize!") < code.index(FIG_SIZE_MARKER)
 
 
+def test_live_route_lets_each_new_view_take_the_figure_over() -> None:
+    # WGLMakie closes a figure's shared scene when any of its views closes, so a
+    # reload froze once the old page's session timed out. Each connection renders
+    # through the take-over view, and the figure is laid out once, before routing,
+    # so a reload keeps the user's zoom.
+    code = _live_code()
+    start = code.index("Bonito.route!")
+    route = code[start : code.index(")))", start)]
+    assert "JutulAgentWebViews.view(_session," in route
+    assert "resize_to = :parent" in route
+    assert "WithConfig" not in route
+    assert code.index("update_state_before_display!(_fig)") < start
+
+
 def test_live_call_caps_the_route_registry() -> None:
     # The safety net: beyond the cap the oldest route is unrouted and its figure
     # dropped, so a session plotting unseen in a loop cannot grow without bound.

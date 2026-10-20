@@ -188,6 +188,19 @@ nothing
         assert not restored.error, restored.error
 
 
+@pytest.mark.skipif(
+    not _julia_available() or not _wgl_ready(JUTULDARCY_ENV),
+    reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
+)
+async def test_web_view_take_over(plot_display) -> None:
+    async with JuliaKernel(_plot_kernel_config(plot_display)) as julia:
+        loaded = await julia.eval("using JutulAgent")
+        assert not loaded.error, loaded.error
+        source = Path(__file__).with_name("web_views.jl")
+        checked = await julia.eval(f'include(raw"{source.as_posix()}")')
+        assert not checked.error, checked.error
+
+
 # Every Makie return shape that `_as_figure` must resolve, built from plain Makie so
 # the test stays stable across simulator-package changes. `nonfig` is the negative
 # case: a non-figure value must NOT capture the (now stale) current figure.
@@ -390,6 +403,24 @@ async def test_native_plotters_render_to_png(tmp_path: Path, plot_display, surfa
                 failures.append(f"{slot}: no PNG written")
             elif png.stat().st_size <= 1000:
                 failures.append(f"{slot}: PNG looks blank ({png.stat().st_size} bytes)")
+            elif surface == "web":
+                # A Cairo poster does not exercise browser serialization. Render each
+                # plotter into two pages; the second takes the figure over.
+                checked = await julia.eval(
+                    "let B = WGLMakie.Bonito, V = JutulAgent.JutulAgentWebViews\n"
+                    f'    fig = Main.__JUTUL_WEB_FIGS__["/viz/{slot}"]\n'
+                    "    pages = [B.Session(B.NoConnection(); asset_server = B.NoServer())\n"
+                    "             for _ in 1:2]\n"
+                    "    for page in pages\n"
+                    "        app = B.App(s -> B.DOM.div(V.view(s, fig; resize_to = :parent)))\n"
+                    "        show(IOBuffer(), B.session_dom(page, app))\n"
+                    "    end\n"
+                    "    @assert B.isclosed(pages[1])\n"
+                    "    foreach(close, pages)\n"
+                    "end"
+                )
+                if checked.error:
+                    failures.append(f"{slot}: web serialization: {checked.error}")
         session.finalize()
         assert not failures, "native plotters failed:\n" + "\n".join(failures)
 
