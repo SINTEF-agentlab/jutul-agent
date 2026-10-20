@@ -379,25 +379,16 @@ export function createSessionStore() {
       const id = viewIdOf(msg);
       const kind: ViewKind = msg.kind === "report" ? "report" : "plot";
       const title = msg.title || (kind === "report" ? "Report" : "Interactive plot");
-      let live = !!msg.live;
-      let url = msg.url;
-      let expired = false;
+      const live = !!msg.live;
       let nonce = 0;
       if (replayed) {
-        // A replayed live view may only stay live when its original frame still
-        // exists in the pool (an in-page session switch): a fresh frame on a
-        // once-viewed figure comes up corrupt. Adopting aligns the nonce with
-        // the mounted frame; a pool miss (a reload, a cold resume) falls back
-        // to the poster and the regenerate button.
+        // The server marks a replayed view live only while it still serves the
+        // figure. When this page still holds the view's frame (an in-page session
+        // switch), adopt it so the figure stays exactly as it was. Otherwise (after
+        // a reload) a fresh frame opens a new view, which takes the figure over.
         const sid = get().sessionId ?? "";
         const pooled = live ? framePool.nonceOf(sid, id, msg.url) : null;
-        if (live && pooled !== null) {
-          nonce = pooled;
-        } else if (live) {
-          live = false;
-          if (msg.poster) url = msg.poster;
-          else expired = true;
-        }
+        if (pooled !== null) nonce = pooled;
         // A non-live replay whose view still has a pooled frame: that frame
         // belongs to a figure the server no longer serves (the kernel
         // restarted); release it rather than adopt it later.
@@ -406,7 +397,7 @@ export function createSessionStore() {
       upsertView(
         {
           id,
-          url,
+          url: msg.url,
           title,
           kind,
           poster: msg.poster ?? null,
@@ -414,7 +405,7 @@ export function createSessionStore() {
           live,
           // A refresh replaces the view wholesale: a re-plot or a regenerate
           // revives an expired view with a fresh figure.
-          expired,
+          expired: false,
           record: msg.record ?? null,
           width: msg.width ?? null,
           height: msg.height ?? null,

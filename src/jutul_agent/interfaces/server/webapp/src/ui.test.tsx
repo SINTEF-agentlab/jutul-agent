@@ -135,10 +135,10 @@ describe("canvas interaction", () => {
   });
 
   it("a resumed session's poster clears the loader without looping", () => {
-    // Resuming demotes a live figure to its PNG poster, and a poster the browser
-    // has already decoded reports its load from the panel's mount check. Since
-    // that report re-renders the canvas, the whole path has to settle rather than
-    // feed itself another report.
+    // A session resumed from disk has no plot server, so its figure replays as
+    // its PNG poster, and a poster the browser has already decoded reports its
+    // load from the panel's mount check. Since that report re-renders the canvas,
+    // the whole path has to settle rather than feed itself another report.
     const complete = vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
     const { store, container } = renderWithStore(<Canvas />);
     act(() => store.getState().setSession("s1", ""));
@@ -146,11 +146,11 @@ describe("canvas interaction", () => {
       store.getState().replay([
         {
           type: "viz",
-          url: "/sessions/s1/viz/abc",
+          url: "/sessions/s1/artifacts/fig.png",
           kind: "plot",
           slot: "fig",
           title: "My figure",
-          live: true,
+          live: false,
           poster: "/sessions/s1/artifacts/fig.png",
         },
       ]),

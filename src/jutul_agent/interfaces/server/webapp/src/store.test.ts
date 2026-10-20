@@ -299,7 +299,7 @@ describe("replayed live views and the frame pool", () => {
     height: 900,
   };
 
-  it("a replayed live view stays live only when its frame survives in the pool", () => {
+  it("a replayed live view adopts its frame when it survives in the pool", () => {
     state().setSession("s1", "");
     framePool.register({
       sessionId: "s1",
@@ -315,21 +315,33 @@ describe("replayed live views and the frame pool", () => {
     expect(v.nonce).toBe(2); // aligned with the mounted frame's reload token
   });
 
-  it("a replayed live view without its frame falls back to the poster", () => {
+  it("a replayed live view without its frame stays live, on a fresh frame", () => {
+    // After a reload: the server still serves the figure, and a new view takes
+    // it over, so the plot comes back interactive rather than as its poster.
     state().setSession("s1", "");
     state().replay([liveViz]);
+    const v = state().views["slot:res"];
+    expect(v.live).toBe(true);
+    expect(v.url).toBe(liveViz.url);
+    expect(v.nonce).toBe(0);
+  });
+
+  it("a figure the server no longer serves replays as its poster", () => {
+    // The server sends the poster, not live, and the stale frame is let go.
+    state().setSession("s1", "");
+    framePool.register({
+      sessionId: "s1",
+      viewId: "slot:res",
+      url: liveViz.url,
+      title: "res",
+      nonce: 0,
+    });
+    state().replay([{ ...liveViz, live: false, url: liveViz.poster }]);
     const v = state().views["slot:res"];
     expect(v.live).toBe(false);
     expect(v.url).toBe(liveViz.poster);
     expect(v.record).toBe("artifacts/res.png"); // regenerate stays available
-  });
-
-  it("a replayed live view with neither frame nor poster is marked expired", () => {
-    state().setSession("s1", "");
-    state().replay([{ ...liveViz, poster: null }]);
-    const v = state().views["slot:res"];
-    expect(v.live).toBe(false);
-    expect(v.expired).toBe(true);
+    expect(framePool.has("s1", "slot:res", liveViz.url)).toBe(false);
   });
 
   it("downgradeView releases the frame and falls back to the poster", () => {

@@ -158,6 +158,10 @@ def make_reset_julia_tool(session: Session):
                 await session.julia.restart()
             except Exception as exc:
                 return f"ERROR: failed to restart Julia: {exc}"
+        # The live plot server and its figures went with the old state; the next
+        # plot starts a new one.
+        session.web_plot_port = None
+        session.live_routes = set()
         return (
             "Julia restarted with a fresh session. All previous state "
             "(loaded packages, variables, results) was cleared."

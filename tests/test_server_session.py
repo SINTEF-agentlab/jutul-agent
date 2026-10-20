@@ -953,6 +953,26 @@ def test_artifact_wire_events_replay_falls_back_to_poster() -> None:
     }
 
 
+def test_artifact_wire_events_replays_only_figures_still_served() -> None:
+    # A live session's server may have dropped a figure since it was recorded (the
+    # agent closed it, or the route cap released it): that one shows its poster.
+    def payload(slot: str) -> dict:
+        return {
+            "path": f"artifacts/{slot}.png",
+            "mime": "image/png",
+            "kind": "plot",
+            "poster": f"artifacts/{slot}.png",
+            "slot": slot,
+            "live_url": f"/live/sid/viz/{slot}",
+        }
+
+    kept, dropped = artifact_wire_events(
+        [payload("kept"), payload("dropped")], "sid", live=True, live_routes={"/viz/kept"}
+    )
+    assert kept["live"] is True and kept["url"] == "/live/sid/viz/kept"
+    assert dropped["live"] is False and dropped["url"] == "/sessions/sid/artifacts/dropped.png"
+
+
 def test_artifact_wire_events_prefixes_base_path() -> None:
     payloads = [
         {
