@@ -22,6 +22,15 @@ if TYPE_CHECKING:
     from jutul_agent.workspace import WorkspaceConfig
 
 
+def _origin(value: str) -> str:
+    from jutul_agent.interfaces.server.access import normalize_origin
+
+    try:
+        return normalize_origin(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def build_parser(prog: str = "jutul-agent web") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
@@ -39,6 +48,17 @@ def build_parser(prog: str = "jutul-agent web") -> argparse.ArgumentParser:
         help="Address to bind (default 127.0.0.1, localhost only).",
     )
     parser.add_argument("--port", type=int, default=8742, help="Port to bind (default 8742).")
+    parser.add_argument(
+        "--allowed-origin",
+        action="append",
+        default=[],
+        type=_origin,
+        metavar="ORIGIN",
+        help=(
+            "Let pages from this origin (e.g. https://app.example.org) use the server too. "
+            "Only its own pages may by default. Repeat for more."
+        ),
+    )
     parser.add_argument(
         "--base-path",
         default="",
@@ -223,12 +243,8 @@ def run(args: argparse.Namespace) -> int:
     model = args.model or config.model
     add_dirs = resolve_add_dirs(args.add_dir, ws)
 
-    from jutul_agent.interfaces.server.updates import (
-        RESTARTED_ENV_VAR,
-        Updater,
-        is_loopback_host,
-        restart_server,
-    )
+    from jutul_agent.interfaces.server.access import is_loopback_host
+    from jutul_agent.interfaces.server.updates import RESTARTED_ENV_VAR, Updater, restart_server
 
     if os.environ.pop(RESTARTED_ENV_VAR, None) is not None:
         # Restarted by an update from the browser, which is waiting for this server:
@@ -256,7 +272,10 @@ def run(args: argparse.Namespace) -> int:
         + ")",
         file=sys.stderr,
     )
-    updater = Updater(ws, local=is_loopback_host(args.host))
+    # Serving this computer only: no reverse proxy in front (that would set
+    # --base-path), and bound to a loopback address.
+    local = is_loopback_host(args.host) and not args.base_path
+    updater = Updater(ws, local=local)
     app = create_app(
         default_sim=sim,
         default_approval_mode=approval_mode,
@@ -268,6 +287,8 @@ def run(args: argparse.Namespace) -> int:
         sysimage=args.sysimage,
         base_path=args.base_path,
         updater=updater,
+        local_only=local,
+        allowed_origins=args.allowed_origin,
     )
     server = uvicorn.Server(
         uvicorn.Config(app, host=args.host, port=args.port, timeout_graceful_shutdown=5)

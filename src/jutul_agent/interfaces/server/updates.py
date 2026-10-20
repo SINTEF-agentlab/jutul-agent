@@ -19,7 +19,6 @@ disk), and no session starts until it is done.
 
 from __future__ import annotations
 
-import ipaddress
 import os
 import shutil
 import subprocess
@@ -27,12 +26,11 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
-from urllib.parse import urlsplit
 
 from jutul_agent.interfaces.cli.upgrade import workspace_env_status
 from jutul_agent.update_check import install_info, is_enabled, pending_update
@@ -84,33 +82,6 @@ _INSTALL_BLOCKERS = {
 
 class UpdateRefused(Exception):
     """The update can't start now; the message says why."""
-
-
-def is_loopback_host(host: str) -> bool:
-    """Whether a bind address or URL host name only reaches this computer."""
-    host = host.strip("[]")
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
-def request_is_local(headers: Mapping[str, str]) -> bool:
-    """Whether a request comes from this server's own page on this computer.
-
-    A browser sends ``Origin`` with every POST. Requiring it to name the very host
-    the request was sent to shuts out other sites open in the same browser, and
-    requiring that host to be a loopback name shuts out a site that points its own
-    domain at this computer.
-    """
-    host = headers.get("host", "")
-    origin = headers.get("origin")
-    if not host or not origin:
-        return False
-    hostname = urlsplit(f"//{host}").hostname or ""
-    return is_loopback_host(hostname) and urlsplit(origin).netloc == host
 
 
 def env_status(workspace: Path) -> dict[str, Any] | None:

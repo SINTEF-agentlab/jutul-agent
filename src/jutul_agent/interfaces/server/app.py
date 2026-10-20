@@ -53,13 +53,9 @@ from jutul_agent.agent.capabilities import (
     http_tool_capability,
 )
 from jutul_agent.interfaces.server import protocol
+from jutul_agent.interfaces.server.access import OriginGuard, request_is_local
 from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
-from jutul_agent.interfaces.server.updates import (
-    BOOT_ID,
-    Updater,
-    UpdateRefused,
-    request_is_local,
-)
+from jutul_agent.interfaces.server.updates import BOOT_ID, Updater, UpdateRefused
 from jutul_agent.preview import TOOL_STREAM_RENDER_INTERVAL, TOOL_STREAM_TAIL_CAP
 from jutul_agent.session_host import SessionHost
 from jutul_agent.simulators.env_setup import EnvOutdatedError, EnvSetupError
@@ -413,6 +409,8 @@ def create_app(
     sysimage: bool | None = None,
     base_path: str = "",
     updater: Updater | None = None,
+    local_only: bool = False,
+    allowed_origins: Sequence[str] = (),
 ) -> FastAPI:
     # The launch-wide knobs (folder-fixed) ride in the default manager's host
     # factory; an injected manager (tests) brings its own. The model is a default
@@ -455,6 +453,9 @@ def create_app(
         # Embedded or under test: report updates, but never run one.
         updater = Updater(workspace_root(), local=False)
     app.state.updater = updater
+    # Only this server's own pages may drive it; see interfaces/server/access.py.
+    # ``local_only`` (a server for this computer only) also checks Host.
+    app.add_middleware(OriginGuard, local_only=local_only, allowed_origins=allowed_origins)
 
     @app.get("/models")
     def list_models() -> dict[str, Any]:

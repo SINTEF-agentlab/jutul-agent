@@ -12,14 +12,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from jutul_agent.interfaces.server import updates
+from jutul_agent.interfaces.server.access import is_loopback_host, request_is_local
 from jutul_agent.interfaces.server.app import create_app
 from jutul_agent.interfaces.server.manager import SessionManager
-from jutul_agent.interfaces.server.updates import (
-    Updater,
-    UpdateRefused,
-    is_loopback_host,
-    request_is_local,
-)
+from jutul_agent.interfaces.server.updates import Updater, UpdateRefused
 from jutul_agent.update_check import InstallInfo
 
 LOCAL = {"host": "127.0.0.1:8742", "origin": "http://127.0.0.1:8742"}
@@ -373,6 +369,7 @@ def web_run(tmp_path, monkeypatch):
             self.started = True
             self.should_exit = False
             calls.updater = config.app.state.updater
+            calls.app = config.app
 
         def run(self) -> None:
             calls.updater.restart_requested = calls.ask_restart
@@ -419,6 +416,29 @@ def test_a_restarted_server_starts_even_if_something_needs_fixing(web_run, monke
     # The env check (which would refuse) is skipped; a stale image is dropped.
     assert calls.checks == ["image"] and args.sysimage is False
     assert updates.RESTARTED_ENV_VAR not in os.environ
+
+
+def _guard(app):
+    from jutul_agent.interfaces.server.access import OriginGuard
+
+    return next(m.kwargs for m in app.user_middleware if m.cls is OriginGuard)
+
+
+def test_a_local_server_checks_hosts_too(web_run) -> None:
+    web, calls = web_run
+    assert web.run(_web_args(allowed_origin=["http://jutul.test:8742"])) == 0
+    assert _guard(calls.app) == {
+        "local_only": True,
+        "allowed_origins": ["http://jutul.test:8742"],
+    }
+
+
+def test_behind_a_proxy_origins_are_checked_but_not_hosts(web_run) -> None:
+    # The proxy's public name arrives as Host, so only the origin can be checked.
+    web, calls = web_run
+    assert web.run(_web_args(base_path="/restricted")) == 0
+    assert _guard(calls.app)["local_only"] is False
+    assert not calls.updater.local  # nor is jutul-agent updated from a proxied page
 
 
 def test_a_server_on_the_network_never_updates(web_run) -> None:
