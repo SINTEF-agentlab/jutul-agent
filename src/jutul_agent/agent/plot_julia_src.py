@@ -568,6 +568,8 @@ def web_live_call(
         + "    WGLMakie.activate!(resize_to = :parent)\n"
         # Lay the figure out once; each browser view then keeps the user's zoom.
         + "    WGLMakie.Makie.update_state_before_display!(_fig)\n"
+        # A same-slot re-plot replaces the route's figure; close the old one's page.
+        + f'    JutulAgent.JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, raw"{route}")\n'
         + f'    Main.__JUTUL_WEB_FIGS__[raw"{route}"] = _fig\n'
         # Move the route to the end of the recency list (a re-plot on the same slot
         # reuses its route, so drop any earlier entry rather than double-listing it).
@@ -580,7 +582,7 @@ def web_live_call(
         # downgrades views, so under normal use this never fires.
         f"        while length(_order) > {WEB_LIVE_ROUTE_CAP}\n"
         "            local _victim = popfirst!(_order)\n"
-        "            delete!(Main.__JUTUL_WEB_FIGS__, _victim)\n"
+        "            JutulAgent.JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, _victim)\n"
         "            try\n"
         "                Main.Bonito.delete_route!(Main.__JUTUL_WEB_SERVER__, _victim)\n"
         "            catch\n"
@@ -770,9 +772,10 @@ def close_web_plots_call(slot: str) -> str:
     """Julia to release live web figures: one slot's route, or all when empty.
 
     The web counterpart of ``close_windows_call``, which closes native windows and
-    so has nothing to close on this surface. Unrouting the figure and dropping it
-    from the registry is what lets the kernel reclaim what a live figure holds. A
-    tab already open in the browser keeps showing its last frame until reloaded.
+    so has nothing to close on this surface. Closing the figure's browser page,
+    unrouting the figure and dropping it from the registry is what lets the kernel
+    reclaim what a live figure holds. A tab already open in the browser keeps
+    showing its last frame.
     """
 
     routes = f'[raw"{viz_route(slot)}"]' if slot else "collect(keys(Main.__JUTUL_WEB_FIGS__))"
@@ -782,7 +785,7 @@ def close_web_plots_call(slot: str) -> str:
         # never plotted; a server that exists is also what proves Bonito is loaded.
         "    if isdefined(Main, :__JUTUL_WEB_SERVER__)\n"
         f"        for r in {routes}\n"
-        "            delete!(Main.__JUTUL_WEB_FIGS__, r)\n"
+        "            Main.JutulAgent.JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, r)\n"
         "            filter!(!=(r), Main.__JUTUL_WEB_ORDER__)\n"
         "            try\n"
         "                Main.Bonito.delete_route!(Main.__JUTUL_WEB_SERVER__, r)\n"

@@ -201,6 +201,37 @@ async def test_web_view_take_over(plot_display) -> None:
         assert not checked.error, checked.error
 
 
+@pytest.mark.skipif(
+    not _julia_available() or not _wgl_ready(JUTULDARCY_ENV),
+    reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
+)
+async def test_dropped_routes_close_their_pages(plot_display, tmp_path, monkeypatch) -> None:
+    open_page = (
+        "global page = WGLMakie.Bonito.Session(); "
+        'JutulAgent.JutulAgentWebViews.view(page, Main.__JUTUL_WEB_FIGS__["/viz/{}"]); nothing'
+    )
+    page_closed = "@assert WGLMakie.Bonito.isclosed(page)"
+    code = "fig = WGLMakie.Figure(); WGLMakie.lines!(WGLMakie.Axis(fig[1, 1]), 1:3); fig"
+    async with JuliaKernel(_plot_kernel_config(plot_display)) as julia:
+        session = _session(julia, tmp_path, "web-drop")
+        tool = make_plot_julia_tool(session, surface="web")
+        assert "served a live interactive plot" in await _plot(tool, code, "a")
+        assert not (await julia.eval(open_page.format("a"))).error
+        # A re-plot of the same slot replaces its figure.
+        assert "served a live interactive plot" in await _plot(tool, code, "a")
+        assert not (await julia.eval(page_closed)).error
+        # Eviction past the cap, then closing the remaining plot.
+        monkeypatch.setattr(jl, "WEB_LIVE_ROUTE_CAP", 1)
+        assert not (await julia.eval(open_page.format("a"))).error
+        assert "served a live interactive plot" in await _plot(tool, code, "b")
+        assert not (await julia.eval(page_closed)).error
+        assert not (await julia.eval(open_page.format("b"))).error
+        assert not (await julia.eval(jl.close_web_plots_call("b"))).error
+        result = await julia.eval(page_closed + "; @assert isempty(Main.__JUTUL_WEB_FIGS__)")
+        assert not result.error, result.error
+        session.finalize()
+
+
 # Every Makie return shape that `_as_figure` must resolve, built from plain Makie so
 # the test stays stable across simulator-package changes. `nonfig` is the negative
 # case: a non-figure value must NOT capture the (now stale) current figure.

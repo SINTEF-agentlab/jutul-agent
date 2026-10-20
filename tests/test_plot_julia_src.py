@@ -41,6 +41,7 @@ from jutul_agent.agent.plot_julia_src import (
     PREFER_OPEN_SCREEN_GUARD,
     SCREEN_PREFERENCE_MARKER,
     WEB_LIVE_ROUTE_CAP,
+    close_web_plots_call,
     web_live_call,
     web_render_call,
     web_server_start,
@@ -356,6 +357,17 @@ def test_live_route_lets_each_new_view_take_the_figure_over() -> None:
     assert "resize_to = :parent" in route
     assert "WithConfig" not in route
     assert code.index("update_state_before_display!(_fig)") < start
+
+
+def test_dropping_a_live_route_closes_its_page() -> None:
+    # A re-plot of the same slot, eviction past the cap, and closing plots all
+    # close the dropped figure's browser page, so its view stops holding it.
+    code = _live_code()
+    replace = 'JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, raw"/viz/reservoir")'
+    assert code.index(replace) < code.index('Main.__JUTUL_WEB_FIGS__[raw"/viz/reservoir"] =')
+    assert "JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, _victim)" in code
+    for slot in ("reservoir", ""):
+        assert "JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, r)" in close_web_plots_call(slot)
 
 
 def test_live_call_caps_the_route_registry() -> None:

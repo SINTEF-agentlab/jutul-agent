@@ -16,6 +16,10 @@ const Bonito = WGLMakie.Bonito
 # The WGLMakie internals used here are unchanged from 0.13.13 through 0.13.16.
 supported() = v"0.13.13" <= Base.pkgversion(WGLMakie) < v"0.14"
 
+# The browser session showing each figure (keyed by its scene, since a Figure is
+# immutable), so dropping its route can close it.
+const SESSIONS = WeakKeyDict{Makie.Scene, Bonito.Session}()
+
 """
     view(session, fig; screen_config...)
 
@@ -44,7 +48,24 @@ function view(session::Bonito.Session, fig::Makie.Figure; screen_config...)
     # Not WithConfig, which resets axis limits on every view: the figure is laid out
     # once when it is served, so a reload keeps the user's zoom.
     config = Makie.merge_screen_config(WGLMakie.ScreenConfig, Dict{Symbol, Any}(screen_config))
+    SESSIONS[scene] = session
     return WGLMakie.render_with_init(WGLMakie.Screen(scene, config), session, scene, fig)
+end
+
+"""
+    drop!(figures, route)
+
+Remove `route` from the live-figure table and close its figure's browser page, unless
+another route still serves the figure. WGLMakie then stops the view's updates and
+frees its render data now, rather than after the browser leaves and Bonito's grace
+period ends.
+"""
+function drop!(figures::AbstractDict, route)
+    fig = pop!(figures, route, nothing)
+    (fig isa Makie.Figure && !any(other -> other === fig, values(figures))) || return nothing
+    session = pop!(SESSIONS, fig.scene, nothing)
+    isnothing(session) || close(session)
+    return nothing
 end
 
 function detach!(scene, screen)
