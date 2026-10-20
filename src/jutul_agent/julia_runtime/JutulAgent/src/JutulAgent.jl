@@ -51,8 +51,31 @@ function _warm_poster(Backend)
     return fig
 end
 
+# Compile the live web view path: a first view, then a second that takes the figure
+# over and rebuilds WGLMakie's render data. An offline page serializes at once, with no
+# browser round trip. Best-effort: a failure here only costs first-view compile time.
+function _warm_web()
+    JutulAgentWebViews.supported() || return nothing
+    Bonito = WGLMakie.Bonito
+    WGLMakie.activate!()
+    fig = _warm_poster(WGLMakie)
+    WGLMakie.Makie.update_state_before_display!(fig)
+    pages = [Bonito.Session(Bonito.NoConnection(); asset_server = Bonito.NoServer()) for _ in 1:2]
+    try
+        for page in pages
+            app = Bonito.App(s -> Bonito.DOM.div(JutulAgentWebViews.view(s, fig)))
+            show(IOBuffer(), Bonito.session_dom(page, app))
+        end
+    catch
+    finally
+        foreach(close, pages)
+    end
+    return nothing
+end
+
 @setup_workload begin
     @compile_workload begin
+        _warm_web()
         CairoMakie.activate!()
         mktempdir() do dir
             CairoMakie.save(joinpath(dir, "warm-cairo.png"), _warm_draw(CairoMakie))
