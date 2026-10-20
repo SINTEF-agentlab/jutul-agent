@@ -1,106 +1,72 @@
 ---
 name: fimbul-overview
-description: High-level Fimbul workflow, geothermal case factories, and result inspection
+description: Set up geothermal Fimbul cases and interpret reservoir and well results.
 ---
 
-# Fimbul orientation
+# Fimbul
 
-## When to use
+Fimbul covers geothermal production and thermal energy storage: doublets,
+enhanced and closed-loop systems, borehole storage, and high-enthalpy systems.
+Start from a case factory and the closest installed example under `examples/`.
+Fimbul extends JutulDarcy with geothermal physics, so its grid, well, and
+simulation APIs also apply.
 
-Use this skill for any geothermal task on Fimbul — aquifer or borehole
-thermal energy storage (ATES, BTES, FTES, HTATES), conventional and
-enhanced geothermal systems (doublet, EGS, AGS, closed-loop coaxial BHE),
-or analytical sanity checks.
+## Set up and run
 
-## Mental model
-
-Fimbul extends JutulDarcy with an energy-conservation equation that
-transports heat by advection and conduction. A Fimbul simulation is
-*structurally* a JutulDarcy reservoir simulation with a temperature
-field, so JutulDarcy's primitives (grids, `reservoir_domain`, wells,
-`simulate_reservoir`) carry over unchanged.
-
-The simplest entry point is a **case factory** — a function in Fimbul
-that returns a `JutulCase` for a named example geometry:
+Case factories assemble the model, parameters, initial state, schedule, and
+forces into a `JutulCase`:
 
 ```julia
 using Fimbul, JutulDarcy
-case = egg_geothermal_doublet()        # case object
-result = simulate_reservoir(case; info_level = 1)  # run it; info_level = 2 if convergence struggles
-T = result.states[end][:Temperature]   # final-state temperature field
+case = egg_geothermal_doublet()
+result = simulate_reservoir(case; info_level=1)
 ```
 
-When you need a custom case, drop down to JutulDarcy primitives and add
-geothermal physics through the same Fimbul/JutulDarcy API surface.
+`simulate_reservoir` validates the case by default. Review its messages;
+warnings and errors may be reported without stopping the solve. A separate
+validation call is useful when checking setup without running a simulation.
 
-## Finding what you need
+For custom geometry or wells, follow the installed Fimbul example and the
+JutulDarcy grid/well constructors. Use the JutulDarcy source resolved in this
+environment; a separate installation may expose different APIs.
+Analytical examples can return additional reference solutions alongside the case.
 
-Fimbul's source is read-only depot source; its path is given to you up front, so
-browse it directly with the file tools (see the `workspace-and-source` skill):
+Find production and closed-loop examples under `examples/production/`,
+ATES/BTES and other storage setups under `examples/storage/`, and reference
+heat solutions under `examples/analytical/`.
+Preserve the factories' energy formulation and connected-well settings.
+For short closed-loop checks, shorten the schedule before coarsening geometry
+that contains well trajectories.
 
-```text
-# Fimbul source path is in your system prompt -> /.../Fimbul/<hash>
-glob("/.../Fimbul/examples/**/*.jl")              # analytical / production / storage
-grep("function egg_geothermal", path="/.../Fimbul/src")   # a case factory's source
-read_file("/.../Fimbul/examples/production/doublet_demo.jl")
-```
+## Results
 
-Fimbul builds on JutulDarcy, whose source sits alongside at `pkgdir(JutulDarcy)`.
-Reach for it (and the JutulDarcy skills) for the grid, mesh, and well primitives
-Fimbul reuses:
+`result.states`, `result.wells`, and `result.time` contain reservoir states,
+well outputs, and report times. Use these properties rather than integer
+indexing of `result`.
+For example, `result.states[end][:Temperature]` is the final cell-temperature
+vector; `[s[:Temperature][cell] for s in result.states]` is one cell's history.
+Produced-fluid temperature comes from the named well series, for example
+`result.wells.wells[:Producer][:temperature]`, not a nearby reservoir cell.
+Inspect the available well names and fields before selecting them.
+Inputs and raw results use SI units. Temperatures are Kelvin; subtract 273.15
+when reporting Celsius values.
 
-```text
-glob("/.../JutulDarcy/examples/**/*.jl")          # reservoir + well setup
-grep("setup_well", path="/.../JutulDarcy/src")
-```
+## High-temperature water and steam
 
-For docstrings, stay in the REPL: `run_julia("@doc egg_geothermal_doublet")`.
+For high-temperature water/steam, inspect the `H2OSystem` examples. Distributed
+steam tables load through `Fimbul.steam_tables_h2o()`; CoolProp is only needed
+to generate new tables. This system uses pressure and enthalpy, deriving
+temperature from the tables. The validation examples under
+`examples/validation/` show the high-temperature benchmarks.
 
-## Result inspection
+`examples/production/magmatic_intrusion_demo.jl` separates natural-state
+equilibration from production. Use `num_years=0` for the natural state without
+wells; start production on the same grid with `natural_state_time=0` and
+`initial_state=result_ns.states[end]`. The full example is long; `test/cases.jl`
+contains a smaller case.
 
-Fimbul cases return JutulDarcy result objects. The key extra field is
-`:Temperature` on each state:
+An `H2OSystem` total-energy run can fail with `KeyError(:Temperature)` in
+convergence checking; report that limitation rather than silently changing
+physics.
 
-```julia
-states = result.states
-T_end = states[end][:Temperature]            # temperature at the final step
-T_at_cell = [s[:Temperature][cell] for s in states]   # series at one cell
-```
-
-Well data (`result.wells`) and reservoir states follow the same
-conventions as JutulDarcy. See `jutuldarcy-overview` for result unpacking
-and `jutuldarcy-wells` for well construction details that apply here too.
-
-Produced-water quantities come from the well series, not the reservoir
-field: `result.states[end][:Temperature]` is the grid; what a well delivers
-over time is
-
-```julia
-prod_T = result.wells.wells[:Producer][:temperature]   # K, one value per step
-```
-
-(`keys(result.wells.wells)` lists the well names of the active case.)
-
-All quantities are SI: temperatures are **Kelvin**, not Celsius. When the
-user asks for degrees Celsius, convert (`T - 273.15`) before reporting; a
-"temperature" near 350 in a geothermal answer is almost certainly an
-unconverted Kelvin value.
-
-## Plotting
-
-Fimbul reuses JutulDarcy's **native plotters** (GLMakie, the default backend),
-captured by `plot_julia` automatically — headless or interactive:
-
-- `plot_reservoir(case.model, result.states)` — 3D reservoir (e.g. `key = :Temperature`)
-- `plot_well_results(result.wells)` — well dashboard
-- `plot_cell_data!` / `plot_mesh_edges!` to compose a custom 3D view
-- Fimbul's own `plot_well_data!` / `plot_mswell_values!` for multi-segment wells
-
-Just call them — no backend juggling. In an interactive session a live window
-opens for the user by default (`window=false` to suppress); pass `view=true` to
-inspect a plot yourself. For a custom 2D view, build inline against the live
-result object (probe `keys` / `propertynames` first).
-
-JutulDarcy's `plot_reservoir` defaults to its fancy 3D viewer and converted
-display units; use `fancy=false` or `convert_units=false` when a fixed-axis view
-or unconverted values are needed.
+Use `fimbul-plotting` for native reservoir, well, and phase-diagram views.
