@@ -5,7 +5,7 @@
 
 import type { StoreApi } from "zustand/vanilla";
 
-import { ApiError, api } from "./api";
+import { ApiError, api, type SysimageChoice, type UpdateStatus } from "./api";
 import { stageSize } from "./canvas/stageSize";
 import { hostApiUrl, hostContext } from "./hostContext";
 import { HISTORY_CHANGED, type ServerMessage } from "./protocol";
@@ -40,6 +40,9 @@ const RESTARTED_NOTE =
   "Earlier files and artifacts are intact; re-run setup to rebuild in-memory state.";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Remembers across the reload into an updated server that the page asked for it.
+const UPDATED_KEY = "ja_updated";
 
 /** The credential prompt carried by a `credential_required` API error, or null. */
 function credentialRequiredOf(e: unknown): CredentialPrompt | null {
@@ -96,6 +99,9 @@ export class Controller {
   // A prompt sent during that window is queued for the same request, not allowed
   // to start a second environment preparation concurrently.
   private starting = false;
+  // True from starting an update until it ends or the page reloads into the new
+  // server. The server closes every session for it, so nothing reconnects meanwhile.
+  private updating = false;
   // What to do once a missing API key is saved: re-run the action the key blocked
   // (start the session, or apply the model switch). Cleared when the modal closes.
   private keyRetry: (() => void) | null = null;
@@ -164,6 +170,7 @@ export class Controller {
     this.refreshContextWindow();
     this.watchHostContext();
     await this.startSession();
+    this.noteFinishedUpdate();
   }
 
   /** Forward later changes to the host application's selection to the session.
@@ -243,6 +250,130 @@ export class Controller {
   /** Re-read what the server runs, after anything that may have changed it. */
   private refreshVersions(): void {
     void api.version().then((versions) => this.store.setState({ versions }));
+  }
+
+  // --- updates --------------------------------------------------------------
+
+  /** Open the update dialog, showing what an update would do here. */
+  async openUpdate(): Promise<void> {
+    const setUpdate = this.s.setUpdate;
+    setUpdate({ open: true, status: null, phase: "idle", lines: [], error: null });
+    const status = await api.updateStatus();
+    setUpdate({ status });
+    // Another tab may have started one: follow it rather than offer a second.
+    const job = status?.job;
+    if (job && (job.state === "running" || job.state === "restarting")) {
+      this.updating = true;
+      this.transport.close();
+      setUpdate({ phase: job.state, lines: job.lines });
+      void this.followUpdate(status);
+    }
+  }
+
+  /** Close the dialog. Not while an update runs: the page has to follow it. */
+  closeUpdate(): void {
+    const { phase } = this.s.update;
+    if (phase === "starting" || phase === "running" || phase === "restarting") return;
+    this.s.setUpdate({ open: false });
+    // The update closed the sessions; pick the conversation back up.
+    if (phase === "done" || phase === "failed") {
+      this.s.setUpdate({ phase: "idle", lines: [], error: null });
+      if (this.s.sessionId) void this.reconnect();
+      else void this.startSession();
+    }
+  }
+
+  /** Start updating: jutul-agent itself first if `install`, then the environment. */
+  async startUpdate(install: boolean, sysimage: SysimageChoice | null): Promise<void> {
+    const setUpdate = this.s.setUpdate;
+    setUpdate({ phase: "starting", error: null });
+    // Set before asking: the server closes this page's session as it accepts, and
+    // that must not set off a reconnect.
+    this.updating = true;
+    let status: UpdateStatus;
+    try {
+      status = await api.startUpdate({ install, sysimage });
+    } catch (e) {
+      // Refused before anything ran (a turn is still going, say): the session is
+      // untouched, so say why and let the user try again.
+      this.updating = false;
+      setUpdate({ phase: "idle", error: failureMessage(e, "Could not start the update.") });
+      return;
+    }
+    this.queuedPrompt = null;
+    this.transport.close();
+    this.store.setState({ busy: false, working: false });
+    setUpdate({ phase: "running", lines: [] });
+    await this.followUpdate(status);
+  }
+
+  /** Show the update's output until it ends, or until the server restarts. */
+  private async followUpdate(status: UpdateStatus | null): Promise<void> {
+    const setUpdate = this.s.setUpdate;
+    const boot = this.s.versions?.boot ?? null;
+    let next = status?.job?.next ?? 0;
+    for (;;) {
+      await sleep(1000);
+      const now = await api.updateStatus(next);
+      // Gone, or a new server without the job: the restart is under way.
+      if (!now?.job) break;
+      const job = now.job;
+      next = job.next;
+      setUpdate({ lines: [...this.s.update.lines, ...job.lines], error: job.error });
+      if (job.state === "done" || job.state === "failed") {
+        this.updating = false;
+        setUpdate({ phase: job.state });
+        if (job.state === "done" && !job.install) {
+          // Earlier notes in the thread said it was out of date.
+          this.s.addSysNote("Updated this folder's Julia environment.");
+        }
+        this.refreshVersions();
+        return;
+      }
+      if (job.state === "restarting") setUpdate({ phase: "restarting" });
+    }
+    await this.waitForRestart(boot);
+  }
+
+  /** Reload into the new server once it answers; the page it serves may be new too. */
+  private async waitForRestart(boot: string | null): Promise<void> {
+    this.s.setUpdate({ phase: "restarting" });
+    // Starting can include preparing the Julia environment.
+    const deadline = Date.now() + 10 * 60_000;
+    while (Date.now() < deadline) {
+      await sleep(1500);
+      const versions = await api.version();
+      if (versions.boot && versions.boot !== boot) {
+        try {
+          sessionStorage.setItem(UPDATED_KEY, versions.jutul_agent ?? "");
+        } catch {
+          /* the note after the reload is a nicety */
+        }
+        window.location.reload();
+        return;
+      }
+    }
+    this.updating = false;
+    this.s.setUpdate({
+      phase: "failed",
+      error: "jutul-agent hasn't come back after updating. Check the terminal it runs in.",
+    });
+  }
+
+  /** After the reload into an updated server, say so once. */
+  private noteFinishedUpdate(): void {
+    let version: string | null = null;
+    try {
+      version = sessionStorage.getItem(UPDATED_KEY);
+      sessionStorage.removeItem(UPDATED_KEY);
+    } catch {
+      return;
+    }
+    if (version !== null) {
+      this.s.addSysNote(
+        version ? `Updated to jutul-agent ${version}.` : "jutul-agent was updated.",
+      );
+    }
   }
 
   // Deliver a prompt held while no socket was open (see `queuedPrompt`). The socket
@@ -719,7 +850,7 @@ export class Controller {
   // where the server has not yet released the old connection.
   private async reconnect(): Promise<void> {
     const id = this.s.sessionId;
-    if (!id || this.recovering) return;
+    if (!id || this.recovering || this.updating) return;
     this.recovering = true;
     this.store.setState({ reconnecting: true });
     try {

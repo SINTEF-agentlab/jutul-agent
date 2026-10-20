@@ -104,7 +104,9 @@ and check on staged `.py` files. To verify the whole tree like CI:
 - `src/jutul_agent/interfaces/`: `cli`, the Textual `tui`, and the `server`
   (FastAPI REST + per-session WebSocket). The browser UI is a React + TypeScript
   app in `server/webapp/` (see its README), built into `server/web_dist/`
-  (committed and shipped, so an install needs no Node).
+  (committed and shipped, so an install needs no Node). `server/updates.py`
+  runs an update started from the browser: `uv tool upgrade`, the env step of
+  `jutul-agent upgrade`, then a restart of the server into the new version.
 - `tests/`: end-to-end, chat, CLI, and tool coverage. `tests/integration/`
   needs Julia; `tests/live/` needs an LLM provider key.
 

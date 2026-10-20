@@ -11,6 +11,7 @@ import type {
   HistoryEntry,
   ModelInfo,
   SimDetails,
+  UpdateStatus,
   VersionInfo,
 } from "./api";
 import { framePool } from "./canvas/framePool";
@@ -99,6 +100,15 @@ export interface CredentialPrompt {
   env_var: string;
 }
 
+/** The update dialog: what an update would do, then its output as it runs. */
+export interface UpdateDialog {
+  open: boolean;
+  status: UpdateStatus | null;
+  phase: "idle" | "starting" | "running" | "restarting" | "done" | "failed";
+  lines: string[];
+  error: string | null;
+}
+
 /** State of the API-keys modal: open in "manage" mode (required null) or because a
  *  specific provider's key is needed before the session/model switch can proceed. */
 export interface ApiKeysModal {
@@ -148,6 +158,7 @@ export interface SessionState {
   // provider API keys (status + the key-prompt modal)
   credentials: CredentialInfo[];
   apiKeys: ApiKeysModal;
+  update: UpdateDialog;
 }
 
 export interface SessionActions {
@@ -163,6 +174,7 @@ export interface SessionActions {
   setCredentials: (credentials: CredentialInfo[]) => void;
   openApiKeys: (required: CredentialPrompt | null) => void;
   closeApiKeys: () => void;
+  setUpdate: (patch: Partial<UpdateDialog>) => void;
   reset: () => void;
   // composer-driven
   addUser: (text: string) => void;
@@ -217,6 +229,7 @@ const initialState: SessionState = {
   bottomPin: 0,
   credentials: [],
   apiKeys: { open: false, required: null },
+  update: { open: false, status: null, phase: "idle", lines: [], error: null },
 };
 
 function viewIdOf(msg: { slot?: string | null; url: string }): string {
@@ -577,6 +590,7 @@ export function createSessionStore() {
       setCredentials: (credentials) => set({ credentials }),
       openApiKeys: (required) => set({ apiKeys: { open: true, required } }),
       closeApiKeys: () => set({ apiKeys: { open: false, required: null } }),
+      setUpdate: (patch) => set((s) => ({ update: { ...s.update, ...patch } })),
 
       reset: () =>
         set((s) => ({
@@ -592,6 +606,8 @@ export function createSessionStore() {
           history: s.history,
           // key status is account-wide, not per-session; keep it across a reset
           credentials: s.credentials,
+          // an update outlives the session it was started from
+          update: s.update,
           // a reconnect resets the thread mid-recovery; keep the bar until the socket
           // reopens (the new socket's onopen clears it)
           reconnecting: s.reconnecting,

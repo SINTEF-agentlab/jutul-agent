@@ -65,20 +65,26 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-/** A quiet line naming what the server runs, so an old install is easy to spot. */
+/** A quiet line naming what the server runs, so an old install is easy to spot, and
+ *  the way into an update when one is due. */
 function VersionLine({ versions }: { versions: VersionInfo | null }) {
+  const controller = useController();
   if (!versions?.jutul_agent) return null;
   const sim = versions.simulator;
   const parts = [`jutul-agent ${versions.jutul_agent}`];
   if (sim?.version) parts.push(`${sim.package} ${sim.version}`);
-  const hint = `jutul-agent ${versions.update} is available. Run \`jutul-agent upgrade\` in a terminal.`;
+  const action = versions.update
+    ? `jutul-agent ${versions.update} available`
+    : versions.env_update
+      ? "Update environment"
+      : null;
   return (
     <div className="sidebar-foot">
       <div className="sidebar-versions">{parts.join(" · ")}</div>
-      {versions.update && (
-        <div className="sidebar-update" title={hint}>
-          jutul-agent {versions.update} available
-        </div>
+      {action && (
+        <button className="sidebar-update" onClick={() => void controller.openUpdate()}>
+          {action}
+        </button>
       )}
     </div>
   );

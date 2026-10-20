@@ -10,6 +10,7 @@ import { Composer } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
 import { Thread } from "./components/Thread";
 import { Topbar } from "./components/Topbar";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { Controller } from "./controller";
 import { SessionProvider, useSel } from "./context";
 import { installDebug } from "./debug";
@@ -89,6 +90,7 @@ export function App() {
         </div>
         <Canvas />
         <ApiKeys />
+        <UpdateDialog />
       </div>
     </SessionProvider>
   );

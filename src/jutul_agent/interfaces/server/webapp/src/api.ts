@@ -49,7 +49,44 @@ export interface VersionInfo {
   /** A newer jutul-agent release, when the update check knows of one. */
   update: string | null;
   simulator: { package: string; version: string | null } | null;
+  /** This folder's Julia environment is older than this version supports. */
+  env_update?: boolean;
+  /** Identifies the server process; it changes when the server restarts. */
+  boot?: string | null;
 }
+
+/** A simulator package in the folder's Julia environment that needs updating. */
+export interface OutdatedPackage {
+  package: string;
+  version: string;
+  required: string;
+}
+
+/** An update started from the browser, as it runs. */
+export interface UpdateJob {
+  state: "running" | "restarting" | "done" | "failed";
+  install: boolean;
+  error: string | null;
+  /** Output lines after the `since` the request asked for. */
+  lines: string[];
+  /** Pass as `since` next time to get only newer lines. */
+  next: number;
+}
+
+/** What an update would do here, from `GET /update`. */
+export interface UpdateStatus {
+  current: string | null;
+  latest: string | null;
+  /** Served on this computer, so the browser may update it. */
+  local: boolean;
+  /** jutul-agent can upgrade itself from here; otherwise `install_note` says how. */
+  can_install: boolean;
+  install_note: string | null;
+  env: { outdated: OutdatedPackage[]; sysimage: boolean } | null;
+  job: UpdateJob | null;
+}
+
+export type SysimageChoice = "rebuild" | "off";
 
 export interface ModelsResponse {
   default: string | null;
@@ -126,6 +163,19 @@ export const api = {
 
   version: () =>
     getJSON<VersionInfo>("/version", { jutul_agent: null, update: null, simulator: null }),
+
+  /** `null` when the server can't be reached, as while it restarts. */
+  updateStatus: async (since = 0): Promise<UpdateStatus | null> => {
+    try {
+      const resp = await request(`/update?since=${since}`);
+      return resp.ok ? ((await resp.json()) as UpdateStatus) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  startUpdate: (body: { install: boolean; sysimage: SysimageChoice | null }) =>
+    postJSON<UpdateStatus>("/update", body),
 
   models: () =>
     getJSON<ModelsResponse>("/models", { default: null, providers: [], models: [] }),

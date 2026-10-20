@@ -93,10 +93,20 @@ available (a background check, cached for a day; it never delays startup), and
 the web UI shows the jutul-agent and simulator versions at the foot of the
 sidebar. Turn the check off with `JUTUL_AGENT_NO_UPDATE_CHECK=1`.
 
+The web UI can do the same update without a terminal. When a release is out,
+the foot of the sidebar says so; click it to update. jutul-agent upgrades
+itself, updates the folder's Julia environment, restarts, and the page reloads
+into the new version. Open chats are closed for it (their conversations are
+kept), and it waits while a session is starting or working. It only does this
+when jutul-agent runs on your own computer and was installed with `uv tool
+install`. On Windows, where a running program can't replace its own files, it
+shows the steps instead. An outdated Julia environment gets an "Update
+environment" link in the same place, on every system.
+
 An upgrade ships new simulator env templates, but existing workspace envs keep
 the packages they resolved. When a workspace's simulator is older than the
 installed jutul-agent supports, launch refuses to start and, from a terminal,
-offers to update the env in place. To do it yourself:
+offers to update the env in place (the web UI offers it too). To do it yourself:
 
 ```sh
 jutul-agent upgrade --env-only        # in place, keeping packages added to the env

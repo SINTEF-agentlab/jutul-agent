@@ -112,7 +112,9 @@ turn.
 | `GET` | `/credentials` | Which providers have keys, and whether a shell variable shadows a saved one |
 | `POST` | `/credentials` | Save a provider API key (used by the missing-key prompt) |
 | `GET` | `/simulators` | List installed simulators (the server is bound to one, returned as `default`), each with its display name and starter prompts, plus the `branding` an installed capability puts in their place |
-| `GET` | `/version` | The jutul-agent version, a newer release if the update check knows of one, and the simulator version the folder's Julia environment resolved (each `null` when unknown) |
+| `GET` | `/version` | The jutul-agent version, a newer release if the update check knows of one, the simulator version the folder's Julia environment resolved (each `null` when unknown), whether that environment needs updating (`env_update`), and a `boot` id that changes when the server restarts |
+| `GET` | `/update` | What an update would do here (newer release, whether this install can upgrade itself and how to otherwise, outdated simulator packages), and the output of a running update (`?since=` skips lines already read) |
+| `POST` | `/update` | Start an update: `{"install": bool, "sysimage": "rebuild" \| "off" \| null}`. Accepted only from this computer's own page; refused (409) while a session is starting or working. With `install`, the server restarts into the new version when done |
 
 ## The wire protocol
 

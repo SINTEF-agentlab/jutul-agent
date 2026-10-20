@@ -59,6 +59,18 @@ class EnvSetupError(RuntimeError):
     pass
 
 
+class EnvOutdatedError(EnvSetupError):
+    """The env resolved simulator packages older than this install supports.
+
+    ``outdated`` lists ``(package, resolved version, required compat)``, so a front
+    end can offer the update instead of only quoting the commands.
+    """
+
+    def __init__(self, message: str, outdated: list[tuple[str, str, str]]) -> None:
+        super().__init__(message)
+        self.outdated = outdated
+
+
 def _info(msg: str) -> None:
     """Print a progress line with uvicorn's own "INFO:" console prefix.
 
@@ -562,11 +574,12 @@ def check_env_versions(
     found = ", ".join(f"{package} {version}" for package, version, _ in outdated)
     needed = ", ".join(f"{package} {spec}" for package, _, spec in outdated)
     sim = f" --sim {sim_name}" if sim_name else ""
-    raise EnvSetupError(
+    raise EnvOutdatedError(
         f"this workspace's Julia environment has {found}, but this version of "
         f"jutul-agent requires {needed}. Update it, keeping packages added to it:\n"
         f"    jutul-agent upgrade\n"
-        f"or rebuild it from scratch:\n    jutul-agent init --force{sim}"
+        f"or rebuild it from scratch:\n    jutul-agent init --force{sim}",
+        outdated,
     )
 
 
