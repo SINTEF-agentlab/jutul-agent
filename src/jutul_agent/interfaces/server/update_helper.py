@@ -31,6 +31,9 @@ from collections.abc import Callable
 from typing import Any
 
 _POLL_SECONDS = 0.2
+# How a program ends when Ctrl+C stops it: Windows' STATUS_CONTROL_C_EXIT, or the
+# signal elsewhere. That is the user stopping jutul-agent, not an error to report.
+_CTRL_C_EXITS = (0xC000013A, -signal.SIGINT)
 
 
 def main(argv: list[str]) -> int:
@@ -43,7 +46,7 @@ def main(argv: list[str]) -> int:
     # This window is the server's now: Ctrl+C is for it. Stay to report how it ends.
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     code = server.wait()
-    if code != 0:
+    if code not in (0, *_CTRL_C_EXITS):
         print(f"\njutul-agent stopped with exit code {code}.", flush=True)
         _pause()
     return code

@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import textwrap
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -162,6 +164,31 @@ def test_a_relaunch_that_cannot_start_is_said(plan) -> None:
     plan["relaunch"]["argv"] = [str(Path(plan["cwd"]) / "missing-program")]
     assert update_helper.finish_update(plan) is None
     assert any(line.startswith("Could not start jutul-agent again") for line in _log(plan))
+
+
+@pytest.mark.parametrize(
+    ("code", "stays"),
+    [
+        (0, False),
+        (0xC000013A, False),  # Ctrl+C on Windows
+        (-signal.SIGINT, False),  # Ctrl+C elsewhere
+        (1, True),
+    ],
+)
+def test_the_window_stays_open_only_when_jutul_agent_fails(
+    tmp_path, monkeypatch, capsys, code, stays
+) -> None:
+    plan_file = tmp_path / "plan.json"
+    plan_file.write_text("{}", encoding="utf-8")
+    server = SimpleNamespace(wait=lambda: code)
+    monkeypatch.setattr(update_helper, "finish_update", lambda _plan: server)
+    monkeypatch.setattr(update_helper.signal, "signal", lambda *_args: None)  # pytest's own
+    paused = []
+    monkeypatch.setattr(update_helper, "_pause", lambda: paused.append(True))
+
+    assert update_helper.main(["update_helper.py", str(plan_file)]) == code
+    assert bool(paused) is stays
+    assert ("stopped with exit code" in capsys.readouterr().out) is stays
 
 
 def test_waiting_for_processes() -> None:
