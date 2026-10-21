@@ -273,7 +273,12 @@ def run(args: argparse.Namespace) -> int:
         uvicorn.Config(app, host=args.host, port=args.port, timeout_graceful_shutdown=5)
     )
     updater.bind_server(lambda: setattr(server, "should_exit", True))
-    server.run()
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        # Ctrl+C: uvicorn re-raises it once it has shut down. Stop here, as
+        # uvicorn.run does, without a traceback or a restart.
+        return 0
     if not server.started:  # the port was taken, say; uvicorn said why
         return 1
     if updater.restart_requested:
