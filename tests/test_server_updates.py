@@ -246,7 +246,8 @@ def test_windows_hands_the_update_to_a_helper_and_exits(
     launcher = tmp_path / "bin" / "jutul-agent.exe"
     launcher.parent.mkdir()
     launcher.write_bytes(b"")
-    monkeypatch.setattr(sys, "argv", [str(launcher), "--port", "9000"])
+    # As the launcher's own script leaves it: without ".exe".
+    monkeypatch.setattr(sys, "argv", [str(launcher.with_suffix("")), "--port", "9000"])
     stopped, manager = [], _Manager()
     updater = _updater(tmp_path)
     updater.bind_server(lambda: stopped.append(True))
@@ -520,7 +521,8 @@ def test_ctrl_c_stops_the_server_cleanly(web_run) -> None:
         code = web.run(_web_args())
     except KeyboardInterrupt:  # escaping, it would stop pytest itself
         pytest.fail("Ctrl+C escaped web.run as a traceback")
-    # A clean exit; and stopping means stopping, even with a restart pending.
+    # A clean exit, so a window an update opened closes too; and stopping means
+    # stopping, even with a restart pending.
     assert code == 0
     assert not calls.restarted
 

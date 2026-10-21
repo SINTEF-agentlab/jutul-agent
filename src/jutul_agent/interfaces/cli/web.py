@@ -301,7 +301,8 @@ def run(args: argparse.Namespace) -> int:
         server.run()
     except KeyboardInterrupt:
         # Ctrl+C: uvicorn re-raises it once it has shut down. Stop here, as
-        # uvicorn.run does, without a traceback or a restart.
+        # uvicorn.run does, without a traceback or a restart; the clean exit also
+        # lets the window an update opened for this server close.
         return 0
     if not server.started:  # the port was taken, say; uvicorn said why
         return 1

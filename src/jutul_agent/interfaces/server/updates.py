@@ -378,7 +378,12 @@ class Updater:
 def _launcher() -> Path | None:
     """The ``jutul-agent`` program this process was started from, if it was."""
     path = Path(sys.argv[0]).absolute()
-    return path if path.name.startswith("jutul-agent") and path.is_file() else None
+    if not path.name.startswith("jutul-agent"):
+        return None
+    if _on_windows() and not path.is_file():
+        # The script inside jutul-agent.exe strips ".exe" from sys.argv[0].
+        path = path.with_name(path.name + ".exe")
+    return path if path.is_file() else None
 
 
 def _record_outcome(lines: list[str], error: str | None) -> None:
