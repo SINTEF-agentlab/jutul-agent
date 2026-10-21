@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -142,8 +143,8 @@ def test_env_only_skips_the_install(monkeypatch, capsys) -> None:
     assert "nothing else to update" in capsys.readouterr().out
 
 
-def _fake_status(monkeypatch, outdated):
-    adapter = type("A", (), {"display_name": "JutulDarcy"})()
+def _fake_status(monkeypatch, outdated, template=Path("/no/template")):
+    adapter = type("A", (), {"display_name": "JutulDarcy", "julia_env_template_path": template})()
     monkeypatch.setattr(
         upgrade_cmd,
         "workspace_env_status",
@@ -168,6 +169,26 @@ def test_env_step_leaves_a_current_environment(monkeypatch, capsys) -> None:
     monkeypatch.setattr(upgrade_cmd, "upgrade_workspace", lambda *a, **k: pytest.fail("no update"))
     assert upgrade_cmd.run(_args(env_only=True)) == 0
     assert "up to date" in capsys.readouterr().out
+
+
+def test_a_newer_environment_is_left_alone(tmp_path, monkeypatch, capsys) -> None:
+    # A simulator developer trying an unreleased or just-released version: it runs,
+    # and nothing moves it back.
+    template = tmp_path / "template"
+    template.mkdir()
+    (template / "Project.toml").write_text('[compat]\nJutulDarcy = "0.4"\n', encoding="utf-8")
+    env = tmp_path / "env"
+    env.mkdir()
+    (env / "Manifest.toml").write_text(
+        'manifest_format = "2.0"\n\n[[deps.JutulDarcy]]\nversion = "0.5.0"\n', encoding="utf-8"
+    )
+    _fake_status(monkeypatch, [], template=template)
+    monkeypatch.setattr(upgrade_cmd, "upgrade_workspace", lambda *a, **k: pytest.fail("no update"))
+
+    assert upgrade_cmd.run(_args(env_only=True)) == 0
+    out = capsys.readouterr().out
+    assert "has JutulDarcy 0.5.0, newer than this version of jutul-agent was made for" in out
+    assert "Nothing to update." in out
 
 
 def test_check_reports_an_outdated_environment(monkeypatch, capsys) -> None:

@@ -30,6 +30,7 @@ from jutul_agent.workspace import (
     env_declares_warm_packages,
     env_template_drifted,
     load_workspace_config,
+    newer_env_packages,
     outdated_env_packages,
     resolve_julia_project,
 )
@@ -312,6 +313,15 @@ def _check_env_template_current(
             f"the env has {found}; this jutul-agent requires {needed}",
             "Update it with `jutul-agent upgrade` (or rebuild with "
             f"`jutul-agent init --sim {sim_name} --force`).",
+        )
+    elif newer := newer_env_packages(project, template):
+        found = ", ".join(f"{package} {version}" for package, version, _ in newer)
+        made_for = ", ".join(f"{package} {spec}" for package, _, spec in newer)
+        report.line(
+            WARN,
+            "Simulator version",
+            f"the env has {found}, newer than this jutul-agent was made for ({made_for})",
+            "It runs, but the bundled skills may not cover what changed.",
         )
     else:
         report.line(PASS, "Simulator version")

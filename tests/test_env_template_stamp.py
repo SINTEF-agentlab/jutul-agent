@@ -196,3 +196,21 @@ def test_doctor_fails_an_outdated_simulator(tmp_path: Path, capsys) -> None:
     assert report.worst == doctor.FAIL
     out = capsys.readouterr().out
     assert "JutulDarcy 0.3.12" in out and "jutul-agent upgrade" in out
+
+
+def test_doctor_warns_about_a_newer_simulator(tmp_path: Path, capsys) -> None:
+    """A newer simulator runs; the report says so without calling it a failure."""
+    from jutul_agent.interfaces.cli import doctor
+    from jutul_agent.simulators import registry
+
+    ws, env_dir = _managed_env(tmp_path)
+    write_env_template_stamp(env_dir, registry.get("jutuldarcy").julia_env_template_path)
+    (env_dir / "Manifest.toml").write_text(
+        '[[deps.JutulDarcy]]\nversion = "9.0.0"\n', encoding="utf-8"
+    )
+
+    report = doctor._Report()
+    doctor._check_env_template_current(report, ws, env_dir, "jutuldarcy")
+    assert report.worst == doctor.WARN
+    out = capsys.readouterr().out
+    assert "JutulDarcy 9.0.0, newer than this jutul-agent was made for" in out

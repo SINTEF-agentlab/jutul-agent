@@ -156,3 +156,30 @@ uv run jutul-agent init --sim mysim --source-path /path/to/MySim.jl
 The checkout resolves at its real path (writable, since it is a dev checkout
 rather than a shared-depot install), so the agent can read and edit the
 package source itself.
+
+## Trying a new simulator version
+
+The template's `[compat]` names the simulator versions the bundled skills were
+written for. A simulator developer can still run jutul-agent against a newer
+version, to check that the agent copes and to update the skills before release:
+
+- **A local checkout ahead of the registry.** `init --source-path` dev-links it,
+  and the checkout's own `[compat]` replaces the template's bounds on the
+  simulator and on every package the checkout bounds itself. So an unreleased
+  JutulDarcy that needs a newer Jutul resolves. While a package the template
+  bounds is dev-linked, jutul-agent leaves the versions to you: it doesn't
+  check them, refuse them or update them.
+- **A release newer than the template.** Widen its bound in the workspace's
+  `.jutul-agent/julia-env/Project.toml`, then update the env:
+
+  ```sh
+  julia --project=.jutul-agent/julia-env -e 'using Pkg; Pkg.update()'
+  ```
+
+  jutul-agent starts with a note that the simulator is newer than it was made
+  for (`jutul-agent doctor` shows it as a warning), and neither `jutul-agent
+  upgrade` nor the web UI's update moves it back.
+
+Once the skills are updated, raise the bound in the simulator's
+`julia_env/Project.toml`, so new workspaces get the version and older ones are
+offered the update.

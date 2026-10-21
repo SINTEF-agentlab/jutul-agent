@@ -42,6 +42,7 @@ from jutul_agent.workspace import (
     mark_dependency_source,
     mark_env_precompiled,
     mark_warm_source,
+    newer_env_packages,
     outdated_env_packages,
     recopy_warm_sources,
     resolve_julia_project,
@@ -289,7 +290,14 @@ def _bootstrap_workspace_unlocked(
 def _local_source_compat(
     adapter: SimulatorAdapter, workspace: Path, project: Path, source_path: Path | None
 ) -> Iterator[None]:
-    """Override managed simulator compat for a dev checkout; roll back on failure."""
+    """Let a simulator checkout's own compat decide; roll back on failure.
+
+    The template bounds the simulator and the packages it shares with jutul-agent
+    (Jutul, say) to the released versions this install was made for. A checkout can
+    be ahead of those: an unreleased JutulDarcy that needs a newer Jutul. So drop
+    the template's bound on the simulator and on every package the checkout itself
+    declares compat for, and let the checkout's bounds govern.
+    """
     if source_path is None or user_owns_root_project(workspace):
         yield
         return
@@ -299,7 +307,7 @@ def _local_source_compat(
     data = tomllib.loads(before.decode("utf-8"))
     package = adapter.primary_package
     compat = data.get("compat", {})
-    if package not in compat:
+    if not compat:
         yield
         return
 
@@ -312,11 +320,19 @@ def _local_source_compat(
         raise EnvSetupError(
             f"--source-path {source_path} must be a {package} checkout with its UUID"
         )
+    source_compat = source.get("compat", {})
+    relaxed = [
+        name for name in compat if name == package or (name in source_compat and name != "julia")
+    ]
+    if not relaxed:
+        yield
+        return
 
     backups = {project_file: before, **{p: p.read_bytes() for p in project.glob("Manifest*.toml")}}
-    constraint = compat.pop(package)
+    dropped = {name: compat.pop(name) for name in relaxed}
     project_file.write_text(tomli_w.dumps(data), encoding="utf-8")
-    _info(f"Using local {package} checkout; overriding managed {package} compat {constraint!r}.")
+    bounds = ", ".join(f"{name} {spec!r}" for name, spec in dropped.items())
+    _info(f"Using local {package} checkout; its own compat replaces the managed {bounds}.")
     try:
         yield
     except BaseException:
@@ -580,6 +596,29 @@ def check_env_versions(
         f"    jutul-agent upgrade\n"
         f"or rebuild it from scratch:\n    jutul-agent init --force{sim}",
         outdated,
+    )
+
+
+def newer_simulator_note(
+    adapter: SimulatorAdapter, workspace: Path, julia_project: Path
+) -> str | None:
+    """A note when the env runs simulator packages newer than this install was made for.
+
+    Not a refusal: a simulator developer trying an unreleased or just-released
+    version lands here, and so does a folder a newer jutul-agent set up.
+    """
+
+    if user_owns_root_project(workspace):
+        return None
+    newer = newer_env_packages(julia_project, adapter.julia_env_template_path)
+    if not newer:
+        return None
+    found = ", ".join(f"{package} {version}" for package, version, _ in newer)
+    made_for = ", ".join(f"{package} {spec}" for package, _, spec in newer)
+    return (
+        f"this folder's Julia environment has {found}, newer than this version of "
+        f"jutul-agent was made for ({made_for}). It runs, but the bundled skills may "
+        "not cover what changed."
     )
 
 

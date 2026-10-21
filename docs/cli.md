@@ -92,7 +92,7 @@ included, so the first session in any interface is fast.
 | Option | Meaning |
 |---|---|
 | `--sim <name>` | Simulator to bootstrap (omit to auto-detect) |
-| `--source-path <path>` | `Pkg.develop` a local checkout of the simulator package (persisted to the workspace config) |
+| `--source-path <path>` | `Pkg.develop` a local checkout of the simulator package (persisted to the workspace config); the checkout's own `[compat]` replaces the template's bounds for the simulator and what it depends on |
 | `--no-precompile` | Skip the bake — bootstrap config + env only; the first session builds the rest |
 | `--force` | Replace an existing workspace env with a fresh template copy, discarding packages added to it (to update it in place instead, use `jutul-agent upgrade`) |
 | `--sysimage` | Also build a [system image](sysimage.md) for this folder, and start from it from now on. Adds tens of minutes to `init` |

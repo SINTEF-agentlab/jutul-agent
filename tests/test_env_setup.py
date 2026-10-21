@@ -327,6 +327,46 @@ def test_bootstrap_with_source_path_runs_pkg_develop(
     assert f'Pkg.develop(path=raw"{source}")' in code
 
 
+def test_a_checkout_ahead_of_the_registry_brings_its_own_bounds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreleased simulator that needs a newer shared package must resolve."""
+
+    module_dir = _make_template(tmp_path)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    template = module_dir / "julia_env" / "Project.toml"
+    template.write_text(
+        '[deps]\nFoo = "uuid"\nJutul = "uuid-j"\nOther = "uuid-o"\n\n'
+        '[compat]\nFoo = "0.4"\nJutul = "0.5.4"\nOther = "1"\njulia = "1.10"\n',
+        encoding="utf-8",
+    )
+    source = tmp_path / "FooSource"
+    source.mkdir()
+    (source / "Project.toml").write_text(
+        'name = "Foo"\nuuid = "uuid"\nversion = "0.5.0-DEV"\n\n'
+        '[compat]\nJutul = "0.6"\njulia = "1.11"\n',
+        encoding="utf-8",
+    )
+    seen: list[dict] = []
+
+    class _Result:
+        returncode = 0
+
+    def _fake_run(argv, **_kwargs):
+        project = workspace_julia_env(workspace) / "Project.toml"
+        seen.append(tomllib.loads(project.read_text())["compat"])
+        return _Result()
+
+    monkeypatch.setattr(env_setup.shutil, "which", lambda _: "/usr/bin/julia")
+    monkeypatch.setattr(env_setup.subprocess, "run", _fake_run)
+
+    env_setup.bootstrap_workspace(_adapter(module_dir), workspace=workspace, source_path=source)
+
+    # Foo and Jutul follow the checkout; what it doesn't bound keeps the template's.
+    assert seen == [{"Other": "1", "julia": "1.10"}]
+
+
 def test_precompile_runs_instantiate_and_precompile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -719,14 +759,88 @@ def test_outdated_env_packages_reports_versions_outside_the_template(tmp_path: P
     module_dir, workspace = _stale_env(
         tmp_path,
         template_compat='Foo = "0.4"\nBar = "0.5.4"\nBaz = "1"\nDevd = "0.4"\njulia = "1.10"\n',
-        manifest=(
-            '[[deps.Foo]]\nversion = "0.3.12"\n\n[[deps.Bar]]\nversion = "0.5.5"\n\n'
-            '[[deps.Devd]]\npath = "../Devd"\nversion = "0.9.0"\n'
-        ),
+        manifest='[[deps.Foo]]\nversion = "0.3.12"\n\n[[deps.Bar]]\nversion = "0.5.5"\n',
     )
     env = workspace_julia_env(workspace)
-    # Bar is in range, Baz is not resolved, Devd is a local checkout the user chose.
+    # Bar is in range; Baz and Devd are not resolved.
     assert outdated_env_packages(env, module_dir / "julia_env") == [("Foo", "0.3.12", "0.4")]
+
+
+def test_a_dev_linked_package_leaves_the_versions_to_the_developer(tmp_path: Path) -> None:
+    """A local checkout's own bounds may differ from the template's on purpose."""
+    from jutul_agent.workspace import newer_env_packages, outdated_env_packages
+
+    module_dir, workspace = _stale_env(
+        tmp_path,
+        template_compat='Foo = "0.4"\nShared = "0.5.4"\n',
+        manifest=(
+            '[[deps.Foo]]\npath = "../Foo.jl"\nversion = "0.5.0-DEV"\n\n'
+            '[[deps.Shared]]\nversion = "0.5.2"\n'
+        ),
+    )
+    env, template = workspace_julia_env(workspace), module_dir / "julia_env"
+    assert outdated_env_packages(env, template) == []
+    assert newer_env_packages(env, template) == []
+    env_setup.check_env_versions(_adapter(module_dir), workspace, env, "test")  # no raise
+    assert env_setup.newer_simulator_note(_adapter(module_dir), workspace, env) is None
+
+
+def test_newer_packages_are_told_apart_from_outdated_ones(tmp_path: Path) -> None:
+    from jutul_agent.workspace import newer_env_packages, outdated_env_packages
+
+    module_dir, workspace = _stale_env(
+        tmp_path,
+        template_compat='Old = "0.4"\nNew = "0.4"\nGap = "0.3, 0.5"\nHigh = "0.3, 0.5"\n',
+        manifest=(
+            '[[deps.Old]]\nversion = "0.3.12"\n\n[[deps.New]]\nversion = "0.5.0-DEV"\n\n'
+            '[[deps.Gap]]\nversion = "0.4.2"\n\n[[deps.High]]\nversion = "0.6.0"\n'
+        ),
+    )
+    env, template = workspace_julia_env(workspace), module_dir / "julia_env"
+    # Between the ranges of a union is behind the newest one it allows.
+    assert outdated_env_packages(env, template) == [
+        ("Old", "0.3.12", "0.4"),
+        ("Gap", "0.4.2", "0.3, 0.5"),
+    ]
+    assert newer_env_packages(env, template) == [
+        ("New", "0.5.0-DEV", "0.4"),
+        ("High", "0.6.0", "0.3, 0.5"),
+    ]
+
+
+def test_a_newer_simulator_runs_with_a_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trying an unreleased or just-released simulator must not be refused."""
+
+    module_dir, workspace = _stale_env(
+        tmp_path, template_compat='Foo = "0.4"\n', manifest='[[deps.Foo]]\nversion = "0.5.0"\n'
+    )
+    env = workspace_julia_env(workspace)
+    env_setup.check_env_versions(_adapter(module_dir), workspace, env, "test")  # no raise
+    note = env_setup.newer_simulator_note(_adapter(module_dir), workspace, env)
+    assert note is not None and "has Foo 0.5.0, newer than" in note and "Foo 0.4" in note
+
+
+def test_an_update_never_moves_a_newer_package_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_dir, workspace = _stale_env(
+        tmp_path,
+        template_compat='Foo = "0.4"\nBar = "0.5.4"\n',
+        manifest='[[deps.Foo]]\nversion = "0.3.12"\n\n[[deps.Bar]]\nversion = "0.6.1"\n',
+    )
+    env = workspace_julia_env(workspace)
+    (env / "Project.toml").write_text(
+        '[deps]\nFoo = "uuid"\nBar = "uuid3"\n\n[compat]\nFoo = "0.3"\nBar = "0.6"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(env_setup, "update_env", lambda _project: None)
+
+    env_setup.upgrade_env(_adapter(module_dir), workspace, env, "test")
+
+    compat = tomllib.loads((env / "Project.toml").read_text(encoding="utf-8"))["compat"]
+    assert compat == {"Foo": "0.4", "Bar": "0.6"}  # the developer's newer bound stays
 
 
 def test_prepare_workspace_env_refuses_an_outdated_simulator(
@@ -759,8 +873,8 @@ def test_upgrade_env_raises_compat_and_updates_in_place(
 
     module_dir, workspace = _stale_env(
         tmp_path,
-        template_compat='Foo = "0.4"\nDevd = "0.4"\n',
-        manifest='[[deps.Foo]]\nversion = "0.3.12"\n\n[[deps.Devd]]\npath = "../Devd"\n',
+        template_compat='Foo = "0.4"\nOther = "1"\n',
+        manifest='[[deps.Foo]]\nversion = "0.3.12"\n',
     )
     env = workspace_julia_env(workspace)
     (env / "Project.toml").write_text(
@@ -773,8 +887,8 @@ def test_upgrade_env_raises_compat_and_updates_in_place(
 
     project = tomllib.loads((env / "Project.toml").read_text(encoding="utf-8"))
     assert project["compat"]["Foo"] == "0.4"
-    # A local checkout's bound was removed on purpose and stays removed.
-    assert "Devd" not in project["compat"]
+    # Only what was behind is raised; a bound the env didn't have stays absent.
+    assert "Other" not in project["compat"]
     assert "Added" in project["deps"]
     assert updated == [env]
 

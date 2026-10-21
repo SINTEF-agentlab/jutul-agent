@@ -157,17 +157,25 @@ def env_versions_ok(adapter: Any, ws: Path, julia_project: Path | None, sim: str
 
     An env passed with ``--julia-project`` is the user's and is not checked. When
     the launch is interactive the user can update it in place and carry on;
-    otherwise the error names the commands to run.
+    otherwise the error names the commands to run. An env newer than this install
+    was made for runs, with a note.
     """
     if julia_project is not None:
         return True
     from jutul_agent.interfaces.cli.upgrade import _ask, decide_sysimage, upgrade_workspace
-    from jutul_agent.simulators.env_setup import EnvSetupError, check_env_versions
+    from jutul_agent.simulators.env_setup import (
+        EnvSetupError,
+        check_env_versions,
+        newer_simulator_note,
+    )
     from jutul_agent.workspace import resolve_julia_project
 
     project = resolve_julia_project(ws)
     try:
         check_env_versions(adapter, ws, project, sim)
+        note = newer_simulator_note(adapter, ws, project)
+        if note:
+            print(f"note: {note}", file=sys.stderr)
         return True
     except EnvSetupError as exc:
         print(f"error: {exc}", file=sys.stderr)

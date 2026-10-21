@@ -157,11 +157,21 @@ def _describe(outdated) -> tuple[str, str]:
     return found, needed
 
 
+def _current_or_newer(adapter, ws: Path, project: Path) -> str:
+    """What to say about an env with nothing to update: current, or newer than this."""
+    from jutul_agent.simulators.env_setup import newer_simulator_note
+
+    note = newer_simulator_note(adapter, ws, project)
+    if note is None:
+        return "This folder's Julia environment is up to date."
+    return f"{note[0].upper()}{note[1:]} Nothing to update."
+
+
 def _report_workspace_env(ws: Path) -> None:
     status = workspace_env_status(ws)
     if status is None:
         return
-    _, _, _, outdated = status
+    adapter, project, _, outdated = status
     if outdated:
         found, needed = _describe(outdated)
         print(
@@ -169,7 +179,7 @@ def _report_workspace_env(ws: Path) -> None:
             "Update it with `jutul-agent upgrade`."
         )
     else:
-        print("This folder's Julia environment is up to date.")
+        print(_current_or_newer(adapter, ws, project))
 
 
 def update_workspace_env(ws: Path, *, sysimage: str | None = None) -> int:
@@ -185,7 +195,7 @@ def update_workspace_env(ws: Path, *, sysimage: str | None = None) -> int:
         return 0
     adapter, project, sim, outdated = status
     if not outdated:
-        print("This folder's Julia environment is up to date.")
+        print(_current_or_newer(adapter, ws, project))
         return 0
     found, needed = _describe(outdated)
     # Flush before Julia writes to the same output, or a log shows this line last.
