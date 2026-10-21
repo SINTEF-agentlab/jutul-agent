@@ -140,3 +140,17 @@ def test_outdated_env_offers_an_upgrade_from_a_terminal(
 
     assert ok is upgraded
     assert calls == ([{"sysimage": False}] if upgraded else [])
+
+
+def test_a_newer_simulator_launches_with_a_note(tmp_path, monkeypatch, capsys) -> None:
+    from types import SimpleNamespace
+
+    from jutul_agent.interfaces.cli import _helpers
+    from jutul_agent.simulators import env_setup
+
+    monkeypatch.setattr(env_setup, "check_env_versions", lambda *_a: None)
+    monkeypatch.setattr(env_setup, "newer_simulator_note", lambda *_a: "has JutulDarcy 0.5.0")
+    monkeypatch.setattr("builtins.input", lambda _p: pytest.fail("must not offer an update"))
+
+    assert _helpers.env_versions_ok(SimpleNamespace(), tmp_path, None, "jutuldarcy")
+    assert "note: has JutulDarcy 0.5.0" in capsys.readouterr().err

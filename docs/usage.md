@@ -59,7 +59,10 @@ jutul-agent init --sim jutuldarcy --force                              # rebuild
 builds what's missing (the ~minutes wait moves to first use). `--source-path`
 dev-links the simulator to a local checkout the agent can read and edit at its
 real path (a dev checkout, so it is writable, unlike a registry install in the
-shared depot). This overrides simulator compat only in managed envs.
+shared depot). In a managed env, the checkout's own `[compat]` then decides the
+simulator and the packages it depends on, so a checkout ahead of the registry
+can use a newer Jutul (see
+[trying a new simulator version](adding-a-simulator.md#trying-a-new-simulator-version)).
 `--force` rebuilds the env from the template, discarding packages added to it;
 `jutul-agent upgrade` updates it in place instead (see [Upgrading](#upgrading)).
 `setup` is an alias for `init`. If you skip `init`
@@ -117,6 +120,11 @@ If the folder starts from a [system image](sysimage.md), the update also has to
 rebuild it (about 20 minutes); from a terminal you can choose to stop using an
 image instead. Other template changes are reported at launch (and by
 `jutul-agent doctor`) without stopping it.
+
+A simulator newer than the installed jutul-agent was made for is not refused: it
+runs with a note at launch, since the bundled skills may not cover what changed.
+That is what a simulator developer trying an unreleased version gets, and an
+update never moves it back.
 
 ## Adding folders
 
