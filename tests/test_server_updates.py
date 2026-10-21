@@ -364,7 +364,9 @@ def web_run(tmp_path, monkeypatch):
     from jutul_agent.interfaces.cli import web
 
     monkeypatch.chdir(tmp_path)
-    calls = SimpleNamespace(checks=[], restarted=False, updater=None, ask_restart=False)
+    calls = SimpleNamespace(
+        checks=[], restarted=False, updater=None, ask_restart=False, ctrl_c=False
+    )
 
     class FakeServer:
         def __init__(self, config) -> None:
@@ -374,6 +376,8 @@ def web_run(tmp_path, monkeypatch):
 
         def run(self) -> None:
             calls.updater.restart_requested = calls.ask_restart
+            if calls.ctrl_c:  # as uvicorn re-raises it once it has shut down
+                raise KeyboardInterrupt
 
     def check(name):
         return lambda *a, **k: not calls.checks.append(name)
@@ -392,6 +396,18 @@ def test_the_server_restarts_after_an_update(web_run) -> None:
     assert web.run(_web_args()) == 0
     assert calls.restarted
     assert calls.updater.local  # served on 127.0.0.1 by default
+
+
+def test_ctrl_c_stops_the_server_cleanly(web_run) -> None:
+    web, calls = web_run
+    calls.ctrl_c = calls.ask_restart = True
+    try:
+        code = web.run(_web_args())
+    except KeyboardInterrupt:  # escaping, it would stop pytest itself
+        pytest.fail("Ctrl+C escaped web.run as a traceback")
+    # A clean exit; and stopping means stopping, even with a restart pending.
+    assert code == 0
+    assert not calls.restarted
 
 
 def test_a_restarted_server_starts_even_if_something_needs_fixing(web_run, monkeypatch) -> None:
