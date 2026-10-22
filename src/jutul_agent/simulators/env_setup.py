@@ -567,7 +567,7 @@ def _prepare_workspace_env_unlocked(
 
     _ensure_simulator_installed(adapter, workspace, julia_project, sim_name)
     _ensure_env_warmed(workspace, julia_project, sim_name, dependencies)
-    _reconcile_env_template(adapter, workspace, julia_project, sim_name)
+    _reconcile_env_template(adapter, workspace, julia_project)
 
 
 def check_env_versions(
@@ -912,36 +912,22 @@ def _ensure_simulator_installed(
         _rebuild_managed_env(adapter, ws, sim_name, reason="could not be resolved")
 
 
-def _reconcile_env_template(
-    adapter: SimulatorAdapter, ws: Path, julia_project: Path, sim_name: str | None
-) -> None:
-    """Warn when the managed env was built from an older template than the install.
+def _reconcile_env_template(adapter: SimulatorAdapter, ws: Path, julia_project: Path) -> None:
+    """Record that the managed env now matches the installed template.
 
-    The other reconcile steps self-heal *added* deps; this catches the changes
-    they can't (a dep dropped, a compat tightened, a ``[sources]`` path moved)
-    after an upgrade, pointing at the one-command rebuild the docs prescribe.
-    Never touches a user-owned root env, and stays quiet for an env whose stamp
-    already matches — baselining a stamp-less (pre-feature) env instead of nagging.
+    By the time this runs, the env has passed the version check (an older simulator
+    is refused before here), gained any deps the template added, and had its bundled
+    packages refreshed. A changed template leaves nothing to fix, so refresh the
+    stamp rather than warn. Never touches a user-owned root env.
     """
 
     if user_owns_root_project(ws) or not env_declares_warm_packages(julia_project):
         return
-
     template = adapter.julia_env_template_path
-    if not env_template_drifted(julia_project, template):
+    if env_template_drifted(julia_project, template):
+        write_env_template_stamp(julia_project, template)
+    else:
         ensure_env_template_stamp(julia_project, template)
-        return
-
-    rebuild = "jutul-agent init --force"
-    if sim_name:
-        rebuild += f" --sim {sim_name}"
-    print(
-        "warning: this workspace's Julia env was built from an older "
-        f"{adapter.display_name} template than the installed jutul-agent. It will "
-        "still run, but to pick up the new template rebuild it with:\n"
-        f"             {rebuild}",
-        file=sys.stderr,
-    )
 
 
 def _ensure_env_warmed(

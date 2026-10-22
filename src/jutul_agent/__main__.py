@@ -16,6 +16,9 @@ warnings.filterwarnings(
     message="Core Pydantic V1 functionality isn't compatible with Python 3.14",
     category=UserWarning,
 )
+# The turn loop uses langgraph's v3 event stream on purpose (agent/turns.py), which
+# warns that it is experimental at every turn. Nothing a user can act on.
+warnings.filterwarnings("ignore", message="The v3 streaming protocol on Pregel is experimental")
 
 from jutul_agent.interfaces.cli import main  # noqa: E402
 
