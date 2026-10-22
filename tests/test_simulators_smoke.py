@@ -124,3 +124,53 @@ async def test_simulator_warm_workload_runs(adapter: SimulatorAdapter, warm_disp
         assert result.error is None, f"{adapter.name}: {result.error}"
         ran = await julia.eval(f"{adapter.warm_package}._warm()")
         assert ran.error is None, f"{adapter.name}: warm workload failed: {ran.error}"
+
+
+# What Julia 1.12's runtime writes when inference trips the irinterp assertion (cut
+# down from a real report), and a different internal error that must still show.
+_IRINTERP_REPORT = """\
+Internal error: during type inference of
+(::Type{Makie.IntervalSlider})(Makie.Figure)
+Encountered unexpected error in runtime:
+AssertionError(msg="irinterp is unable to handle heavy recursion correctly")
+collect_limitations! at ./../usr/share/julia/Compiler/src/ssair/irinterp.jl:4 [inlined]
+unknown function (ip: 0x112c4c293) at (unknown file)
+jl_repl_entrypoint at /src/jlapi.c:1139
+"""
+_OTHER_REPORT = """\
+Internal error: during type inference of
+f(Int64)
+Encountered unexpected error in runtime:
+BoundsError()
+f at ./a.jl:1
+"""
+
+
+async def test_jutuldarcy_warm_package_drops_only_irinterp_reports(warm_display) -> None:
+    """The warm package holds back Julia 1.12's irinterp reports, and nothing else.
+
+    Re-inferring the backends' invalidations can trip a compiler assertion that the
+    runtime survives but reports on stderr, where it reads as a failed precompile.
+    The warm package drops those reports from what it passes on, so check that the
+    filter removes each report with its whole backtrace, and keeps a different
+    internal error and the output around it.
+    """
+    adapter = registry.get("jutuldarcy")
+    env = adapter.julia_env_template_path
+    if not _env_ready(adapter):
+        pytest.skip(f"{adapter.name} env not instantiated (run `Pkg.instantiate()` on {env})")
+
+    captured = "before\n" + _IRINTERP_REPORT * 2 + _OTHER_REPORT + "after\n"
+    expected = "before\n" + _OTHER_REPORT + "after\n"
+    kernel_env = {"DISPLAY": warm_display} if warm_display else None
+    config = KernelConfig(julia_project=env, env=kernel_env)
+    async with JuliaKernel(config) as julia:
+        result = await julia.eval(f"using {adapter.warm_package}")
+        assert result.error is None, f"{adapter.name}: {result.error}"
+        checked = await julia.eval(
+            f'let kept = {adapter.warm_package}._drop_irinterp_reports(raw"""{captured}""")\n'
+            f'    print(kept == raw"""{expected}""" ? "kept-ok" : repr(kept))\n'
+            "end"
+        )
+        assert checked.error is None, checked.error
+        assert checked.output.strip() == "kept-ok", checked.output
