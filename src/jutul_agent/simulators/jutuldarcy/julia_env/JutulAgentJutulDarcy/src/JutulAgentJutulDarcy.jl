@@ -10,6 +10,58 @@ module JutulAgentJutulDarcy
 using JutulDarcy, Jutul
 using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workload
 
+# Julia 1.12's compiler can fail an internal assertion while @recompile_invalidations
+# below re-infers the ~23k methods that loading the backends invalidates. The runtime
+# recovers by itself (that one method just compiles on first use), but it writes the
+# assertion and a long backtrace straight to stderr, which Pkg then shows as this
+# package's precompile output, and a new user takes it for a crash. Which method trips
+# it changes from run to run, since they are re-inferred in hash order, so there is no
+# one call to leave out of the bake. And the block itself is not optional: without it
+# the solves JutulDarcy bakes compile again in the session (SPE1 0.5s -> 12s). So
+# capture what is written to the stderr descriptor around the block, and pass on all
+# of it but these reports.
+const _IRINTERP_ASSERTION = "irinterp is unable to handle heavy recursion correctly"
+
+function _drop_irinterp_reports(text)
+    lines = split(text, '\n')
+    kept = SubString{String}[]
+    i = 1
+    while i <= length(lines)
+        if startswith(lines[i], "Internal error: during type inference of") &&
+                i + 3 <= length(lines) && occursin(_IRINTERP_ASSERTION, lines[i + 3])
+            # The header, signature, "Encountered ..." and the error, then the
+            # backtrace: one "<frame> at <location>" line per frame.
+            i += 4
+            while i <= length(lines) && occursin(" at ", lines[i])
+                i += 1
+            end
+        else
+            push!(kept, lines[i])
+            i += 1
+        end
+    end
+    return join(kept, '\n')
+end
+
+# Only the descriptor is redirected, not Julia's `stderr` stream (which writes through
+# its own duplicate of it), so the packages loaded inside cannot keep hold of a stream
+# that is closed afterwards, and Julia-level output is untouched.
+function _without_irinterp_reports(f)
+    mktemp() do path, io
+        saved = Libc.dup(RawFD(2))
+        Libc.dup(fd(io), RawFD(2))
+        try
+            f()
+        finally
+            Libc.dup(saved, RawFD(2))
+            ccall((@static Sys.iswindows() ? :_close : :close), Cint, (RawFD,), saved)
+            close(io)
+            print(stderr, _drop_irinterp_reports(read(path, String)))
+        end
+    end
+    return nothing
+end
+
 # Every Makie backend a session holds at once, loaded before the workload so that it
 # bakes in the world a session actually runs in. Loading a backend invalidates code
 # specialised against the ones already there, and that reaches past plotting into the
@@ -27,11 +79,13 @@ using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workl
 # session loads first fixes the order, and an order that differs from this one drops
 # the parts of the bake that were inferred through a method the other package brings.
 # Depending on it here makes the session's order the baked order by construction.
-@recompile_invalidations begin
-    import JutulAgent
-    import CairoMakie
-    import WGLMakie
-    using GLMakie
+_without_irinterp_reports() do
+    @recompile_invalidations begin
+        import JutulAgent
+        import CairoMakie
+        import WGLMakie
+        using GLMakie
+    end
 end
 
 # A tiny two-well immiscible reservoir run through `simulate_reservoir`, the
