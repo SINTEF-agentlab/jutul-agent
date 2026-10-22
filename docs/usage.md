@@ -122,8 +122,7 @@ jutul-agent init --sim <name> --force  # from scratch
 
 If the folder starts from a [system image](sysimage.md), the update also has to
 rebuild it (about 20 minutes); from a terminal you can choose to stop using an
-image instead. Other template changes are reported at launch (and by
-`jutul-agent doctor`) without stopping it.
+image instead.
 
 A simulator newer than the installed jutul-agent was made for is not refused: it
 runs with a note at launch, since the bundled skills may not cover what changed.

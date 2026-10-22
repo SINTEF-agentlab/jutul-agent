@@ -114,7 +114,8 @@ def test_bootstrap_writes_stamp(tmp_path: Path) -> None:
     assert not env_template_drifted(env_dir, module_dir / "julia_env")
 
 
-def test_reconcile_warns_on_drift(tmp_path: Path, capsys) -> None:
+def test_reconcile_restamps_a_changed_template_quietly(tmp_path: Path, capsys) -> None:
+    """An env that got this far satisfies the template, so a change is nothing to fix."""
     module_dir = _make_template(tmp_path)
     template = module_dir / "julia_env"
     workspace = tmp_path / "ws"
@@ -122,12 +123,12 @@ def test_reconcile_warns_on_drift(tmp_path: Path, capsys) -> None:
     bootstrap_julia_env(template, workspace=workspace)
     env_dir = workspace_julia_env(workspace)
 
-    # Drift the template after the env was stamped.
+    # Change the template after the env was stamped.
     (template / "Project.toml").write_text(_TEMPLATE_PROJECT + 'New = "n"\n', encoding="utf-8")
 
-    env_setup._reconcile_env_template(_adapter(module_dir), workspace, env_dir, "test")
-    err = capsys.readouterr().err
-    assert "older" in err and "init --force" in err
+    env_setup._reconcile_env_template(_adapter(module_dir), workspace, env_dir)
+    assert capsys.readouterr().err == ""
+    assert not env_template_drifted(env_dir, template)
 
 
 def test_reconcile_silent_when_current(tmp_path: Path, capsys) -> None:
@@ -137,7 +138,7 @@ def test_reconcile_silent_when_current(tmp_path: Path, capsys) -> None:
     bootstrap_julia_env(module_dir / "julia_env", workspace=workspace)
     env_dir = workspace_julia_env(workspace)
 
-    env_setup._reconcile_env_template(_adapter(module_dir), workspace, env_dir, "test")
+    env_setup._reconcile_env_template(_adapter(module_dir), workspace, env_dir)
     assert capsys.readouterr().err == ""
 
 
@@ -151,7 +152,8 @@ def _managed_env(tmp_path: Path) -> tuple[Path, Path]:
     return ws, env_dir
 
 
-def test_doctor_flags_drifted_env(tmp_path: Path) -> None:
+def test_doctor_ignores_a_changed_template_alone(tmp_path: Path) -> None:
+    """Only the simulator's version is reported; a changed template is not a finding."""
     import json
 
     from jutul_agent.interfaces.cli import doctor
@@ -163,8 +165,8 @@ def test_doctor_flags_drifted_env(tmp_path: Path) -> None:
     )
 
     report = doctor._Report()
-    doctor._check_env_template_current(report, ws, env_dir, registry.names()[0])
-    assert report.worst == doctor.WARN
+    doctor._check_simulator_version(report, ws, env_dir, registry.names()[0])
+    assert report.worst == doctor.PASS
 
 
 def test_doctor_passes_current_env(tmp_path: Path) -> None:
@@ -176,7 +178,7 @@ def test_doctor_passes_current_env(tmp_path: Path) -> None:
     write_env_template_stamp(env_dir, registry.get(sim).julia_env_template_path)
 
     report = doctor._Report()
-    doctor._check_env_template_current(report, ws, env_dir, sim)
+    doctor._check_simulator_version(report, ws, env_dir, sim)
     assert report.worst == doctor.PASS
 
 
@@ -192,7 +194,7 @@ def test_doctor_fails_an_outdated_simulator(tmp_path: Path, capsys) -> None:
     )
 
     report = doctor._Report()
-    doctor._check_env_template_current(report, ws, env_dir, "jutuldarcy")
+    doctor._check_simulator_version(report, ws, env_dir, "jutuldarcy")
     assert report.worst == doctor.FAIL
     out = capsys.readouterr().out
     assert "JutulDarcy 0.3.12" in out and "jutul-agent upgrade" in out
@@ -210,7 +212,7 @@ def test_doctor_warns_about_a_newer_simulator(tmp_path: Path, capsys) -> None:
     )
 
     report = doctor._Report()
-    doctor._check_env_template_current(report, ws, env_dir, "jutuldarcy")
+    doctor._check_simulator_version(report, ws, env_dir, "jutuldarcy")
     assert report.worst == doctor.WARN
     out = capsys.readouterr().out
     assert "JutulDarcy 9.0.0, newer than this jutul-agent was made for" in out

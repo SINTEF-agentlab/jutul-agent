@@ -40,3 +40,15 @@ def test_cli_hides_the_pydantic_v1_warning():
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert "Pydantic V1" not in result.stderr
+
+
+def test_cli_hides_the_experimental_stream_warning():
+    # The turn loop uses langgraph's v3 event stream on purpose; its "experimental"
+    # warning would otherwise print at every turn.
+    code = (
+        "import warnings, jutul_agent.__main__;"
+        'warnings.warn("The v3 streaming protocol on Pregel is experimental.", UserWarning)'
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "experimental" not in result.stderr

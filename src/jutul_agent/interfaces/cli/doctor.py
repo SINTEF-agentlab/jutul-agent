@@ -28,7 +28,6 @@ from jutul_agent.simulators import registry
 from jutul_agent.workspace import (
     auto_detect_simulator,
     env_declares_warm_packages,
-    env_template_drifted,
     load_workspace_config,
     newer_env_packages,
     outdated_env_packages,
@@ -85,7 +84,7 @@ def run(args: argparse.Namespace) -> int:
     sim_name = _check_simulator(report, sim_name)
     project = _check_julia_project(report, ws)
     _check_simulator_installed(report, project, sim_name)
-    _check_env_template_current(report, ws, project, sim_name)
+    _check_simulator_version(report, ws, project, sim_name)
     _check_sysimage(report, ws, project, config)
     _check_plotting_display(report)
 
@@ -284,15 +283,14 @@ def _check_simulator_installed(report: _Report, project: Path | None, sim_name: 
     )
 
 
-def _check_env_template_current(
+def _check_simulator_version(
     report: _Report, ws: Path, project: Path | None, sim_name: str | None
 ) -> None:
-    """Warn when the managed env was built from an older simulator template.
+    """Report a managed env whose simulator is older or newer than this install's.
 
-    The matching launch-time check only warns on stderr mid-startup; surfacing
-    it here too means a user debugging a stale env sees it in the one report
-    they're told to paste. Only applies to a managed ``.jutul-agent/julia-env``
-    (a user-owned root Project.toml is theirs), and only when a stamp exists.
+    Launch refuses an older one and notes a newer one; this puts the same finding in
+    the one report users are told to paste. Only applies to a managed
+    ``.jutul-agent/julia-env`` (a user-owned root Project.toml is theirs).
     """
 
     if project is None or sim_name is None or sim_name not in registry.names():
@@ -325,15 +323,6 @@ def _check_env_template_current(
         )
     else:
         report.line(PASS, "Simulator version")
-    if env_template_drifted(project, template):
-        report.line(
-            WARN,
-            "Env template current",
-            "built from an older template than the installed jutul-agent",
-            f"Rebuild it with `jutul-agent init --sim {sim_name} --force`.",
-        )
-    else:
-        report.line(PASS, "Env template current")
 
 
 def _check_sysimage(report: _Report, ws: Path, project: Path | None, config) -> None:
