@@ -44,10 +44,13 @@ def test_cli_hides_the_pydantic_v1_warning():
 
 def test_cli_hides_the_experimental_stream_warning():
     # The turn loop uses langgraph's v3 event stream on purpose; its "experimental"
-    # warning would otherwise print at every turn.
+    # warning would otherwise print at every turn. langchain_core turns its beta
+    # warnings back on when it is imported, so check after the turn loop's imports.
     code = (
-        "import warnings, jutul_agent.__main__;"
-        'warnings.warn("The v3 streaming protocol on Pregel is experimental.", UserWarning)'
+        "import warnings, jutul_agent.__main__, jutul_agent.agent.turns;"
+        "from langchain_core._api.beta_decorator import LangChainBetaWarning;"
+        'warnings.warn("The v3 streaming protocol on Pregel is experimental.",'
+        " LangChainBetaWarning)"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

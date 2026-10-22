@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import warnings
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +22,12 @@ from jutul_agent.agent.tool_output import is_interrupt_payload, normalize_tool_o
 from jutul_agent.trace import TraceLog
 from jutul_agent.trace.messages import content_to_str
 from jutul_agent.trace.schema import HITL_REQUEST, HITL_RESPONSE, MESSAGE_USER
+
+# The turn runs on langgraph's v3 event stream on purpose, which warns that it is
+# experimental at every turn: nothing a user can act on. Filtered here, after the
+# imports above, because importing langchain_core turns its beta warnings back on
+# (``surface_langchain_beta_warnings``) ahead of any earlier filter.
+warnings.filterwarnings("ignore", message="The v3 streaming protocol on Pregel is experimental")
 
 MessageCallback = Callable[[Any], Awaitable[None] | None]
 ResumePayload = dict[str, dict[str, list[dict[str, str]]]]
