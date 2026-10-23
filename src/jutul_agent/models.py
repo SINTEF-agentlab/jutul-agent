@@ -29,6 +29,9 @@ class ProviderInfo:
     package: str
     key_env_var: str | None = None
     local: bool = False
+    # Other names the provider's model instances report as their provider (LangChain
+    # ``ls_provider``), where that differs from the ``init_chat_model`` prefix.
+    aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,15 @@ MODEL_ENV_VAR = "JUTUL_AGENT_MODEL"
 
 PROVIDERS: dict[str, ProviderInfo] = {
     "openai": ProviderInfo("openai", "OpenAI", "langchain-openai", "OPENAI_API_KEY"),
+    # Model ids name a deployment (``azure_openai:<deployment>``). AzureChatOpenAI
+    # also reads ``AZURE_OPENAI_ENDPOINT`` and ``OPENAI_API_VERSION``.
+    "azure_openai": ProviderInfo(
+        "azure_openai",
+        "Azure OpenAI",
+        "langchain-openai",
+        "AZURE_OPENAI_API_KEY",
+        aliases=("azure",),
+    ),
     "anthropic": ProviderInfo("anthropic", "Anthropic", "langchain-anthropic", "ANTHROPIC_API_KEY"),
     "google_genai": ProviderInfo(
         "google_genai", "Google", "langchain-google-genai", "GOOGLE_API_KEY"
@@ -110,14 +122,52 @@ def model_profile(model_id: str) -> dict:
     """The provider package's bundled profile for the model (``{}`` when unknown).
 
     Profiles are the maintained capability source. Reading one builds the model,
-    which needs the provider key; any failure reads as an empty profile.
+    which needs the provider key; any failure reads as an empty profile. Azure
+    ids name a deployment, so they read the profile of the model behind it.
     """
+    if provider_of(model_id) == "azure_openai":
+        return azure_deployment_profile(model_id.partition(":")[2])
     try:
         from langchain.chat_models import init_chat_model
 
         return init_chat_model(model_id).profile or {}
     except Exception:
         return {}
+
+
+# Where the Azure deployments offered in the model picker are configured: one
+# deployment, and a comma-separated list of more.
+AZURE_DEPLOYMENT_ENV_VARS: tuple[str, ...] = ("AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_DEPLOYMENTS")
+
+
+def azure_deployments() -> list[str]:
+    """The configured Azure OpenAI deployment names, deduplicated, in order."""
+    raw = ",".join(os.environ.get(var, "") for var in AZURE_DEPLOYMENT_ENV_VARS)
+    return list(dict.fromkeys(name.strip() for name in raw.split(",") if name.strip()))
+
+
+def azure_deployment_profile(deployment: str) -> dict:
+    """The bundled OpenAI profile of the model behind an Azure deployment.
+
+    Deployment names are chosen by whoever deploys the model, so the bundled data
+    cannot know them. The name is matched as-is, then with trailing ``-suffix``
+    segments dropped one at a time, which covers the usual ``<model>-<tag>``
+    naming (``gpt-5.5-prod`` reads as ``gpt-5.5``). ``{}`` when nothing matches:
+    the deployment then runs like any unprofiled model, without requested
+    reasoning or a known context window.
+    """
+    profiles = _openai_profiles()
+    name = deployment.strip()
+    while name:
+        if isinstance(profiles.get(name), dict):
+            return dict(profiles[name])
+        name = name.rpartition("-")[0]
+    return {}
+
+
+@lru_cache(maxsize=1)
+def _openai_profiles() -> dict[str, Any]:
+    return _load_profiles(PROVIDERS["openai"].package)
 
 
 def context_window(model_id: str) -> int | None:
@@ -209,7 +259,9 @@ def discover_models() -> dict[str, list[ModelInfo]]:
     """Tool-calling models from installed provider packages, grouped by provider.
 
     Each non-local provider's ``data/_profiles.py`` is read and filtered to
-    models that support tool calling and text I/O. The configured default is
+    models that support tool calling and text I/O. Azure OpenAI ids name
+    deployments rather than catalog models, so it offers the configured
+    deployments (``azure_deployments``) instead. The configured default is
     included even when its provider profile has not caught up. Providers are
     ordered as in ``PROVIDERS``; models are sorted newest-ish first (reverse
     name order, which tracks the version-in-name scheme of the major providers).
@@ -220,6 +272,10 @@ def discover_models() -> dict[str, list[ModelInfo]]:
     for name, info in PROVIDERS.items():
         if info.local:
             continue  # Ollama ships no profiles; the selector probes the daemon.
+        if name == "azure_openai":
+            if deployments := azure_deployments():
+                grouped[name] = [ModelInfo(f"{name}:{d}", d) for d in deployments]
+            continue
         names = {
             m for m, profile in _load_profiles(info.package).items() if _is_chat_capable(profile)
         }

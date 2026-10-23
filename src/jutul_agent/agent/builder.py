@@ -138,8 +138,11 @@ def register_provider_profiles() -> None:
     profile = HarnessProfile(
         general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
     )
-    for provider in PROVIDERS:
-        register_harness_profile(provider, profile)
+    # Built instances resolve by the provider they report, which can differ from
+    # the spec prefix (AzureChatOpenAI reports "azure"), so aliases register too.
+    for provider, info in PROVIDERS.items():
+        for key in (provider, *info.aliases):
+            register_harness_profile(key, profile)
     _provider_profiles_registered = True
 
 
@@ -164,10 +167,12 @@ _ANTHROPIC_MAX_TOKENS = 24_000
 # never started. Local models are left alone; their client takes no such
 # argument, and a stalled daemon is a different failure.
 _PROVIDER_READ_TIMEOUT_S = 300.0
+# httpx's own shape, so a host that is simply unreachable fails on connect in
+# seconds instead of waiting out the read budget.
+_OPENAI_TIMEOUT = httpx.Timeout(connect=15.0, read=_PROVIDER_READ_TIMEOUT_S, write=120.0, pool=60.0)
 _PROVIDER_TIMEOUTS: dict[str, Any] = {
-    # httpx's own shape, so a host that is simply unreachable fails on connect
-    # in seconds instead of waiting out the read budget.
-    "openai": httpx.Timeout(connect=15.0, read=_PROVIDER_READ_TIMEOUT_S, write=120.0, pool=60.0),
+    "openai": _OPENAI_TIMEOUT,
+    "azure_openai": _OPENAI_TIMEOUT,
     "anthropic": _PROVIDER_READ_TIMEOUT_S,
     "google_genai": _PROVIDER_READ_TIMEOUT_S,
     # ChatOpenRouter's SDK expects milliseconds, unlike the other providers.
@@ -206,6 +211,21 @@ def _openai_settings(model_id: str) -> dict[str, Any] | None:
     if (profile.get("reasoning_output") and profile.get("temperature") is False) or newer_reasoning:
         return {"reasoning": dict(_OPENAI_REASONING), "use_responses_api": True}
     return None
+
+
+def _azure_openai_settings(model_id: str) -> dict[str, Any] | None:
+    # Azure ids name a deployment, which no bundled profile knows, so the
+    # profile is that of the model behind it (``models.model_profile`` maps the
+    # name) and is handed to the instance, whose own lookup would come up empty.
+    # Reasoning follows the OpenAI rule; the Responses API takes the deployment
+    # name as the request's model, which is how Azure routes it.
+    profile = model_profile(model_id)
+    if not profile:
+        return None
+    settings: dict[str, Any] = {"profile": profile}
+    if profile.get("reasoning_output") and profile.get("temperature") is False:
+        settings.update(reasoning=dict(_OPENAI_REASONING), use_responses_api=True)
+    return settings
 
 
 def _anthropic_settings(model_id: str) -> dict[str, Any] | None:
@@ -251,6 +271,7 @@ def _openrouter_settings(model_id: str) -> dict[str, Any] | None:
 _MODEL_SETTINGS: dict[str, Callable[[str], dict[str, Any] | None]] = {
     "ollama": _ollama_settings,
     "openai": _openai_settings,
+    "azure_openai": _azure_openai_settings,
     "anthropic": _anthropic_settings,
     "google_genai": _google_settings,
     "openrouter": _openrouter_settings,
