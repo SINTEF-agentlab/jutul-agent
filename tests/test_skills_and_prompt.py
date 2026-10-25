@@ -102,6 +102,7 @@ def test_repo_deepagents_skill_assets_exist() -> None:
         ("fimbul", "fimbul-overview"),
         ("fimbul", "fimbul-plotting"),
         ("mocca", "mocca-overview"),
+        ("mocca", "mocca-plotting"),
     ]
     for sim, skill in expected:
         assert registry.get(sim).skills_dir.joinpath(skill, "SKILL.md").exists()

@@ -1,11 +1,11 @@
 name = "JutulAgentMocca"
 uuid = "118bae70-9d54-4e00-8665-eefd5efc28fa"
-version = "0.1.0"
+version = "0.2.0"
 
 # Per-simulator warm-up package for jutul-agent (Mocca). Sibling of the shared
 # JutulAgent package in this env. Loads the simulator, recompiles GLMakie's solver
-# invalidations via @recompile_invalidations, and bakes the agent's simulate_process
-# + plot_outlet paths via @compile_workload. Single source of truth for the Mocca
+# invalidations via @recompile_invalidations, and bakes the process simulation
+# and native plotting paths via @compile_workload. Single source of truth for the Mocca
 # warm-up.
 
 [deps]
@@ -18,5 +18,6 @@ PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
 [compat]
+Mocca = "0.2.0"
 PrecompileTools = "1"
 julia = "1.10"

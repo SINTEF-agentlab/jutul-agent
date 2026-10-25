@@ -1,125 +1,102 @@
 ---
 name: mocca-overview
-description: High-level Mocca workflow for adsorption-based CO2 capture simulations
+description: Set up Mocca adsorption processes, run cycles or cyclic steady state, and interpret performance and results.
 ---
 
-# Mocca orientation
+# Mocca
 
-## When to use
+Mocca models adsorption-based gas separation as beds and flow devices joined
+in a flowsheet, operated through a cycle of steps. It supports multi-bed and
+wet-flue-gas processes, custom materials, optimization and history matching.
+Start from the closest installed example under `examples/`.
 
-Use this skill for any adsorption-based CO2 capture task on Mocca:
-direct column breakthrough (DCB), cyclic vacuum swing adsorption (VSA),
-parameter optimization, or history matching against measured
-breakthrough data.
+## Set up and run
 
-## Maturity
-
-Mocca is a young package with a deliberately small scope: a CO2/N2
-system on Zeolite 13X (dual-site Langmuir isotherm, linear driving
-force mass transfer) in DCB and four-stage VSA configurations. Other
-isotherms, chemistries, and cycle types are not implemented; verify
-against the installed source before promising a capability.
-
-## Mental model
-
-A Mocca simulation has three composable layers:
-
-1. **Inputs**: physical and operational parameters. `Mocca.parse_input`
-   accepts either a JSON file path (reference inputs ship inside the
-   package under `models/json/`, with a schema) **or an input `Dict`** —
-   the model library provides `haghpanah_cyclic_input()` /
-   `haghpanah_DCB_input()` returning such dicts. Inputs can also be
-   constructed directly in Julia: `HaghpanahConstants` for the published
-   reference setup, or explicit isotherm, mass-transfer, and column
-   objects.
-2. **Case**: model, initial state, parameters, and staged forces
-   assembled into a `MoccaCase`. The JSON route does this in one call,
-   `setup_mocca_case(constants, info)`.
-3. **Simulate**: `simulate_process(case; ...)` returns
-   `(states, timesteps)`; pass `output_substates = true` to keep every
-   substep.
-
-The quickest run is JSON-driven:
+Use a library process or a process JSON file:
 
 ```julia
-using Mocca
-json_dir = joinpath(dirname(pathof(Mocca)), "../models/json/")
-(constants, info) = Mocca.parse_input(joinpath(json_dir, "dcb_haghpanah_2013_co2_n2_input_simple.json"))
-case, ts_config = Mocca.setup_mocca_case(constants, info)
-states, timesteps = Mocca.simulate_process(
-    case;
-    timestep_selector_cfg = ts_config,
-    output_substates = true,
-    info_level = 1,            # see progress; use 2 if convergence struggles
-)
+import Mocca
+process = Mocca.read_process("haghpanah_2013_four_stage_vsa")
+result = Mocca.simulate(process; cycles=3)
 ```
 
-The no-file equivalent for the cyclic reference setup:
+`Mocca.library_processes()` and `Mocca.library_adsorbents()` list the bundled
+choices. `four_stage_vsa_process`, `two_bed_vsa_process`, `lpp_vsa_process`
+and `dual_adsorbent_vsa_process` are configurable constructors.
+`examples/breakthrough.jl` builds a one-step adsorption process for a DCB run.
+
+`simulate` runs the requested cycles and retains the solver's substeps.
+For steady-cycle performance, use `Mocca.cyclic_steady_state(process)` and
+check `result.converged` before calling the result steady. A fixed number of
+cycles does not establish steady state; its `converged` field is `nothing`.
+The steady-state result contains the final cycle, whereas `simulate` retains
+all requested cycles. Inspect `docs/src/steady_state.md` for convergence,
+warm starts and solver options; `progress=true` reports progress in scripts.
+
+Inspect named settings with `Mocca.variable_names(process)` and change them
+with, for example, `process[:P_L] = 5e3` or `process[:t_ads] = 30.0` when those
+variables are present. Use separate processes for independent comparisons:
+results retain their process, which can be mutated by later changes.
+`Mocca.validate(process)` returns a list of input issues; inspect their
+meaning rather than treating it as a boolean. A breakthrough without an
+extract stream cannot report capture purity/recovery.
+
+For custom processes, follow `examples/process_from_parts.jl`: `Gas`, `Feed`,
+`Adsorbent` and `Column` → `Flowsheet` with `add_bed!`/`add_device!` → `Cycle`
+→ `Process`. Device roles determine which streams each step opens and which
+streams count as feed, light product and extract. Keep the example's thermal
+model (`WithWall`, `Adiabatic` or `Isothermal`) unless changing it is intended.
+Inputs use SI units; `Mocca.Units` provides conversions such as `bar` and
+`celsius(25)`. Old constants/JSON inputs can be migrated with
+`Mocca.convert_constants`; `setup_mocca_case` is no longer a simulation path.
+
+## Interpret and export results
+
+`result.states[k]` contains all beds and devices. For a bed named `:Bed`:
 
 ```julia
-constants, info = Mocca.parse_input(Mocca.haghpanah_cyclic_input())
+bed = process.flowsheet[:Bed]
+bed_states = [s[:Bed] for s in result.states]
+times = cumsum(result.timesteps)
 ```
 
-Mind `info.num_cycles` for cyclic inputs: the shipped cyclic input runs
-500 cycles (to steady state), which takes a long time. `info` is mutable —
-set `info.num_cycles = 3` before `setup_mocca_case` for a short run.
+`result.timesteps` holds step durations in seconds. Keep it paired with the
+states. Bed cells run from bottom (cell 1) to top (last cell); actual feed and
+product ends depend on device connections. Inspect unit names in a multi-bed
+process instead of assuming `:Bed`.
 
-## Building a case directly
+- `:Pressure`: cell vector in Pa.
+- `:Temperature`: cell vector in K; `:WallTemperature` exists for `WithWall` beds.
+- `:y`: component-by-cell gas mole fractions.
+- `:AdsorbedConcentration`: component-by-cell loading in mol/m³ of adsorbent.
+  Divide by adsorbent density for mol/kg.
 
-The examples are the ground truth. Mocca's source path is given to you up front;
-list the examples there and read the one that fits your task before writing your
-own chain:
+Component order follows `Mocca.component_names(process.flowsheet.gas)`.
+A device's `:MolarFlow` is in mol/s, positive from inlet to outlet; its inlet
+and outlet composition/temperature fields describe the ports.
 
-```text
-glob("/.../Mocca/examples/*.jl")
-```
+Use `Mocca.performance(result)` for purity, recovery, specific energy (kWh/t)
+and productivity (mol/(m³·s)). It integrates device streams over the last
+cycle, not pointwise bed composition. State whether the result is transient
+or converged. `performance(process)` runs a steady-state solve; use the
+existing result when one is already available.
 
-The shipped set covers the cyclic four-stage VSA reference, the single-pass
-breakthrough (DCB) variant, an explicit-physics composition for
-non-reference parameters, and the JSON, optimization, and history-matching
-routes. Read whichever fits, and follow its own call chain rather than
-reconstructing it from memory — the internal API moves. For a docstring,
-stay in the REPL: `run_julia("@doc Mocca.setup_mocca_case")`.
+`Mocca.write_results("results/base_case", result)` exports CSV summaries,
+streams and bed histories/profiles plus the process JSON. Exported columns
+carry engineering units (including bara, °C and mol%); raw states remain SI.
+Use `write_process(path, process)` / `read_process(path)` to save/reload a setup.
+See `mocca-plotting` for native result views.
 
-## Reading results
+## Optimization and extensions
 
-`states` is a vector of per-timestep states. Each state maps a field to
-its per-cell values, in SI units:
+`add_variable!` exposes named design variables; `performance_gradient` and
+`optimise!` use steady-state gradients. Follow `examples/optimization.jl` for
+bounds, objective scaling and constraints. Targets such as minimum purity
+are penalties, so inspect the achieved metrics rather than assuming they
+were met. `examples/history_matching.jl` uses Jutul's dictionary optimizer
+for transient data; its result and history differ from `optimise!`.
 
-- `state[:Pressure]`: vector over cells, in Pa (divide by `si_unit(:bar)`).
-- `state[:y]`: 2×ncells matrix of gas mole fractions, rows `[CO2, N2]`.
-- `state[:Temperature]`, `state[:WallTemperature]`: kelvin.
-
-Cell 1 is the feed/product end (LHS), cell `ncells` the outlet (RHS).
-Example probes:
-
-```julia
-states[end][:y][1, 1]                                   # final CO2 fraction at the feed end
-maximum(maximum(s[:Temperature]) for s in states)       # peak column temperature
-maximum(s[:Pressure][end] for s in states) / bar        # peak outlet pressure, bar
-```
-
-There is no built-in product purity or CO2 recovery output: those are
-cycle-integrated quantities over stage boundary flows. If a task needs
-them, derive them explicitly from the states and say how; do not pass
-off a pointwise mole fraction as a purity.
-
-## Result export and plotting
-
-```julia
-Mocca.export_cell_results("results.csv", case, states, timesteps; format = "csv")
-```
-
-Call Mocca's native plotters through `plot_julia`; they are backend-agnostic
-and captured automatically:
-
-- `plot_outlet(case, states, timesteps)`: outlet concentrations / breakthrough
-- `plot_state(state, model)`, `plot_cell(states, model, timesteps, cell)`: field/cell views
-- `plot_optimization_history(dict_parameters)`: calibration history
-
-No need to avoid `display`. Pass `view=true` to inspect a plot yourself.
-
-## Notes
-
-- The first run in a fresh REPL compiles a substantial dependency
-  graph; budget several minutes.
+Custom chemistry needs suitable isotherm, heat and mass-transfer data.
+`docs/src/adsorbents.md` and `docs/src/extending.md` cover material/step/unit
+extensions; `examples/unit_network.jl` shows lower-level coupling. Check these
+before claiming a requested material or cycle is built in.

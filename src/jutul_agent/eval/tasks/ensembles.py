@@ -177,8 +177,8 @@ def ensembles_mocca() -> Task:
     sample = Sample(
         id="ens-mc-cycles-sweep",
         input=(
-            "Using Mocca, run the cyclic VSA CO2-capture example that ships "
-            "with the package (the Haghpanah setup) for 1, 2, and 3 cycles, "
+            "Using Mocca, run four_stage_vsa_process with its default settings "
+            "for 1, 2, and 3 cycles from independent initial states, "
             "as a parallel ensemble across 3 workers, each case returning "
             "only the CO2 gas mole fraction at the feed end of the column "
             "in its final state. Report the three mole fractions in order "
