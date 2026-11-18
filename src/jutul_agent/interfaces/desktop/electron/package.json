@@ -1,0 +1,17 @@
+{
+  "name": "jutul-agent-desktop",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Electron shell for the jutul-agent desktop app. It hosts the pre-built web UI and talks to the Python backend over pipes (no HTTP server).",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/backend.test.js"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "devDependencies": {
+    "electron": "45.3.4"
+  }
+}

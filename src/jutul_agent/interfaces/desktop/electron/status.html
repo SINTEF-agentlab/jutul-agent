@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>jutul-agent</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #14161a;
+        --panel: #1c1f25;
+        --line: #2c313a;
+        --text: #e6e8ec;
+        --muted: #9aa3b2;
+        --accent: #6aa7ff;
+        --bad: #ff8a7a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        padding: 24px 16px;
+      }
+      main {
+        width: min(760px, 100%);
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0 0 4px;
+        text-wrap: balance;
+      }
+      p {
+        margin: 0 0 14px;
+        color: var(--muted);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .folder {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        word-break: break-all;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 16px;
+      }
+      button {
+        font: inherit;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 7px 14px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #0b1220;
+        font-weight: 600;
+      }
+      pre {
+        margin: 0;
+        padding: 12px 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        max-height: 46vh;
+        overflow: auto;
+        font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .spinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid var(--line);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        margin-right: 8px;
+        vertical-align: -1px;
+        animation: spin 0.9s linear infinite;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation: none;
+        }
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">Starting jutul-agent…</h1>
+      <p id="detail"></p>
+      <p class="folder" id="folder"></p>
+      <div class="row" id="actions" hidden>
+        <button class="primary" id="retry">Try again</button>
+        <button id="choose">Choose another folder…</button>
+      </div>
+      <div id="sims" hidden>
+        <p>If this folder has no simulator yet, start it with one:</p>
+        <div class="row" id="sim-buttons"></div>
+      </div>
+      <pre id="log" aria-label="Backend log" tabindex="0"></pre>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const TITLES = {
+        starting: 'Starting jutul-agent…',
+        restarting: 'Restarting the backend…',
+        ready: 'Ready',
+        stopped: 'The backend is stopped',
+        failed: 'jutul-agent could not start',
+      };
+      let built = false;
+      function render(status) {
+        const busy = status.state === 'starting' || status.state === 'restarting';
+        $('title').innerHTML = '';
+        if (busy) {
+          const spinner = document.createElement('span');
+          spinner.className = 'spinner';
+          $('title').appendChild(spinner);
+        }
+        $('title').appendChild(document.createTextNode(TITLES[status.state] || status.state));
+        $('title').className = status.state === 'failed' ? 'bad' : '';
+        $('detail').textContent =
+          status.state === 'failed'
+            ? `${status.detail}. The backend's own output below says why.`
+            : busy
+              ? 'Checking the folder and its Julia environment. The first start can take a while.'
+              : status.detail;
+        $('folder').textContent = status.workspace ? `Workspace: ${status.workspace}` : '';
+        const stuck = status.state === 'failed' || status.state === 'stopped';
+        $('actions').hidden = !stuck;
+        $('sims').hidden = !stuck;
+        if (!built) {
+          built = true;
+          for (const sim of status.simulators || []) {
+            const button = document.createElement('button');
+            button.textContent = sim;
+            button.addEventListener('click', () => window.jutulDesktop.retry({ simulator: sim }));
+            $('sim-buttons').appendChild(button);
+          }
+        }
+        const log = $('log');
+        const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+        log.textContent = (status.log || []).join('\n');
+        if (atEnd) log.scrollTop = log.scrollHeight;
+      }
+      $('retry').addEventListener('click', () => window.jutulDesktop.retry());
+      $('choose').addEventListener('click', () => window.jutulDesktop.chooseWorkspace());
+      window.jutulDesktop.onStatus(render);
+      window.jutulDesktop.getStatus().then(render);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,38 @@
+# Python requirements of the jutul-agent desktop app's backend
+# (jutul_agent.interfaces.desktop), for an environment that runs only the
+# desktop app:
+#
+#   uv venv && uv pip install -r requirements-desktop.txt
+#   uv pip install --no-deps -e .          # jutul-agent itself, without the web stack
+#   jutul-agent desktop --install          # Electron, into this same environment
+#
+# It is the core dependency list of pyproject.toml minus what only the HTTP server
+# needs. The desktop app serves the same application over pipes, so it installs no
+# network server at all:
+#   - uvicorn      the HTTP/WebSocket server of `jutul-agent web`
+#   - websockets   the web UI's reverse proxy to the kernel's plot server (a provider
+#                  package may still bring it in; the desktop app never uses it)
+# (`jutul-agent web` and its tests need the full install: `uv sync`.)
+#
+# The Electron runtime is the other half: see
+# src/jutul_agent/interfaces/desktop/electron/package.json (pinned, with a lockfile).
+
+deepagents>=0.7.26
+python-dotenv>=1.0
+langchain-openai>=0.2
+langchain-openrouter>=0.2.9
+langchain-google-genai>=4.2.2
+langchain-ollama>=1.1.0
+langgraph-checkpoint-sqlite>=3.1.0
+markdown-it-py[linkify]>=4.0
+pygments>=2.17
+textual>=8.2.6
+pillow>=12.2.0
+# The application itself is still FastAPI (an ASGI app, driven in-process), and
+# its upload route needs the multipart parser.
+fastapi>=0.115
+python-multipart>=0.0.9
+# The agent's declarative HTTP tools (agent/capabilities.py) call a host
+# application's endpoints with it; the desktop transport does not use it.
+httpx>=0.27
+tomli-w>=1.2.0

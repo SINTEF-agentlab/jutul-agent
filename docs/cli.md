@@ -17,6 +17,7 @@ flags are accepted by every command:
 |---|---|
 | `jutul-agent [options]` | Web UI (HTTP + WebSocket server + bundled web app); `jutul-agent web [options]` is the same |
 | `jutul-agent tui [options]` | Terminal UI |
+| `jutul-agent desktop [options]` | Desktop app: the web UI in a window, with no server or open port ([details](desktop.md)) |
 | `jutul-agent run "<prompt>" [options]` | One headless turn, then exit |
 
 `jutul-agent --help` lists the commands, and `jutul-agent --version` prints the

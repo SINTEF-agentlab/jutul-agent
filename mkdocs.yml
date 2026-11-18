@@ -66,6 +66,7 @@ nav:
       - Architecture: architecture.md
       - The server interface: server-interface.md
       - The web UI: web-ui.md
+      - The desktop app: desktop.md
       - Turns: turns.md
       - The Julia kernel: julia-kernel.md
       - The Julia system image: sysimage.md

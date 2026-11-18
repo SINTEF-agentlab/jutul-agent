@@ -1,5 +1,7 @@
 # Julia kernel server (standard library only). Shipped as a resource and run as
 #   julia [flags] server.jl <control_port>      with env JK_TOKEN set
+# (<control_port> may instead be fd:<read>,<write>, two inherited pipes carrying
+# the same protocol with no socket involved.)
 #
 # One loopback TCP connection carries the whole protocol as length-prefixed
 # frames: an ASCII header line "TYPE [args...] NBYTES\n" followed by exactly
@@ -147,13 +149,31 @@ function rewrite_includes!(ex)
     return ex
 end
 
+# Keep an inherited descriptor out of the processes this one starts.
+function close_on_exec(fd::Integer)
+    Sys.isunix() && ccall(:fcntl, Cint, (Cint, Cint, Cint...), fd, 2, 1)  # F_SETFD, FD_CLOEXEC
+    return nothing
+end
+
 function main()
-    port = parse(Int, ARGS[1])
     token = get(ENV, "JK_TOKEN", "")
-    ctrl = connect(ip"127.0.0.1", port)
-    # One frame = one write below; without this, a small frame after another
-    # unacknowledged one would stall on Nagle + delayed ACK (~40 ms per eval).
-    Sockets.nagle(ctrl, false)
+    # The control endpoint is a loopback port to dial, or "fd:<read>,<write>": two
+    # anonymous pipes inherited from the parent, for a kernel that must run with
+    # no socket at all. The frames on either are the same.
+    if startswith(ARGS[1], "fd:")
+        rfd, wfd = parse.(Int, split(ARGS[1][4:end], ","))
+        # Not for this process's own children (workers, shell commands): a copy of
+        # the write end held elsewhere would keep the parent from seeing us exit.
+        foreach(close_on_exec, (rfd, wfd))
+        ctrl_in = Base.PipeEndpoint(RawFD(rfd))
+        ctrl_out = Base.PipeEndpoint(RawFD(wfd))
+    else
+        ctrl = connect(ip"127.0.0.1", parse(Int, ARGS[1]))
+        # One frame = one write below; without this, a small frame after another
+        # unacknowledged one would stall on Nagle + delayed ACK (~40 ms per eval).
+        Sockets.nagle(ctrl, false)
+        ctrl_in = ctrl_out = ctrl
+    end
 
     wlock = ReentrantLock()
     function sendframe(kind::AbstractString, args, body)
@@ -163,8 +183,8 @@ function main()
         msg = Vector{UInt8}(codeunits(head))
         append!(msg, bytes)
         lock(wlock) do
-            write(ctrl, msg)
-            flush(ctrl)
+            write(ctrl_out, msg)
+            flush(ctrl_out)
         end
     end
 
@@ -222,13 +242,13 @@ function main()
     while true
         local head
         try
-            head = readline(ctrl)
+            head = readline(ctrl_in)
         catch e
             e isa InterruptException && continue   # stray interrupt between evals
             rethrow()
         end
         if head == ""
-            eof(ctrl) && break                     # parent closed the control socket
+            eof(ctrl_in) && break                     # parent closed the control socket
             continue
         end
         parts = split(head)
@@ -237,7 +257,7 @@ function main()
         nbytes = parse(Int, parts[3])
         # The body read must not be torn by a stray interrupt: a half-read frame
         # would desync the protocol. A deferred interrupt surfaces in the eval.
-        code = String(Base.disable_sigint() do; read(ctrl, nbytes) end)
+        code = String(Base.disable_sigint() do; read(ctrl_in, nbytes) end)
 
         status = "ok"
         payload = ""

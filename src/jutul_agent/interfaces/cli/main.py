@@ -6,6 +6,7 @@ web UI, the normal way to work:
 - ``jutul-agent [--sim <name>]``             web UI (HTTP + WebSocket server);
   ``jutul-agent web`` is the same command.
 - ``jutul-agent tui [--sim <name>]``         terminal UI.
+- ``jutul-agent desktop [--sim <name>]``     desktop app (Electron, no server).
 - ``jutul-agent run "<prompt>" [--sim …]``   one headless turn, then print the result.
 
 Setup and utilities:
@@ -63,6 +64,7 @@ with interactive plots and reports, in the browser at http://127.0.0.1:8742.
 
   jutul-agent                  Web UI (`jutul-agent web` is the same).
   jutul-agent tui              Terminal UI.
+  jutul-agent desktop          Desktop app: the web UI in a window, no server or port.
   jutul-agent run "<prompt>"   Run a single turn headlessly and print the result.
 
 The web UI's options (--sim, --port, --model, ...) work with or without `web`;
@@ -76,6 +78,7 @@ More commands:          doctor, sysimage, upgrade, transcript, sessions, review,
 
 COMMANDS = (
     "web",
+    "desktop",
     "tui",
     "run",
     *sorted(init_cmd.INIT_COMMANDS),
@@ -117,6 +120,11 @@ def main(argv: list[str] | None = None) -> int:
         parser = web_cmd.build_parser(prog="jutul-agent web" if named else "jutul-agent")
         args = parser.parse_args(argv[1:] if named else argv)
         return web_cmd.run(args)  # applies the workspace flags itself
+
+    if argv[0] == "desktop":
+        from jutul_agent.interfaces.desktop import launcher
+
+        return launcher.run(argv[1:])
 
     if argv[0] == "tui":
         args = run_cmd.build_parser(prog="jutul-agent tui").parse_args(argv[1:])
