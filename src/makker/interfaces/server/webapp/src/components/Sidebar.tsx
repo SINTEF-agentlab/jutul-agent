@@ -22,7 +22,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
     <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
       <div className="sidebar-head">
         <span className="brand">
-          <span className="brand-mark" /> makker
+          <span className="brand-mark" /> Makker
         </span>
       </div>
       <button className="sidebar-new" title="Start a new chat" onClick={() => controller.newChat()}>
@@ -71,10 +71,10 @@ function VersionLine({ versions }: { versions: VersionInfo | null }) {
   const controller = useController();
   if (!versions?.makker) return null;
   const sim = versions.simulator;
-  const parts = [`makker ${versions.makker}`];
+  const parts = [`Makker ${versions.makker}`];
   if (sim?.version) parts.push(`${sim.package} ${sim.version}`);
   const action = versions.update
-    ? `makker ${versions.update} available`
+    ? `Makker ${versions.update} available`
     : versions.env_update
       ? "Update environment"
       : null;

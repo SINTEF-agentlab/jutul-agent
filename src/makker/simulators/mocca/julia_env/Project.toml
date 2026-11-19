@@ -24,7 +24,7 @@ WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 [compat]
 Mocca = "0.1.0"
 
-# Both deps are makker's in-env Julia runtime, declared as relative `[sources]`
+# Both deps are Makker's in-env Julia runtime, declared as relative `[sources]`
 # paths so they survive the copy into a workspace. Makker is the shared,
 # sim-agnostic core (figure capture, ensemble helpers, generic-Makie warm-up) — it
 # has a single source in the repo (src/makker/julia_runtime/Makker) that

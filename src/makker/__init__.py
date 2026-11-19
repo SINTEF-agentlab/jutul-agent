@@ -1,4 +1,4 @@
-"""makker: specialized scientific agent for AD-enabled simulators on Jutul."""
+"""Makker: an AI agent for computational science."""
 
 from __future__ import annotations
 

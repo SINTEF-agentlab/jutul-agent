@@ -35,7 +35,7 @@ def test_capture_writes_svg_text_and_transcript(tmp_path):
     svg = paths["svg"].read_text(encoding="utf-8")
     assert "<svg" in svg
     text = paths["txt"].read_text(encoding="utf-8")
-    assert "makker" in text  # the header rendered
+    assert "Makker" in text  # the header rendered
     assert "Vector" in text  # the tool output reached the screen
     assert paths["transcript"].read_text(encoding="utf-8").strip()
 
@@ -50,7 +50,7 @@ def test_scenario_renders_and_matches_snapshot(scenario, tmp_path):
     paths = capture(scenario, tmp_path)
     assert paths["svg"].stat().st_size > 0
     screen = normalize_screen(paths["txt"].read_text(encoding="utf-8"))
-    assert "makker" in screen
+    assert "Makker" in screen
 
     golden = _SNAPSHOTS / f"{scenario.name}.txt"
     if os.environ.get("MAKKER_LAB_UPDATE"):

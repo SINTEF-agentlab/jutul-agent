@@ -2,7 +2,7 @@ name = "MakkerJutulDarcy"
 uuid = "4b91d94b-bab6-4ec5-a649-083be1735a47"
 version = "0.1.0"
 
-# Per-simulator warm-up package for makker (JutulDarcy). A sibling of the
+# Per-simulator warm-up package for Makker (JutulDarcy). A sibling of the
 # shared Makker package in this env. It owns the single source of truth for the
 # JutulDarcy warm-up: it loads the solver, then the Makie backends under
 # @recompile_invalidations (recompiling + caching the solver code they would

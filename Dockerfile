@@ -1,8 +1,8 @@
-# Container for running evals (and headless makker) in isolation.
+# Container for running evals (and headless Makker) in isolation.
 #
 #   docker compose run --rm eval canary
 #
-# Julia's depot and the makker state home are volumes (see
+# Julia's depot and the Makker state home are volumes (see
 # docker-compose.yml): the first simulator run pays the full env instantiate
 # and precompile, every run after reuses the caches. Without the volumes each
 # run starts cold, which costs many minutes per simulator suite.

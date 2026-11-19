@@ -46,7 +46,7 @@ export interface SimulatorsResponse {
 /** What the server runs, from `GET /version`. Each part is `null` when unknown. */
 export interface VersionInfo {
   makker: string | null;
-  /** A newer makker release, when the update check knows of one. */
+  /** A newer Makker release, when the update check knows of one. */
   update: string | null;
   simulator: { package: string; version: string | null } | null;
   /** This folder's Julia environment is older than this version supports. */
@@ -79,10 +79,10 @@ export interface UpdateStatus {
   latest: string | null;
   /** Served on this computer, so the browser may update it. */
   local: boolean;
-  /** makker can upgrade itself from here; otherwise `install_note` says how. */
+  /** Makker can upgrade itself from here; otherwise `install_note` says how. */
   can_install: boolean;
   install_note: string | null;
-  /** Upgrading makker continues in a separate window, which it then runs in. */
+  /** Upgrading Makker continues in a separate window, which it then runs in. */
   separate_window: boolean;
   env: { outdated: OutdatedPackage[]; sysimage: boolean } | null;
   job: UpdateJob | null;

@@ -25,7 +25,7 @@ describe("model picker", () => {
     const { store } = renderWithStore(<Composer />);
     act(() => store.setState({ models: [staticModel], model: staticModel.id }));
 
-    const composer = screen.getByPlaceholderText("Message makker…");
+    const composer = screen.getByPlaceholderText("Message Makker…");
     fireEvent.change(composer, { target: { value: "/model" } });
     fireEvent.keyDown(composer, { key: "Enter" });
     await waitFor(() => expect(live).toHaveBeenCalledTimes(1));
@@ -279,7 +279,7 @@ describe("switching sessions", () => {
 });
 
 describe("version line", () => {
-  it("names makker and the simulator quietly, and an available update", () => {
+  it("names Makker and the simulator quietly, and an available update", () => {
     const { store, container } = renderWithStore(<Sidebar collapsed={false} />);
     expect(container.querySelector(".sidebar-foot")).toBeNull();
     act(() =>
@@ -292,12 +292,12 @@ describe("version line", () => {
       }),
     );
     expect(container.querySelector(".sidebar-versions")?.textContent).toBe(
-      "makker 0.2.1 · JutulDarcy 0.4.0",
+      "Makker 0.2.1 · JutulDarcy 0.4.0",
     );
     expect(container.querySelector(".sidebar-update")).toBeNull();
     act(() => store.setState({ versions: { makker: "0.2.1", update: "0.2.2", simulator: null } }));
     const update = container.querySelector(".sidebar-update");
-    expect(update?.textContent).toBe("makker 0.2.2 available");
+    expect(update?.textContent).toBe("Makker 0.2.2 available");
     expect(update?.tagName).toBe("BUTTON"); // opens the update dialog
   });
 

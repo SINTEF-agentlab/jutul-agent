@@ -2,8 +2,9 @@
 
 ## Purpose
 
-Makker is an assistant for Julia scientific simulation work on the Jutul
-ecosystem, built on Deep Agents.
+Makker is an AI agent for computational science, built on Deep Agents.
+Simulators plug in as adapters. The ones it ships with today come from the Jutul
+ecosystem and run in Julia.
 
 ## Working rules
 

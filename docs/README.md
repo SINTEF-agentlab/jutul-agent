@@ -7,11 +7,10 @@ hide:
 <div class="ja-hero" markdown>
 <div class="ja-hero-text" markdown>
 <h1>Makker</h1>
-<p class="ja-tagline">A scientific AI agent for differentiable simulators built
-on the <a href="https://github.com/sintefmath/Jutul.jl">Jutul</a> framework.
-Ask for a simulation in plain language. The agent sets it up, runs it in a
-persistent Julia session, analyses and plots the results, and iterates:
-fixing mistakes and refining the next run.</p>
+<p class="ja-tagline">An AI agent for computational science. Give Makker a
+question and it plans the study, sets up and runs the simulations, analyses and
+plots the results, and decides what to try next. It can carry an investigation
+on its own or work through it with you.</p>
 
 [Get started](usage.md){ .md-button .md-button--primary }
 [How it works](architecture.md){ .md-button }

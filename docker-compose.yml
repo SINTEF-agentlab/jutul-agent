@@ -7,7 +7,7 @@
 # Provider keys come from ./.env (OPENAI_API_KEY, ANTHROPIC_API_KEY,
 # GOOGLE_API_KEY). host networking lets ollama/<model> reach the host's
 # Ollama at localhost:11434. The named volumes hold Julia's depot and the
-# makker state home (golden eval envs, eval logs), so only the first
+# Makker state home (golden eval envs, eval logs), so only the first
 # run per simulator pays the instantiate + precompile cost.
 #
 # Parallelism: run one container per (suite, model) pair — samples inside a

@@ -413,7 +413,7 @@ def build(
             raise SysimageBuildError(
                 f"the new image was built and verified but could not replace {destination}: "
                 f"{exc}. A running session may be holding the old one open; close "
-                "makker sessions in this folder and rebuild."
+                "Makker sessions in this folder and rebuild."
             ) from exc
     finally:
         candidate.unlink(missing_ok=True)

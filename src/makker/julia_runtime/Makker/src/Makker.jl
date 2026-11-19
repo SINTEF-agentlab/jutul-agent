@@ -1,6 +1,6 @@
 module Makker
 
-# makker's simulator-agnostic Julia runtime: figure capture (plots.jl),
+# Makker's simulator-agnostic Julia runtime: figure capture (plots.jl),
 # ensemble helpers (ensemble.jl), and a generic-Makie warm-up. The per-simulator
 # solve/plot warm-up lives in the Makker<Sim> packages. See
 # docs/architecture.md ("Simulators are data").

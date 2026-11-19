@@ -437,7 +437,7 @@ class StatusBar(Static):
 
     def render(self) -> Text:
         text = Text()
-        text.append("makker", style="bold")
+        text.append("Makker", style="bold")
         text.append(" · ", style="dim")
         text.append(self._simulator_label, style="bold cyan")
 

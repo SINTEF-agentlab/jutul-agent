@@ -343,7 +343,7 @@ class TUIApp(App[None]):
             yield PromptGuide(id="prompt-guide")
 
     def on_mount(self) -> None:
-        self.title = "makker"
+        self.title = "Makker"
         self._refresh_subtitle()
         self._log = self.query_one("#log", VerticalScroll)
         # Streamed content grows the log continuously; an anchored container

@@ -170,7 +170,8 @@ def collect(prefixes: str | list[str], log_dir: Path | None = None) -> list[Samp
             # The commit lives under the ``makker`` block; a dirty working
             # tree is flagged so a snapshot built from one is never read as a
             # pristine commit (see docs/evaluation.md on dirty-tree runs).
-            jutul = runconfig.get("makker") or {}
+            # Logs written before the rename keep theirs under the old name.
+            jutul = runconfig.get("makker") or runconfig.get("jutul_agent") or {}
             commit = str(jutul.get("commit") or "")[:9]
             if commit and jutul.get("dirty"):
                 commit += "-dirty"
@@ -286,7 +287,7 @@ def render_markdown(records: list[SampleRecord]) -> str:
     w("# Benchmark results\n\n")
     w(
         f"Snapshot generated {today} from runs {runs[0]} … {runs[-1]}"
-        + (f" (makker {', '.join(commits)})" if commits else "")
+        + (f" (Makker {', '.join(commits)})" if commits else "")
         + ". Every sample runs the real agent end to end in a fresh workspace and "
         "is graded on the session trace as well as the answer. See "
         "[how evaluation works](evaluation.md). Each model ran the suite "

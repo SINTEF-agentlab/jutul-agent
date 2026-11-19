@@ -2,7 +2,7 @@ name = "MakkerBattMo"
 uuid = "93c9a128-c61c-47ba-a3ed-ee8197bf8a0b"
 version = "0.1.0"
 
-# Per-simulator warm-up package for makker (BattMo). Sibling of the shared
+# Per-simulator warm-up package for Makker (BattMo). Sibling of the shared
 # Makker package in this env. Loads the simulator, recompiles GLMakie's solver
 # invalidations via @recompile_invalidations, and bakes the agent's solve path via
 # @compile_workload. Single source of truth for the BattMo warm-up.

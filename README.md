@@ -6,10 +6,17 @@
 [![PyPI](https://img.shields.io/pypi/v/makker.svg)](https://pypi.org/project/makker/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A scientific AI agent for differentiable simulators built on the
-[Jutul](https://github.com/sintefmath/Jutul.jl) framework. Ask for a
-simulation in plain language. The agent sets it up, runs it, analyses and
-plots the results, and iterates: fixing mistakes and refining the next run.
+An AI agent for computational science. Give Makker a question and it plans the
+study, sets up and runs the simulations, analyses and plots the results, and
+decides what to try next. It can carry an investigation on its own or work
+through it with you, and it records every step so the result can be checked.
+
+*Makker* (MAHK-er) is Norwegian for the partner you do a job with. The project
+was formerly called jutul-agent.
+
+Makker works across simulators and fields of science. The ones below come ready
+to use, and you can
+[add your own](https://sintef-agentlab.github.io/makker/extending-for-your-application/).
 
 <p align="center">
   <a href="https://github.com/sintefmath/JutulDarcy.jl"><img src="https://raw.githubusercontent.com/sintefmath/JutulDarcy.jl/main/docs/src/assets/logo_wide.png" alt="JutulDarcy" height="42"></a>&nbsp;&nbsp;&nbsp;
@@ -23,7 +30,7 @@ plots the results, and iterates: fixing mistakes and refining the next run.
   &nbsp;&nbsp;&nbsp;
   <img src="docs/images/web-battmo.png" alt="Makker web UI: a BattMo discharge-rate investigation with plots and a report" width="47%">
 </p>
-<p align="center"><sub>The web UI (<code>Makker</code>): chat on the left; interactive plots and reports pinned in a canvas on the right. On the left, a Fimbul geothermal doublet showing the 3D temperature field around the wells over time. On the right, a BattMo C-rate study with voltage curves, an attempts map, and a written report.</sub></p>
+<p align="center"><sub>The web UI (<code>makker</code>): chat on the left; interactive plots and reports pinned in a canvas on the right. On the left, a Fimbul geothermal doublet showing the 3D temperature field around the wells over time. On the right, a BattMo C-rate study with voltage curves, an attempts map, and a written report.</sub></p>
 
 ## Quickstart
 

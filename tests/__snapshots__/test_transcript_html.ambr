@@ -7,7 +7,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -481,7 +481,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">2</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Julia</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></summary><div class="tool-body"><p><em>(no args)</em></p></div></details></article><article class="event tool-event" data-kind="tool_result" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Julia result</span><span class="tool-peek">4</span><time datetime="2026-05-19T10:00:02+00:00">10:00:02</time></summary><div class="tool-body"><div class="highlight"><pre><span></span><code><span class="mi">4</span>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">2</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Julia</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></summary><div class="tool-body"><p><em>(no args)</em></p></div></details></article><article class="event tool-event" data-kind="tool_result" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Julia result</span><span class="tool-peek">4</span><time datetime="2026-05-19T10:00:02+00:00">10:00:02</time></summary><div class="tool-body"><div class="highlight"><pre><span></span><code><span class="mi">4</span>
   </code></pre></div>
   </div></details></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
@@ -518,7 +518,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -992,7 +992,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="artifact" checked> Artifact <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="artifact" data-filter="artifact"><div class="event-header"><span class="event-kind artifact">Artifact</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><figure><img src="artifacts/plot-deadbeef.png" alt="pressure field"><figcaption>pressure field</figcaption></figure></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="artifact" checked> Artifact <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="artifact" data-filter="artifact"><div class="event-header"><span class="event-kind artifact">Artifact</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><figure><img src="artifacts/plot-deadbeef.png" alt="pressure field"><figcaption>pressure field</figcaption></figure></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
   (function () {
     const events = document.querySelectorAll(".event[data-filter]");
@@ -1027,7 +1027,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -1501,7 +1501,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="artifact" checked> Artifact <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="artifact" data-filter="artifact"><div class="event-header"><span class="event-kind artifact">Artifact</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><p class="artifact-meta"><span class="badge">slot: comparison</span><span class="badge">format: png</span><span class="badge">900x500</span></p><figure><img src="artifacts/comparison.png" alt="Well rates"><figcaption>Well rates</figcaption></figure><details class="artifact-source"><summary>Source code</summary><div class="highlight"><pre><span></span><code><span class="n">well_rates_figure</span><span class="p">(</span><span class="n">wd</span><span class="p">)</span>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="artifact" checked> Artifact <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="artifact" data-filter="artifact"><div class="event-header"><span class="event-kind artifact">Artifact</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><p class="artifact-meta"><span class="badge">slot: comparison</span><span class="badge">format: png</span><span class="badge">900x500</span></p><figure><img src="artifacts/comparison.png" alt="Well rates"><figcaption>Well rates</figcaption></figure><details class="artifact-source"><summary>Source code</summary><div class="highlight"><pre><span></span><code><span class="n">well_rates_figure</span><span class="p">(</span><span class="n">wd</span><span class="p">)</span>
   </code></pre></div>
   </details></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
@@ -1538,7 +1538,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -2012,7 +2012,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="assistant" checked> Assistant <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_assistant" data-filter="assistant"><div class="event-header"><span class="event-kind assistant">Assistant</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><div class="md-content"><h3>Heading</h3>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="assistant" checked> Assistant <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_assistant" data-filter="assistant"><div class="event-header"><span class="event-kind assistant">Assistant</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><div class="md-content"><h3>Heading</h3>
   <ol>
   <li><strong>Create wells</strong></li>
   </ol>
@@ -2054,7 +2054,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -2528,7 +2528,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="user" checked> User <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_user" data-filter="user"><div class="event-header"><span class="event-kind user">User</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><div class="prose-plain">&lt;script&gt;alert(1)&lt;/script&gt;</div></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="user" checked> User <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_user" data-filter="user"><div class="event-header"><span class="event-kind user">User</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><div class="prose-plain">&lt;script&gt;alert(1)&lt;/script&gt;</div></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
   (function () {
     const events = document.querySelectorAll(".event[data-filter]");
@@ -2563,7 +2563,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -3037,7 +3037,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1><p class="meta">Session <code>abc</code> · jutuldarcy · <time datetime="2026-05-19T10:00:01+00:00">2026-05-19T10:00:01+00:00</time></p></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="assistant" checked> Assistant <span class="count">1</span></label><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">1</span></label><label><input type="checkbox" class="kind-filter" data-filter="user" checked> User <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_user" data-filter="user"><div class="event-header"><span class="event-kind user">User</span><time datetime="2026-05-19T10:00:02+00:00">10:00:02</time></div><div class="prose-plain">what is 2+2?</div></article><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Julia</span><span class="tool-peek">2+2</span><time datetime="2026-05-19T10:00:03+00:00">10:00:03</time></summary><div class="tool-body"><dl><dt>code</dt><dd><div class="highlight"><pre><span></span><code><span class="mi">2</span><span class="o">+</span><span class="mi">2</span>
+  <div class="wrap"><header><h1>Makker transcript</h1><p class="meta">Session <code>abc</code> · jutuldarcy · <time datetime="2026-05-19T10:00:01+00:00">2026-05-19T10:00:01+00:00</time></p></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="assistant" checked> Assistant <span class="count">1</span></label><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">1</span></label><label><input type="checkbox" class="kind-filter" data-filter="user" checked> User <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_user" data-filter="user"><div class="event-header"><span class="event-kind user">User</span><time datetime="2026-05-19T10:00:02+00:00">10:00:02</time></div><div class="prose-plain">what is 2+2?</div></article><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Julia</span><span class="tool-peek">2+2</span><time datetime="2026-05-19T10:00:03+00:00">10:00:03</time></summary><div class="tool-body"><dl><dt>code</dt><dd><div class="highlight"><pre><span></span><code><span class="mi">2</span><span class="o">+</span><span class="mi">2</span>
   </code></pre></div>
   </dd></dl><h4>Result</h4><div class="highlight"><pre><span></span><code><span class="mi">4</span>
   </code></pre></div>
@@ -3076,7 +3076,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -3550,7 +3550,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="approval" checked> Approval <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event approval" data-kind="hitl_request" data-filter="approval"><div class="event-header"><span class="event-kind approval">Approval</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><ul class="approval-actions"><li><code>execute</code> <code>ls -la</code></li></ul><div class="approval-outcome"><p><strong>Approved</strong></p></div></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="approval" checked> Approval <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event approval" data-kind="hitl_request" data-filter="approval"><div class="event-header"><span class="event-kind approval">Approval</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><ul class="approval-actions"><li><code>execute</code> <code>ls -la</code></li></ul><div class="approval-outcome"><p><strong>Approved</strong></p></div></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
   (function () {
     const events = document.querySelectorAll(".event[data-filter]");
@@ -3585,7 +3585,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -4059,7 +4059,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1><p class="meta">Session <code>abc</code> · jutuldarcy · <time datetime="2026-05-19T10:00:01+00:00">2026-05-19T10:00:01+00:00</time></p></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="user" checked> User <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_user" data-filter="user"><div class="event-header"><span class="event-kind user">User</span><time datetime="2026-05-19T10:00:02+00:00">10:00:02</time></div><div class="prose-plain">what is 2+2?</div></article><div class="session-marker">Session ended · <time datetime="2026-05-19T10:00:03+00:00">2026-05-19T10:00:03+00:00</time></div></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
+  <div class="wrap"><header><h1>Makker transcript</h1><p class="meta">Session <code>abc</code> · jutuldarcy · <time datetime="2026-05-19T10:00:01+00:00">2026-05-19T10:00:01+00:00</time></p></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="user" checked> User <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_user" data-filter="user"><div class="event-header"><span class="event-kind user">User</span><time datetime="2026-05-19T10:00:02+00:00">10:00:02</time></div><div class="prose-plain">what is 2+2?</div></article><div class="session-marker">Session ended · <time datetime="2026-05-19T10:00:03+00:00">2026-05-19T10:00:03+00:00</time></div></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
   (function () {
     const events = document.querySelectorAll(".event[data-filter]");
@@ -4094,7 +4094,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -4568,7 +4568,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Read</span><span class="tool-peek">SKILL.md</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></summary><div class="tool-body"><dl><dt>file_path</dt><dd><span class="inline-value">SKILL.md</span></dd></dl><h4>Result</h4><div class="md-content"><h1>Setting up wells</h1>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Read</span><span class="tool-peek">SKILL.md</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></summary><div class="tool-body"><dl><dt>file_path</dt><dd><span class="inline-value">SKILL.md</span></dd></dl><h4>Result</h4><div class="md-content"><h1>Setting up wells</h1>
   <div class="highlight"><pre><span></span><code><span class="n">Prod</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">setup_vertical_well</span><span class="p">(</span><span class="n">domain</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ss">:Producer</span><span class="p">)</span>
   </code></pre></div>
   
@@ -4607,7 +4607,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -5081,7 +5081,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="reasoning" checked> Reasoning <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_reasoning" data-filter="reasoning"><div class="event-header"><span class="event-kind reasoning">Reasoning</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><details><summary>thinking step by step</summary><div class="prose-plain">thinking step by step</div></details></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="reasoning" checked> Reasoning <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_reasoning" data-filter="reasoning"><div class="event-header"><span class="event-kind reasoning">Reasoning</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><details><summary>thinking step by step</summary><div class="prose-plain">thinking step by step</div></details></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
   (function () {
     const events = document.querySelectorAll(".event[data-filter]");
@@ -5116,7 +5116,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -5590,7 +5590,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="assistant" checked> Assistant <span class="count">2</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_assistant" data-filter="assistant"><div class="event-header"><span class="event-kind assistant">Assistant</span><time datetime="2026-05-19T10:00:02+00:00">10:00:02</time></div><div class="prose-plain">hello</div></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="assistant" checked> Assistant <span class="count">2</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="message_assistant" data-filter="assistant"><div class="event-header"><span class="event-kind assistant">Assistant</span><time datetime="2026-05-19T10:00:02+00:00">10:00:02</time></div><div class="prose-plain">hello</div></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
   (function () {
     const events = document.querySelectorAll(".event[data-filter]");
@@ -5625,7 +5625,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -6099,7 +6099,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Plan</span><span class="tool-peek">2 item(s)</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></summary><div class="tool-body"><dl><dt>todos</dt><dd><ul class="todo-list"><li class="todo-item"><span class="todo-status completed">completed</span><span class="todo-text">Inspect docs</span></li><li class="todo-item"><span class="todo-status in_progress">in progress</span><span class="todo-text">Explain pattern</span></li></ul></dd></dl></div></details></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Plan</span><span class="tool-peek">2 item(s)</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></summary><div class="tool-body"><dl><dt>todos</dt><dd><ul class="todo-list"><li class="todo-item"><span class="todo-status completed">completed</span><span class="todo-text">Inspect docs</span></li><li class="todo-item"><span class="todo-status in_progress">in progress</span><span class="todo-text">Explain pattern</span></li></ul></dd></dl></div></details></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
   (function () {
     const events = document.querySelectorAll(".event[data-filter]");
@@ -6134,7 +6134,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -6608,7 +6608,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Read</span><span class="tool-peek">SKILL.md</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></summary><div class="tool-body"><dl><dt>file_path</dt><dd><span class="inline-value">SKILL.md</span></dd></dl><h4>Result</h4><div class="md-content"><h1>Setting up wells</h1>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="tools" checked> Tools <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event tool-event" data-kind="tool_call" data-filter="tools"><details><summary class="tool-summary"><span class="event-kind tool">Read</span><span class="tool-peek">SKILL.md</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></summary><div class="tool-body"><dl><dt>file_path</dt><dd><span class="inline-value">SKILL.md</span></dd></dl><h4>Result</h4><div class="md-content"><h1>Setting up wells</h1>
   <h2>When to use</h2>
   <p>Use this skill.</p>
   </div></div></details></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
@@ -6646,7 +6646,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sreTR58h4qE3whOOwCSsypJc/Hift8fm3aUiQH3WFrM='; img-src 'self' data: file:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>makker transcript</title>
+  <title>Makker transcript</title>
   <style>
   :root {
     color-scheme: light dark;
@@ -7120,7 +7120,7 @@
   </style>
   </head>
   <body>
-  <div class="wrap"><header><h1>makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="custom_event" checked> custom_event <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="custom_event" data-filter="custom_event"><div class="event-header"><span class="event-kind unknown">Event · custom_event</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><details><summary>Raw payload</summary><pre>{'foo': 'bar'}</pre></details></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
+  <div class="wrap"><header><h1>Makker transcript</h1></header><div class="controls"><fieldset><legend>Filter</legend><label><input type="checkbox" class="kind-filter" data-filter="custom_event" checked> custom_event <span class="count">1</span></label></fieldset><button type="button" id="collapse-all">Collapse all</button><button type="button" id="expand-all">Expand all</button></div><div class="timeline"><article class="event" data-kind="custom_event" data-filter="custom_event"><div class="event-header"><span class="event-kind unknown">Event · custom_event</span><time datetime="2026-05-19T10:00:01+00:00">10:00:01</time></div><details><summary>Raw payload</summary><pre>{'foo': 'bar'}</pre></details></article></div><p class="share-note">To share this transcript, distribute the session folder (<code>transcript.html</code> plus any <code>artifacts/</code>) or run <code>makker transcript --bundle</code> to create a zip.</p></div>
   <script>
   (function () {
     const events = document.querySelectorAll(".event[data-filter]");

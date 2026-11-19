@@ -34,9 +34,7 @@ from makker.workspace import (
 def build_parser(prog: str = "makker tui") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
-        description=(
-            "Specialized scientific agent for AD-enabled simulators built on the Jutul framework."
-        ),
+        description=("An AI agent for computational science."),
         epilog=(
             "Interfaces: `makker` (web UI, also `makker web`), `makker tui` "
             '(terminal), `makker run "<prompt>"` (one-shot). Setup: '

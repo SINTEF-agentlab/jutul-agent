@@ -47,7 +47,7 @@ def main(argv: list[str]) -> int:
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     code = server.wait()
     if code not in (0, *_CTRL_C_EXITS):
-        print(f"\nmakker stopped with exit code {code}.", flush=True)
+        print(f"\nMakker stopped with exit code {code}.", flush=True)
         _pause()
     return code
 

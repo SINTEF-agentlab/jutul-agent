@@ -559,7 +559,7 @@ def test_web_ui_is_served(tmp_path: Path) -> None:
     with _client(echo_agent, tmp_path) as client:
         root = client.get("/")
     assert root.status_code == 200
-    assert "makker" in root.text
+    assert "<title>Makker</title>" in root.text
 
 
 def test_create_list_delete(tmp_path: Path) -> None:

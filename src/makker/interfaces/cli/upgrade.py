@@ -107,7 +107,7 @@ def run(args: argparse.Namespace) -> int:
         return 0
     if newer:
         print(
-            "\nmakker isn't installed as a managed package, so it can't upgrade "
+            "\nMakker isn't installed as a managed package, so it can't upgrade "
             "itself. Install it with `uv tool install makker`.",
             file=sys.stderr,
         )

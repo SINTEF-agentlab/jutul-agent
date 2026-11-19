@@ -441,7 +441,7 @@ def create_app(
         await manager.aclose()
 
     app = FastAPI(
-        title="makker",
+        title="Makker",
         summary="Drive a Makker session over HTTP and WebSocket.",
         lifespan=lifespan,
     )

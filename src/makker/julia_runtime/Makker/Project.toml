@@ -2,7 +2,7 @@ name = "Makker"
 uuid = "0d1d1ec9-c0b9-4de0-a260-d13dbbd400b2"
 version = "0.5.0"
 
-# makker's simulator-agnostic Julia runtime (figure capture, ensemble helpers,
+# Makker's simulator-agnostic Julia runtime (figure capture, ensemble helpers,
 # generic-Makie warm-up). One copy lives here; env_setup copies it into each
 # workspace env at bootstrap. The per-simulator solve/plot warm-up lives in the
 # Makker<Sim> packages. See docs/architecture.md and docs/adding-a-simulator.md.

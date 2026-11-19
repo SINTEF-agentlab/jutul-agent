@@ -1,4 +1,4 @@
-# Ensemble helpers for makker: warm Distributed workers + pmap, for the
+# Ensemble helpers for Makker: warm Distributed workers + pmap, for the
 # parallel runs an uncertainty quantification or parameter sweep needs. Loaded into
 # the session on demand (like julia_plot.jl), so it adds no environment dependency.
 #

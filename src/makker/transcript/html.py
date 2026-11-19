@@ -988,7 +988,7 @@ def _render_body(
 
     header = (
         f"<header>"
-        f"<h1>makker transcript</h1>"
+        f"<h1>Makker transcript</h1>"
         f"{header_meta}"
         f"</header>"
         f'<div class="controls">'
@@ -1020,7 +1020,7 @@ def render_html(events: Iterable[Event], *, artifact_dirs: Sequence[Path] = ()) 
         '<meta charset="utf-8">\n'
         f'<meta http-equiv="Content-Security-Policy" content="{_CSP}">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        "<title>makker transcript</title>\n"
+        "<title>Makker transcript</title>\n"
         f"<style>{_STYLES}\n{pygments_css()}</style>\n"
         "</head>\n"
         "<body>\n"

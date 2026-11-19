@@ -36,7 +36,7 @@ export function Composer() {
 
   const placeholder = pending?.allowed.includes("respond")
     ? "Reply to the agent…"
-    : "Message makker…";
+    : "Message Makker…";
 
   // Auto-grow the textarea up to a cap.
   useLayoutEffect(() => {

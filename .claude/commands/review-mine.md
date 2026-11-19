@@ -1,5 +1,5 @@
 ---
-description: Mine makker sessions for issues with no API cost (you are the reviewer).
+description: Mine Makker sessions for issues with no API cost (you are the reviewer).
 argument-hint: "[limit] (max sessions to review this run; default 10)"
 allowed-tools: Bash(makker review:*), Read, Write
 ---

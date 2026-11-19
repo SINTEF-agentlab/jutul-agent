@@ -1,4 +1,4 @@
-"""Native and web figure capture for makker's plotting tools.
+"""Native and web figure capture for Makker's plotting tools.
 
 A submodule of the Makker package (precompiled with it); the plot tool drives
 it as `Makker.MakkerPlots.capture(...)` after `using Makker`. Before

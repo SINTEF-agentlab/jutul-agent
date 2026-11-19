@@ -1,5 +1,5 @@
-site_name: makker
-site_description: Scientific AI agent for AD-enabled simulators on the Jutul framework.
+site_name: Makker
+site_description: An AI agent for computational science.
 repo_url: https://github.com/SINTEF-agentlab/makker
 repo_name: SINTEF-agentlab/makker
 docs_dir: docs

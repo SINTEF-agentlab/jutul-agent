@@ -1,7 +1,7 @@
 [project]
 name = "makker"
 dynamic = ["version"]
-description = "Specialized scientific agent for AD-enabled simulators built on the Jutul framework."
+description = "An AI agent for computational science: it plans, runs and analyses simulation studies, on its own or alongside you."
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [

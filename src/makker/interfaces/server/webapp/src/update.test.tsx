@@ -29,14 +29,14 @@ const job = (patch: Partial<UpdateJob>): UpdateJob => ({
 const outdated = { outdated: [{ package: "JutulDarcy", version: "0.3.12", required: "0.4" }] };
 
 describe("what the update dialog offers", () => {
-  it("updates makker, then the environment", () => {
+  it("updates Makker, then the environment", () => {
     const p = plan(status());
     expect(p.action).toEqual({ install: true, label: "Update" });
-    expect(p.lines[0]).toBe("makker 0.2.2 is available. This is 0.2.1.");
+    expect(p.lines[0]).toBe("Makker 0.2.2 is available. This is 0.2.1.");
   });
 
   it("says how to update when this install can't do it itself", () => {
-    const note = "On Windows, makker can't replace its own files while it runs.";
+    const note = "On Windows, Makker can't replace its own files while it runs.";
     const p = plan(status({ can_install: false, install_note: note }));
     expect(p.action).toBeNull();
     expect(p.note).toBe(note);
@@ -206,14 +206,14 @@ describe("after the reload into the restarted server", () => {
   it("says it was updated", async () => {
     const { store } = await reload(job({ state: "done" }));
     expect(store.getState().update.open).toBe(false);
-    expect(store.getState().items.at(-1)).toMatchObject({ text: "Updated to makker 0.2.2." });
+    expect(store.getState().items.at(-1)).toMatchObject({ text: "Updated to Makker 0.2.2." });
   });
 
   it("shows an update that failed while no page could follow it", async () => {
     const { container } = await reload(
       job({
         state: "failed",
-        error: "makker could not be upgraded. See the output above.",
+        error: "Makker could not be upgraded. See the output above.",
         lines: ["$ uv tool upgrade makker", "error: no network"],
       }),
     );

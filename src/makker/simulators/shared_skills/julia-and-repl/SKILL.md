@@ -1,6 +1,6 @@
 ---
 name: julia-and-repl
-description: Persistent Julia REPL workflow and live runtime introspection for Jutul-based work
+description: Persistent Julia REPL workflow and live runtime introspection for simulation work
 ---
 
 # Julia REPL workflow

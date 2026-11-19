@@ -85,9 +85,9 @@ export function UpdateDialog() {
                   few minutes.
                   {plan!.action.install &&
                     (status.separate_window
-                      ? " makker then closes, updates in a separate window and runs there" +
+                      ? " Makker then closes, updates in a separate window and runs there" +
                         " after. This page reloads when it's back."
-                      : " makker then restarts and this page reloads.")}
+                      : " Makker then restarts and this page reloads.")}
                 </p>
               )}
             </>
@@ -150,18 +150,18 @@ export function describe(status: UpdateStatus): Plan {
   const found = outdated.map((p) => `${p.package} ${p.version}`).join(", ");
   const needed = outdated.map((p) => `${p.package} ${p.required}`).join(", ");
   const envLine = outdated.length
-    ? `This folder's Julia environment has ${found}; this version of makker needs ${needed}.`
+    ? `This folder's Julia environment has ${found}; this version of Makker needs ${needed}.`
     : null;
 
   if (status.latest) {
-    const lines = [`makker ${status.latest} is available. This is ${status.current}.`];
+    const lines = [`Makker ${status.latest} is available. This is ${status.current}.`];
     if (status.can_install) {
       lines.push(
         "Updating installs it, then brings this folder's Julia environment up to what it " +
           "supports, keeping packages added to it.",
       );
       return {
-        title: "Update makker",
+        title: "Update Makker",
         lines,
         note: null,
         action: { install: true, label: "Update" },
@@ -169,7 +169,7 @@ export function describe(status: UpdateStatus): Plan {
     }
     if (envLine) lines.push(envLine);
     return {
-      title: "Update makker",
+      title: "Update Makker",
       lines,
       note: status.install_note,
       // The environment can still be brought up to this version.
@@ -187,7 +187,7 @@ export function describe(status: UpdateStatus): Plan {
   return {
     title: "Up to date",
     lines: [
-      `makker ${status.current ?? ""} and this folder's Julia environment are up to date.`,
+      `Makker ${status.current ?? ""} and this folder's Julia environment are up to date.`,
     ],
     note: null,
     action: null,
@@ -226,8 +226,8 @@ function Progress({
           <>
             <span className="spinner" />{" "}
             {separateWindow
-              ? "makker is updating in a separate window."
-              : "Restarting makker."}{" "}
+              ? "Makker is updating in a separate window."
+              : "Restarting Makker."}{" "}
             This page reloads when it's back.
           </>
         )}

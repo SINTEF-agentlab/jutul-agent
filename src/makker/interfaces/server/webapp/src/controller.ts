@@ -283,7 +283,7 @@ export class Controller {
     }
   }
 
-  /** Start updating: makker itself first if `install`, then the environment. */
+  /** Start updating: Makker itself first if `install`, then the environment. */
   async startUpdate(install: boolean, sysimage: SysimageChoice | null): Promise<void> {
     const setUpdate = this.s.setUpdate;
     setUpdate({ phase: "starting", error: null });
@@ -359,8 +359,8 @@ export class Controller {
     this.s.setUpdate({
       phase: "failed",
       error: separateWindow
-        ? "makker hasn't come back after updating. Check the window it updates in."
-        : "makker hasn't come back after updating. Check the terminal it runs in.",
+        ? "Makker hasn't come back after updating. Check the window it updates in."
+        : "Makker hasn't come back after updating. Check the terminal it runs in.",
     });
   }
 
@@ -381,7 +381,7 @@ export class Controller {
       this.s.setUpdate({ open: true, status, phase: "failed", lines: job.lines, error: job.error });
       return;
     }
-    this.s.addSysNote(version ? `Updated to makker ${version}.` : "makker was updated.");
+    this.s.addSysNote(version ? `Updated to Makker ${version}.` : "Makker was updated.");
   }
 
   // Deliver a prompt held while no socket was open (see `queuedPrompt`). The socket
@@ -935,7 +935,7 @@ export class Controller {
   private notifyDone(body: string): void {
     if (document.hidden && "Notification" in window && Notification.permission === "granted") {
       try {
-        new Notification("makker", { body });
+        new Notification("Makker", { body });
       } catch {
         /* best-effort */
       }

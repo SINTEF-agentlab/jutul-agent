@@ -2,7 +2,7 @@ name = "MakkerMocca"
 uuid = "2c594c4c-ba15-48a6-abd4-ceee9b009a5c"
 version = "0.1.0"
 
-# Per-simulator warm-up package for makker (Mocca). Sibling of the shared
+# Per-simulator warm-up package for Makker (Mocca). Sibling of the shared
 # Makker package in this env. Loads the simulator, recompiles GLMakie's solver
 # invalidations via @recompile_invalidations, and bakes the agent's simulate_process
 # + plot_outlet paths via @compile_workload. Single source of truth for the Mocca
