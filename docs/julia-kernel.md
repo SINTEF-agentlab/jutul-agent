@@ -1,9 +1,9 @@
 # The Julia kernel
 
-`src/jutul_agent/juliakernel/` supervises one Julia process per session and
+`src/makker/juliakernel/` supervises one Julia process per session and
 gives the agent a persistent REPL: state, loaded packages, and compiled
 methods survive across turns. It is a standalone package: the Python side
-imports nothing from the rest of jutul-agent, and the Julia server
+imports nothing from the rest of makker, and the Julia server
 (`server.jl`) uses only the standard library, so the simulator envs need no
 agent-specific dependency.
 
@@ -77,7 +77,7 @@ eval ignores it, the supervisor falls back to a restart (the only case where
 REPL state is lost).
 
 `N` (the compute thread count) defaults to physical cores minus one and is set by
-the `--threads` flag or `JUTUL_AGENT_JULIA_THREADS` (see
+the `--threads` flag or `MAKKER_JULIA_THREADS` (see
 [configuration](configuration.md)); Jutul's assembly and preconditioner use those
 threads for a single solve. The eval/benchmark harness overrides this to
 single-threaded so graded results stay deterministic.

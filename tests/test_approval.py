@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.approval_preview import (
+from makker.approval_preview import (
     _apply_edit_preview,
     allowed_decisions_for_interrupt,
     render_interrupt_cards,
@@ -17,7 +17,7 @@ def test_render_execute_approval_card(tmp_path: Path) -> None:
                 {
                     "name": "execute",
                     "args": {"command": "pwd"},
-                    "description": "Run a shell command in the jutul-agent workspace.",
+                    "description": "Run a shell command in the makker workspace.",
                 }
             ],
             "review_configs": [
@@ -30,7 +30,7 @@ def test_render_execute_approval_card(tmp_path: Path) -> None:
     assert len(cards) == 1
     assert cards[0].title == "Approval · Shell"
     assert cards[0].allowed_decisions == frozenset({"approve", "reject"})
-    assert "Run a shell command in the jutul-agent workspace." in cards[0].body
+    assert "Run a shell command in the makker workspace." in cards[0].body
     assert "```sh" in cards[0].body
     assert "pwd" in cards[0].body
 
@@ -43,7 +43,7 @@ def test_render_write_file_card_for_new_file(tmp_path: Path) -> None:
                 {
                     "name": "write_file",
                     "args": {"file_path": "/notes.txt", "content": "hello\n"},
-                    "description": "Write a file in the jutul-agent workspace.",
+                    "description": "Write a file in the makker workspace.",
                 }
             ],
             "review_configs": [
@@ -70,7 +70,7 @@ def test_render_write_file_card_for_existing_file_shows_diff(tmp_path: Path) -> 
                 {
                     "name": "write_file",
                     "args": {"file_path": "/notes.txt", "content": "new\n"},
-                    "description": "Write a file in the jutul-agent workspace.",
+                    "description": "Write a file in the makker workspace.",
                 }
             ],
             "review_configs": [
@@ -101,7 +101,7 @@ def test_render_edit_file_card_shows_diff(tmp_path: Path) -> None:
                         "old_string": "world",
                         "new_string": "battmo",
                     },
-                    "description": "Edit a file in the jutul-agent workspace.",
+                    "description": "Edit a file in the makker workspace.",
                 }
             ],
             "review_configs": [
@@ -129,7 +129,7 @@ def test_render_edit_file_card_reports_unavailable_preview(tmp_path: Path) -> No
                         "old_string": "hello",
                         "new_string": "goodbye",
                     },
-                    "description": "Edit a file in the jutul-agent workspace.",
+                    "description": "Edit a file in the makker workspace.",
                 }
             ],
             "review_configs": [

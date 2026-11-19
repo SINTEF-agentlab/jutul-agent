@@ -15,7 +15,7 @@ import sys
 
 def test_cli_entry_does_not_import_the_agent_stack():
     code = (
-        "import sys, jutul_agent.interfaces.cli.main as m;"
+        "import sys, makker.interfaces.cli.main as m;"
         "heavy=[x for x in ('deepagents', 'anthropic', 'langchain_anthropic') "
         "if x in sys.modules];"
         "print(heavy);"
@@ -33,7 +33,7 @@ def test_cli_hides_the_pydantic_v1_warning():
     # command on Python 3.14+. Issuing the warning again after the entry point loads
     # checks the filter on any Python, not only 3.14.
     code = (
-        "import warnings, jutul_agent.__main__;"
+        "import warnings, makker.__main__;"
         "warnings.warn(\"Core Pydantic V1 functionality isn't compatible with "
         'Python 3.14 or greater.", UserWarning)'
     )
@@ -47,7 +47,7 @@ def test_cli_hides_the_experimental_stream_warning():
     # warning would otherwise print at every turn. langchain_core turns its beta
     # warnings back on when it is imported, so check after the turn loop's imports.
     code = (
-        "import warnings, jutul_agent.__main__, jutul_agent.agent.turns;"
+        "import warnings, makker.__main__, makker.agent.turns;"
         "from langchain_core._api.beta_decorator import LangChainBetaWarning;"
         'warnings.warn("The v3 streaming protocol on Pregel is experimental.",'
         " LangChainBetaWarning)"

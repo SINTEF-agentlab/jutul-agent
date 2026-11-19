@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.agent import plot_julia_src as jl_src
-from jutul_agent.agent.plot_julia import (
+from makker.agent import plot_julia_src as jl_src
+from makker.agent.plot_julia import (
     make_close_plots_tool,
     make_plot_julia_tool,
     make_recapture_tool,
 )
-from jutul_agent.julia.session import EvalResult
-from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
-from jutul_agent.session import Session
-from jutul_agent.simulators.warmup import load_statement
-from jutul_agent.trace import TraceLog
+from makker.julia.session import EvalResult
+from makker.lab.fakes import FakeJulia, make_fake_adapter
+from makker.session import Session
+from makker.simulators.warmup import load_statement
+from makker.trace import TraceLog
 
 
 def _session(tmp_path: Path, julia: FakeJulia) -> Session:
@@ -152,7 +152,7 @@ async def test_unslotted_plot_replays_onto_its_original_route(tmp_path: Path) ->
     # name: a replay derives the route from the record, and only the original
     # route revives the browser view in place (a drifted route shows up as a
     # duplicate view instead).
-    from jutul_agent.agent.plot_julia import replot_web
+    from makker.agent.plot_julia import replot_web
 
     async def fake_eval(code: str) -> EvalResult:
         if "Bonito.Server" in code:
@@ -163,7 +163,7 @@ async def test_unslotted_plot_replays_onto_its_original_route(tmp_path: Path) ->
     tool = make_plot_julia_tool(session, surface="web")
     await _call(tool, {"code": "lines(1:3)"})
 
-    from jutul_agent.trace import schema
+    from makker.trace import schema
 
     artifact = next(e for e in session.trace.iter_events() if e.kind == schema.ARTIFACT)
     routed = next(c for c in session.julia.calls if "Bonito.route!" in c)

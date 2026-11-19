@@ -8,7 +8,7 @@ from langchain.agents.middleware import ClearToolUsesEdit, ContextEditingMiddlew
 from langchain.agents.middleware.types import ModelRequest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from jutul_agent.agent.context_editing import (
+from makker.agent.context_editing import (
     build_context_editing_middleware,
     clear_tool_uses_trigger_tokens,
     keep_recent_tool_results,
@@ -30,7 +30,7 @@ def test_keep_recent_tool_results_scales_with_window() -> None:
 
 
 def test_build_context_editing_middleware_config(monkeypatch) -> None:
-    from jutul_agent import models
+    from makker import models
 
     monkeypatch.setattr(models, "context_window", lambda model_id: 50_000)
     middleware = build_context_editing_middleware(model_id="ollama:qwen3.6:27b")

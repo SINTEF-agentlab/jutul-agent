@@ -1,7 +1,7 @@
 """The in-env JutulAgent runtime auto-refreshes when the install's source changes.
 
 Warm packages are dev-pathed copies laid down at bootstrap, so without this an
-existing managed env keeps a stale JutulAgent after a jutul-agent update.
+existing managed env keeps a stale JutulAgent after a makker update.
 """
 
 from __future__ import annotations
@@ -10,10 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent import workspace
-from jutul_agent.simulators import env_setup
-from jutul_agent.simulators.base import SimulatorAdapter
-from jutul_agent.workspace import (
+from makker import workspace
+from makker.simulators import env_setup
+from makker.simulators.base import SimulatorAdapter
+from makker.workspace import (
     PRECOMPILE_MARKER,
     WARM_SOURCE_MARKER,
     mark_warm_source,
@@ -82,7 +82,7 @@ def test_fingerprint_tracks_shared_and_template_sources(tmp_path, template, shar
 
 def test_recopy_then_mark_is_the_refresh_cycle(tmp_path, template, shared_pkg):
     env = _make_env(tmp_path, template, shared_pkg)
-    # The install's shared source changes (a jutul-agent update).
+    # The install's shared source changes (a makker update).
     (shared_pkg / "src" / "ensemble.jl").write_text("# v2 changed\n", encoding="utf-8")
     assert warm_source_is_current(env, template) is False
 

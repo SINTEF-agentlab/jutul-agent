@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent import display as sysimage_display
-from jutul_agent import sysimage
-from jutul_agent.sysimage import (
+from makker import display as sysimage_display
+from makker import sysimage
+from makker.sysimage import (
     CURRENT,
     DIVERGENT,
     INCOMPLETE,
@@ -62,7 +62,7 @@ def make_package(root: Path, body: str) -> Path:
 def build_workspace(tmp_path: Path, *, source: str = "original") -> tuple[Path, Path]:
     """A workspace whose env resolves one registry package and one path package."""
     ws = tmp_path / "ws"
-    env = ws / ".jutul-agent" / "julia-env"
+    env = ws / ".makker" / "julia-env"
     make_package(env / "JutulAgent", source)
     write_manifest(env, versions={"JutulDarcy": "0.2.44"}, paths={"JutulAgent": "JutulAgent"})
     return ws, env
@@ -320,17 +320,17 @@ def test_an_older_build_recipe_diverges(tmp_path: Path) -> None:
     assert decide(ws, env, enabled=True).status == DIVERGENT
 
 
-def test_jutul_agent_version_alone_does_not_diverge(tmp_path: Path) -> None:
+def test_makker_version_alone_does_not_diverge(tmp_path: Path) -> None:
     """A commit that leaves the Julia side alone must not invalidate the image.
 
-    What has to agree with the image is the Julia jutul-agent ships, and that is
+    What has to agree with the image is the Julia makker ships, and that is
     already covered as a path package once it is copied into the env.
     """
     ws, env = build_workspace(tmp_path)
     install_image(ws)
     write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
     stamp = json.loads(sysimage.stamp_path(ws).read_text(encoding="utf-8"))
-    stamp["jutul_agent_version"] = "0.0.1.dev1+gdeadbee"
+    stamp["makker_version"] = "0.0.1.dev1+gdeadbee"
     sysimage.stamp_path(ws).write_text(json.dumps(stamp), encoding="utf-8")
 
     assert decide(ws, env, enabled=True).status == CURRENT
@@ -342,10 +342,10 @@ def test_jutul_agent_version_alone_does_not_diverge(tmp_path: Path) -> None:
 
 def test_the_refusal_names_the_cause_and_both_ways_out() -> None:
     decision = Decision(status=DIVERGENT, reason="  edited: CapabilityPackage")
-    message = refusal(decision, command="jutul-agent tui")
+    message = refusal(decision, command="makker tui")
     assert "CapabilityPackage" in message
-    assert "jutul-agent sysimage build" in message
-    assert "jutul-agent tui --no-sysimage" in message
+    assert "makker sysimage build" in message
+    assert "makker tui --no-sysimage" in message
 
 
 def test_a_refusal_rebuilding_cannot_fix_says_so_instead() -> None:
@@ -353,7 +353,7 @@ def test_a_refusal_rebuilding_cannot_fix_says_so_instead() -> None:
     message = refusal(decision)
     assert "Install Xvfb" in message
     # Telling someone to spend 20 minutes rebuilding would not help them here.
-    assert "jutul-agent sysimage build" not in message
+    assert "makker sysimage build" not in message
     assert "--no-sysimage" in message
 
 

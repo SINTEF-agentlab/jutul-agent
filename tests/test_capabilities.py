@@ -8,8 +8,8 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from jutul_agent.agent import builder
-from jutul_agent.agent.capabilities import (
+from makker.agent import builder
+from makker.agent.capabilities import (
     Branding,
     Capability,
     HttpToolSpec,
@@ -24,8 +24,8 @@ from jutul_agent.agent.capabilities import (
     http_tool_capability,
     select_for_surface,
 )
-from jutul_agent.agent.prompts import assemble_session_prompt
-from jutul_agent.session import Session
+from makker.agent.prompts import assemble_session_prompt
+from makker.session import Session
 
 
 @tool

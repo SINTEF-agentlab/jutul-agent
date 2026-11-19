@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.responses import Response
 
-from jutul_agent.interfaces.server.app import WEB_DIST_DIR, _ui_dir, create_app
+from makker.interfaces.server.app import WEB_DIST_DIR, _ui_dir, create_app
 
 
 def test_built_app_is_present_and_served() -> None:

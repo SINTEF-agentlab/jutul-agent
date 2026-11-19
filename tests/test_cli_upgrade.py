@@ -1,4 +1,4 @@
-"""Tests for the ``jutul-agent upgrade`` subcommand."""
+"""Tests for the ``makker upgrade`` subcommand."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.interfaces.cli import upgrade as upgrade_cmd
-from jutul_agent.update_check import InstallInfo
+from makker.interfaces.cli import upgrade as upgrade_cmd
+from makker.update_check import InstallInfo
 
 
 @pytest.fixture(autouse=True)
@@ -74,13 +74,13 @@ def test_registry_runs_uv_tool_upgrade(monkeypatch, capsys) -> None:
     assert code == 0
     # The new install, not this process, updates the environment: only it has
     # the new simulator templates.
-    assert calls[0] == ["uv", "tool", "upgrade", "jutul-agent"]
+    assert calls[0] == ["uv", "tool", "upgrade", "makker"]
     assert calls[1][1:3] == ["upgrade", "--env-only"]
 
 
 def test_registry_windows_runs_detached(monkeypatch, capsys) -> None:
     # On Windows the running launcher is locked, so uv must run in a separate
-    # process while jutul-agent exits — not inline (which would fail the copy).
+    # process while makker exits — not inline (which would fail the copy).
     monkeypatch.setattr(upgrade_cmd, "install_info", lambda: InstallInfo("registry"))
     monkeypatch.setattr(upgrade_cmd, "refresh_cache", lambda force=False: "9.9.9")
     monkeypatch.setattr(upgrade_cmd.shutil, "which", lambda _name: "C:/uv.exe")
@@ -100,7 +100,7 @@ def test_registry_windows_runs_detached(monkeypatch, capsys) -> None:
 
     code = upgrade_cmd.run(_args(check=False))
     assert code == 0
-    assert popened == [["uv", "tool", "upgrade", "jutul-agent"]]
+    assert popened == [["uv", "tool", "upgrade", "makker"]]
     assert "new window" in capsys.readouterr().out
 
 
@@ -187,7 +187,7 @@ def test_a_newer_environment_is_left_alone(tmp_path, monkeypatch, capsys) -> Non
 
     assert upgrade_cmd.run(_args(env_only=True)) == 0
     out = capsys.readouterr().out
-    assert "has JutulDarcy 0.5.0, newer than this version of jutul-agent was made for" in out
+    assert "has JutulDarcy 0.5.0, newer than this version of makker was made for" in out
     assert "Nothing to update." in out
 
 
@@ -208,7 +208,7 @@ def test_a_system_image_is_rebuilt_or_switched_off(
     tmp_path, monkeypatch, interactive, answer, rebuild, still_on
 ) -> None:
     """An update makes the image stale, so the user picks: rebuild it or stop using it."""
-    from jutul_agent.workspace import (
+    from makker.workspace import (
         WorkspaceConfig,
         load_workspace_config,
         write_workspace_config,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.trace import TraceLog
+from makker.trace import TraceLog
 
 
 def test_append_and_iter(tmp_path: Path) -> None:

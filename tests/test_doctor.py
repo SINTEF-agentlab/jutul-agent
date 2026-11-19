@@ -1,11 +1,11 @@
-"""Tests for the model-aware checks in `jutul-agent doctor`."""
+"""Tests for the model-aware checks in `makker doctor`."""
 
 from __future__ import annotations
 
 import pytest
 
-from jutul_agent import ollama_client
-from jutul_agent.interfaces.cli import doctor
+from makker import ollama_client
+from makker.interfaces.cli import doctor
 
 
 class _RecordingReport:

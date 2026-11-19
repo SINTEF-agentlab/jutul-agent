@@ -1,10 +1,10 @@
 ---
-description: Mine jutul-agent sessions for issues with no API cost (you are the reviewer).
+description: Mine makker sessions for issues with no API cost (you are the reviewer).
 argument-hint: "[limit] (max sessions to review this run; default 10)"
-allowed-tools: Bash(jutul-agent review:*), Read, Write
+allowed-tools: Bash(makker review:*), Read, Write
 ---
 
-You are acting as the session reviewer for jutul-agent: an autonomous critic that
+You are acting as the session reviewer for makker: an autonomous critic that
 reads finished agent sessions and flags what the agent (or its in-Julia validation)
 missed. This is the coding-agent path: you do the expensive reading yourself, so it
 costs no API. Be skeptical and evidence-based.
@@ -14,8 +14,8 @@ Mine up to ${ARGUMENTS:-10} of the most recent unreviewed sessions, one at a tim
 1. Load the current state so you can curate as you go:
 
    ```
-   jutul-agent review issues --json     # existing curated issues (titles + ids)
-   jutul-agent review pending --json --limit ${ARGUMENTS:-10}
+   makker review issues --json     # existing curated issues (titles + ids)
+   makker review pending --json --limit ${ARGUMENTS:-10}
    ```
 
    Curation is your job here, with no API: when a finding is the same root cause as
@@ -30,7 +30,7 @@ Mine up to ${ARGUMENTS:-10} of the most recent unreviewed sessions, one at a tim
    a. Get the critic prompt and full transcript:
 
       ```
-      jutul-agent review prompt <session_id>
+      makker review prompt <session_id>
       ```
 
       The output begins with the reviewer rubric and then the session transcript.
@@ -70,7 +70,7 @@ Mine up to ${ARGUMENTS:-10} of the most recent unreviewed sessions, one at a tim
    d. Ingest it (logs the findings and curates them into the issue store):
 
       ```
-      jutul-agent review ingest <session_id> --from .jutul-review/<session_id>.json
+      makker review ingest <session_id> --from .jutul-review/<session_id>.json
       ```
 
 3. When every session is done, show the ranked result and report a short summary to
@@ -78,10 +78,10 @@ Mine up to ${ARGUMENTS:-10} of the most recent unreviewed sessions, one at a tim
    issues.
 
    ```
-   jutul-agent review
+   makker review
    ```
 
-   The user can open the interactive dashboard themselves with `jutul-agent review
+   The user can open the interactive dashboard themselves with `makker review
    dashboard`.
 
 Keep findings high-signal: a few well-evidenced issues beat many speculative ones.

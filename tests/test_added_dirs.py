@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.agent.added_dirs import AddDirError, add_dir, added_dirs
-from jutul_agent.agent.builder import build_backend
+from makker.agent.added_dirs import AddDirError, add_dir, added_dirs
+from makker.agent.builder import build_backend
 
 
 @pytest.fixture

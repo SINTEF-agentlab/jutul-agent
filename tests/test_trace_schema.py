@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.trace import TraceLog, schema
+from makker.trace import TraceLog, schema
 
 DOCS_TRACE = Path(__file__).parent.parent / "docs" / "trace.md"
 

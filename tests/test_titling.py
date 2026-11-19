@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from jutul_agent.agent.titling import _clean, generate_session_title
+from makker.agent.titling import _clean, generate_session_title
 
 
 def test_clean_trims_quotes_punctuation_and_extra_lines() -> None:

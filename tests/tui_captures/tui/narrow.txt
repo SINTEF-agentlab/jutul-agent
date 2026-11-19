@@ -1,5 +1,5 @@
-jutul-agent · FakeSim · openai:gpt-5.4-mini · <session> · default
-jutul-agent
+makker · FakeSim · openai:gpt-5.4-mini · <session> · default
+makker
 ││
 │output · 4 lines│
 ││

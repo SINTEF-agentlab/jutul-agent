@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.interfaces.cli import main
-from jutul_agent.workspace import workspace_config_path, workspace_julia_env
+from makker.interfaces.cli import main
+from makker.workspace import workspace_config_path, workspace_julia_env
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def test_instantiate_alias_runs_precompile_path(
         captured_cmds.append(argv)
         return _Result()
 
-    import jutul_agent.simulators.env_setup as env_setup
+    import makker.simulators.env_setup as env_setup
 
     monkeypatch.setattr(env_setup.shutil, "which", lambda _: "/usr/bin/julia")
     monkeypatch.setattr(env_setup.subprocess, "run", _fake_run)
@@ -119,7 +119,7 @@ def test_init_precompiles_by_default(
         returncode = 0
         stdout = "julia version 1.12.0\n"
 
-    import jutul_agent.simulators.env_setup as env_setup
+    import makker.simulators.env_setup as env_setup
 
     monkeypatch.setattr(env_setup.shutil, "which", lambda _: "/usr/bin/julia")
     monkeypatch.setattr(env_setup.subprocess, "run", lambda *a, **k: _Result())
@@ -136,7 +136,7 @@ def test_init_no_precompile_skips_the_bake(
     ws = tmp_path / "ws-skip"
     ws.mkdir()
 
-    import jutul_agent.simulators.env_setup as env_setup
+    import makker.simulators.env_setup as env_setup
 
     monkeypatch.setattr(env_setup.shutil, "which", lambda _: "/usr/bin/julia")
 

@@ -7,8 +7,8 @@ import time
 
 import pytest
 
-from jutul_agent import update_check as u
-from jutul_agent.update_check import InstallInfo
+from makker import update_check as u
+from makker.update_check import InstallInfo
 
 # ---------------------------------------------------------------------------
 # Version comparison.
@@ -48,7 +48,7 @@ def test_install_info_registry_when_no_direct_url(monkeypatch) -> None:
 
 
 def test_install_info_editable(monkeypatch) -> None:
-    url = "file:///home/user/jutul-agent"
+    url = "file:///home/user/makker"
     monkeypatch.setattr(
         u,
         "distribution",
@@ -84,8 +84,8 @@ def test_install_info_unknown_when_not_installed(monkeypatch) -> None:
     ("method", "expected"),
     [
         ("editable", "git pull && uv sync"),
-        ("git", "uv tool upgrade jutul-agent"),
-        ("registry", "uv tool upgrade jutul-agent"),
+        ("git", "uv tool upgrade makker"),
+        ("registry", "uv tool upgrade makker"),
     ],
 )
 def test_upgrade_command(method: str, expected: str) -> None:
@@ -179,9 +179,9 @@ def test_notify_prints_when_update_pending(monkeypatch, capsys) -> None:
     u._write_cache("9.9.9")
     u.notify_at_launch()
     err = capsys.readouterr().err
-    assert "newer jutul-agent is available" in err
+    assert "newer makker is available" in err
     assert "9.9.9" in err
-    assert "jutul-agent upgrade" in err
+    assert "makker upgrade" in err
 
 
 def test_notify_silent_when_current(monkeypatch, capsys) -> None:

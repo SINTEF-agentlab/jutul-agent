@@ -13,10 +13,10 @@ from pathlib import Path
 
 from langgraph.pregel._tools import _tool_call_writer
 
-from jutul_agent.agent.tools import make_run_julia_tool
-from jutul_agent.julia.session import EvalResult
-from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
-from jutul_agent.session import Session
+from makker.agent.tools import make_run_julia_tool
+from makker.julia.session import EvalResult
+from makker.lab.fakes import FakeJulia, make_fake_adapter
+from makker.session import Session
 
 
 def _session(julia: FakeJulia, tmp_path: Path) -> Session:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from jutul_agent.interfaces.tui.approval_menu import build_approval_options
+from makker.interfaces.tui.approval_menu import build_approval_options
 
 
 def test_build_approval_options_for_shell() -> None:

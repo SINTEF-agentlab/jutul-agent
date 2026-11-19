@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from jutul_agent.models import (
+from makker.models import (
     DEFAULT_MODEL,
     OLLAMA_CLOUD,
     PROVIDERS,
@@ -83,7 +83,7 @@ def test_discovery_includes_the_default_model() -> None:
 
 def test_openrouter_profile_uses_installed_provider_data(monkeypatch) -> None:
     """Keep a real profile lookup alongside synthetic builder capability tests."""
-    from jutul_agent import models
+    from makker import models
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "router-key")
     profiles = models._load_profiles(PROVIDERS["openrouter"].package)
@@ -97,7 +97,7 @@ def test_openrouter_profile_uses_installed_provider_data(monkeypatch) -> None:
 
 
 def test_live_discovery_adds_new_ids_without_replacing_profiles(monkeypatch) -> None:
-    from jutul_agent import models
+    from makker import models
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
@@ -121,7 +121,7 @@ def test_live_discovery_adds_new_ids_without_replacing_profiles(monkeypatch) -> 
 
 
 def test_live_discovery_falls_back_to_profiles_when_provider_fails(monkeypatch) -> None:
-    from jutul_agent import models
+    from makker import models
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -168,7 +168,7 @@ def openrouter_http(monkeypatch):
 def test_openrouter_live_catalog_filters_for_text_and_tools(
     openrouter_http, monkeypatch, base_url
 ) -> None:
-    from jutul_agent import models
+    from makker import models
 
     if base_url.endswith("/"):
         monkeypatch.setenv("OPENROUTER_API_BASE", base_url)
@@ -264,7 +264,7 @@ def test_curated_ollama_lists_are_well_formed() -> None:
 
 def test_context_window_google_sdk_fallback(monkeypatch) -> None:
     """A Gemini model with no bundled profile falls back to the API lookup."""
-    from jutul_agent import models
+    from makker import models
 
     # Without a key the lookup declines instead of constructing a client.
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)

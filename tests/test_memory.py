@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.agent.builder import build_backend
-from jutul_agent.agent.memory import (
+from makker.agent.builder import build_backend
+from makker.agent.memory import (
     MEMORY_INDEX_FILENAME,
     ensure_memory_dir,
     make_remember_tool,
 )
-from jutul_agent.paths import workspace_memory_dir, workspace_state_dir
+from makker.paths import workspace_memory_dir, workspace_state_dir
 
 
 def test_workspace_memory_dir_is_under_workspace_state(tmp_path: Path, monkeypatch) -> None:
-    from jutul_agent.paths import set_state_home, set_workspace_root
+    from makker.paths import set_state_home, set_workspace_root
 
     set_workspace_root(tmp_path)
     set_state_home(tmp_path / "state")
@@ -52,7 +52,7 @@ def test_memory_is_read_and_written_at_its_real_path(tmp_path: Path) -> None:
 def test_memory_middleware_builds_over_the_real_dir(tmp_path: Path) -> None:
     from deepagents.middleware.memory import MemoryMiddleware
 
-    from jutul_agent.agent.memory import build_memory_middleware
+    from makker.agent.memory import build_memory_middleware
 
     memory_dir = ensure_memory_dir(tmp_path / "memory")
     backend = build_backend(workspace=tmp_path)
@@ -106,7 +106,7 @@ async def test_remember_falls_back_to_project_for_unknown_kind(tmp_path: Path) -
 
 
 def test_memory_note_path_sanitizes_and_suffixes(tmp_path) -> None:
-    from jutul_agent.agent.memory import memory_note_path
+    from makker.agent.memory import memory_note_path
 
     assert memory_note_path(tmp_path, "user-workflow") == tmp_path / "user-workflow.md"
     assert memory_note_path(tmp_path, "user-workflow.md") == tmp_path / "user-workflow.md"
@@ -114,7 +114,7 @@ def test_memory_note_path_sanitizes_and_suffixes(tmp_path) -> None:
 
 
 def test_render_memory_overview_lists_notes(tmp_path) -> None:
-    from jutul_agent.agent.memory import ensure_memory_dir, render_memory_overview
+    from makker.agent.memory import ensure_memory_dir, render_memory_overview
 
     memory_dir = ensure_memory_dir(tmp_path / "memory")
     (memory_dir / "quirks.md").write_text("BattMo output API note\n", encoding="utf-8")

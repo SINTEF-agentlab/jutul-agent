@@ -9,7 +9,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from jutul_agent.interfaces.server.access import OriginGuard, normalize_origin
+from makker.interfaces.server.access import OriginGuard, normalize_origin
 
 SERVER = "http://127.0.0.1:8742"
 
@@ -112,7 +112,7 @@ def test_origin_values(value, normalized) -> None:
 
 @pytest.mark.parametrize("value", ["app.example.org", "https://example.org/app", "ftp://x"])
 def test_bad_origin_values_fail_at_launch(value) -> None:
-    from jutul_agent.interfaces.cli import web
+    from makker.interfaces.cli import web
 
     with pytest.raises(ValueError):
         normalize_origin(value)
@@ -121,8 +121,8 @@ def test_bad_origin_values_fail_at_launch(value) -> None:
 
 
 def test_the_server_is_guarded(tmp_path) -> None:
-    from jutul_agent.interfaces.server.app import create_app
-    from jutul_agent.interfaces.server.manager import SessionManager
+    from makker.interfaces.server.app import create_app
+    from makker.interfaces.server.manager import SessionManager
 
     async def unused_factory(**_kwargs):
         raise AssertionError("no session should start")

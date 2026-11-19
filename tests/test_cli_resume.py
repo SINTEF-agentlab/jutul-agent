@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def test_run_parser_accepts_continue_and_resume() -> None:
-    from jutul_agent.interfaces.cli.run import build_parser
+    from makker.interfaces.cli.run import build_parser
 
     parser = build_parser()
     args = parser.parse_args(["--continue"])
@@ -16,9 +16,9 @@ def test_run_parser_accepts_continue_and_resume() -> None:
 
 
 def _seed_session(sid: str, title: str | None = None) -> None:
-    from jutul_agent.paths import workspace_state_dir
-    from jutul_agent.session import write_last_session
-    from jutul_agent.trace import TraceLog
+    from makker.paths import workspace_state_dir
+    from makker.session import write_last_session
+    from makker.trace import TraceLog
 
     d = workspace_state_dir() / "sessions" / sid
     d.mkdir(parents=True, exist_ok=True)
@@ -31,7 +31,7 @@ def _seed_session(sid: str, title: str | None = None) -> None:
 def test_resolve_resume_id_continue_and_prefix(tmp_path) -> None:
     import pytest
 
-    from jutul_agent.interfaces.cli.run import _resolve_resume_id, _ResumeError, build_parser
+    from makker.interfaces.cli.run import _resolve_resume_id, _ResumeError, build_parser
 
     parser = build_parser()
 
@@ -52,7 +52,7 @@ def test_resolve_resume_id_continue_and_prefix(tmp_path) -> None:
 
 
 def test_sessions_cli_lists_sessions(tmp_path, capsys) -> None:
-    from jutul_agent.interfaces.cli import sessions as sessions_cmd
+    from makker.interfaces.cli import sessions as sessions_cmd
 
     _seed_session("2026-06-12-2300-bbbb", "newest work")
     _seed_session("2026-06-10-0900-aaaa", "older work")

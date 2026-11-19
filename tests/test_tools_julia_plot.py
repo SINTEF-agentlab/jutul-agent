@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jutul_agent.agent.plot_julia import make_plot_julia_tool, make_recapture_tool
-from jutul_agent.julia.session import EvalResult
-from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
-from jutul_agent.session import Session
-from jutul_agent.trace import TraceLog
+from makker.agent.plot_julia import make_plot_julia_tool, make_recapture_tool
+from makker.julia.session import EvalResult
+from makker.lab.fakes import FakeJulia, make_fake_adapter
+from makker.session import Session
+from makker.trace import TraceLog
 
 
 def _contains_key(obj: Any, key: str) -> bool:
@@ -313,7 +313,7 @@ async def test_recapture_returns_image_by_default(tmp_path: Path) -> None:
     julia = FakeJulia(eval_handler=_make_plot_eval_handler(written, seen=seen))
     plot_session = _session(tmp_path, julia, open_windows=True)
 
-    from jutul_agent.agent.plot_julia import make_recapture_tool
+    from makker.agent.plot_julia import make_recapture_tool
 
     tool = make_recapture_tool(plot_session)
     msg = await tool.ainvoke(
@@ -332,7 +332,7 @@ async def test_recapture_targets_window_slot(tmp_path: Path) -> None:
     seen: list[str] = []
     julia = FakeJulia(eval_handler=_make_plot_eval_handler([], seen=seen))
     plot_session = _session(tmp_path, julia, open_windows=True)
-    from jutul_agent.agent.plot_julia import make_recapture_tool
+    from makker.agent.plot_julia import make_recapture_tool
 
     tool = make_recapture_tool(plot_session)
     await tool.ainvoke(
@@ -358,7 +358,7 @@ async def test_recapture_never_resizes_the_window_it_is_reading(tmp_path: Path) 
     seen: list[str] = []
     julia = FakeJulia(eval_handler=_make_plot_eval_handler([], seen=seen))
     plot_session = _session(tmp_path, julia, open_windows=True)
-    from jutul_agent.agent.plot_julia import make_recapture_tool
+    from makker.agent.plot_julia import make_recapture_tool
 
     tool = make_recapture_tool(plot_session)
     await tool.ainvoke(
@@ -372,7 +372,7 @@ async def test_close_plots(tmp_path: Path) -> None:
     seen: list[str] = []
     julia = FakeJulia(eval_handler=_make_plot_eval_handler([], seen=seen))
     plot_session = _session(tmp_path, julia, open_windows=True)
-    from jutul_agent.agent.plot_julia import make_close_plots_tool
+    from makker.agent.plot_julia import make_close_plots_tool
 
     tool = make_close_plots_tool(plot_session)
     one = await tool.ainvoke(
@@ -392,7 +392,7 @@ async def test_recapture_no_window_errors(tmp_path: Path) -> None:
 
     julia = FakeJulia(eval_handler=fake_eval)
     plot_session = _session(tmp_path, julia)
-    from jutul_agent.agent.plot_julia import make_recapture_tool
+    from makker.agent.plot_julia import make_recapture_tool
 
     tool = make_recapture_tool(plot_session)
     msg = await tool.ainvoke(
@@ -404,8 +404,8 @@ async def test_recapture_no_window_errors(tmp_path: Path) -> None:
 
 
 def test_all_envs_include_glmakie_and_graphmakie() -> None:
-    from jutul_agent.simulators.battmo import BATTMO
-    from jutul_agent.simulators.jutuldarcy import JUTULDARCY
+    from makker.simulators.battmo import BATTMO
+    from makker.simulators.jutuldarcy import JUTULDARCY
 
     for adapter in (BATTMO, JUTULDARCY):
         text = (adapter.julia_env_template_path / "Project.toml").read_text(encoding="utf-8")

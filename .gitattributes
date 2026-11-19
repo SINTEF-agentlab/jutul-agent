@@ -1,4 +1,4 @@
 # The shipped web UI is a build artifact (the Vite build of webapp/). Store it
 # byte-exact, with no end-of-line conversion, so the committed files match what the
 # build produced and the content-hashed asset names stay meaningful.
-src/jutul_agent/interfaces/server/web_dist/** -text
+src/makker/interfaces/server/web_dist/** -text

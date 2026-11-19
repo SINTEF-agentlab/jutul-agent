@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
-from jutul_agent.interfaces.tui import TUIApp
+from makker.interfaces.tui import TUIApp
 
 
 async def wait_until_ready(app: TUIApp, timeout: float = 5.0) -> None:
     """Block until the TUI worker has finished and the prompt re-enables."""
-    from jutul_agent.interfaces.tui.prompt import PromptTextArea
+    from makker.interfaces.tui.prompt import PromptTextArea
 
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:

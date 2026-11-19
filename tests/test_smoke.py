@@ -8,27 +8,27 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.interfaces.cli import main
+from makker.interfaces.cli import main
 
 
 def test_help_exits_zero_subprocess() -> None:
     """Sanity check that the installed entry-point script wires up correctly."""
 
     result = subprocess.run(
-        [sys.executable, "-m", "jutul_agent", "--help"],
+        [sys.executable, "-m", "makker", "--help"],
         capture_output=True,
         text=True,
         check=False,
     )
     assert result.returncode == 0
-    assert "jutul-agent" in result.stdout.lower()
+    assert "makker" in result.stdout.lower()
     assert "--sim" in result.stdout
     assert "init" in result.stdout
     assert "transcript" in result.stdout
 
 
 def test_version_exits_zero(capsys) -> None:
-    from jutul_agent import __version__
+    from makker import __version__
 
     with pytest.raises(SystemExit) as exc:
         main(["--version"])
@@ -36,7 +36,7 @@ def test_version_exits_zero(capsys) -> None:
     out = capsys.readouterr().out
     # Version is derived from git tags by hatch-vcs, so assert the wiring (the
     # resolved __version__ is printed) rather than a fixed string.
-    assert f"jutul-agent {__version__}" in out
+    assert f"makker {__version__}" in out
 
 
 def test_default_invocation_without_sim_errors(
@@ -46,7 +46,7 @@ def test_default_invocation_without_sim_errors(
     configured.
 
     Pass an isolated ``--workspace``: the repo checkout has
-    ``.jutul-agent/config.toml`` with ``simulator = "battmo"``, and ``main``
+    ``.makker/config.toml`` with ``simulator = "battmo"``, and ``main``
     resets workspace overrides via ``_apply_workspace_flags`` (``None`` → cwd).
     Without isolation the CLI would launch Julia and hang or crash
     under pytest capture (stderr has no fileno).
@@ -65,7 +65,7 @@ def test_default_invocation_without_sim_errors(
 @pytest.fixture
 def web_runs(monkeypatch: pytest.MonkeyPatch) -> list:
     """Record each launch of the web UI instead of starting a server."""
-    from jutul_agent.interfaces.cli import web
+    from makker.interfaces.cli import web
 
     launched: list = []
     monkeypatch.setattr(web, "run", lambda args: launched.append(args) or 0)
@@ -90,13 +90,13 @@ def test_no_command_starts_the_web_ui(web_runs: list, argv: list[str], port, sim
 def test_help_says_no_command_starts_the_web_ui(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--help"]) == 0
     out = capsys.readouterr().out
-    assert "starts the web UI" in out and "`jutul-agent web` is the same" in out
-    assert "jutul-agent tui" in out and 'run "<prompt>"' in out
+    assert "starts the web UI" in out and "`makker web` is the same" in out
+    assert "makker tui" in out and 'run "<prompt>"' in out
 
 
 @pytest.mark.parametrize(
     ("argv", "usage"),
-    [(["--bogus"], "usage: jutul-agent [-h]"), (["web", "--bogus"], "usage: jutul-agent web")],
+    [(["--bogus"], "usage: makker [-h]"), (["web", "--bogus"], "usage: makker web")],
 )
 def test_an_unknown_option_fails_before_starting_a_server(
     web_runs: list, capsys: pytest.CaptureFixture[str], argv: list[str], usage: str
@@ -121,7 +121,7 @@ def test_a_mistyped_command_names_the_likely_one(
     web_runs: list, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["tiu"]) == 2
-    assert "Did you mean `jutul-agent tui`?" in capsys.readouterr().err
+    assert "Did you mean `makker tui`?" in capsys.readouterr().err
     assert web_runs == []
 
 
@@ -146,7 +146,7 @@ def test_commands_dispatch_as_before(
 ) -> None:
     import importlib
 
-    target = importlib.import_module(f"jutul_agent.interfaces.cli.{module}")
+    target = importlib.import_module(f"makker.interfaces.cli.{module}")
     called: list = []
     monkeypatch.setattr(target, entry, lambda args: called.append(args) or 0)
 

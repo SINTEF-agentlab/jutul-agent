@@ -1,0 +1,21 @@
+name = "JutulAgent"
+uuid = "79b12aa6-73c9-4fa8-9c54-e97745f42687"
+version = "0.5.0"
+
+# makker's simulator-agnostic Julia runtime (figure capture, ensemble helpers,
+# generic-Makie warm-up). One copy lives here; env_setup copies it into each
+# workspace env at bootstrap. The per-simulator solve/plot warm-up lives in the
+# JutulAgent<Sim> packages. See docs/architecture.md and docs/adding-a-simulator.md.
+
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
+
+[compat]
+PrecompileTools = "1"
+ProgressMeter = "1"
+julia = "1.10"

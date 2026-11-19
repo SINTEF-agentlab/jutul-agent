@@ -2,12 +2,12 @@
 
 The agent's UI and runtime are normally driven by a real model and a real Julia
 process, which makes iterating on them slow: you have to start a session and try
-each thing by hand. The lab (`jutul_agent.lab`) drives the same stack
+each thing by hand. The lab (`makker.lab`) drives the same stack
 headlessly with test doubles, so an agent or a developer can render every UI state,
 look at it, change something, and re-render, and can profile cold start, all without
 a live session.
 
-It is built on the shared doubles in `jutul_agent.lab.fakes`: a scripted model
+It is built on the shared doubles in `makker.lab.fakes`: a scripted model
 and agent, a fake Julia session, and a fake simulator adapter. The test suite uses
 the same doubles.
 
@@ -18,9 +18,9 @@ puts the TUI into a state worth looking at. The lab drives one through the real
 Textual app and captures what it renders.
 
 ```bash
-python -m jutul_agent.lab.tui list
-python -m jutul_agent.lab.tui run tool_call --png
-python -m jutul_agent.lab.tui all --png -o ./out
+python -m makker.lab.tui list
+python -m makker.lab.tui run tool_call --png
+python -m makker.lab.tui all --png -o ./out
 ```
 
 Each scenario writes three artifacts under `<out>/<name>/`:
@@ -38,10 +38,10 @@ SVG and text are still written.
 
 This is how an agent improves the UI on its own:
 
-1. `python -m jutul_agent.lab.tui run <scenario> --png` and open the PNG.
+1. `python -m makker.lab.tui run <scenario> --png` and open the PNG.
 2. Spot a problem (clutter, a leaked internal value, bad wrapping, a confusing
    state).
-3. Edit the widget or stylesheet under `src/jutul_agent/interfaces/tui/`.
+3. Edit the widget or stylesheet under `src/makker/interfaces/tui/`.
 4. Re-render and compare. Run `pytest tests/test_lab.py` to confirm nothing
    crashes.
 
@@ -50,7 +50,7 @@ The approval card, for example, used to print an internal interrupt id; renderin
 
 ### Adding a scenario
 
-Add a call to `scenario(...)` in `jutul_agent/lab/scenarios.py` with a builder
+Add a call to `scenario(...)` in `makker/lab/scenarios.py` with a builder
 that returns a scripted agent and a tuple of steps. A step is a prompt string to
 submit, or an async callable taking the Textual pilot for key presses. Keep scenarios
 small and deterministic.
@@ -62,7 +62,7 @@ and a live solve actually render. Live mode runs one prompt through the full sta
 and captures the screen:
 
 ```bash
-python -m jutul_agent.lab.live "compute the mean of [1.0, 2.0, 3.0] in Julia" \
+python -m makker.lab.live "compute the mean of [1.0, 2.0, 3.0] in Julia" \
     --workspace testbed/jutuldarcy --model openai:gpt-5.4 --png
 ```
 
@@ -86,8 +86,8 @@ Two profilers, for the two kinds of slowness.
 Cold start (imports and bringing the app up):
 
 ```bash
-python -m jutul_agent.lab.profile_startup
-python -m jutul_agent.lab.profile_startup --module jutul_agent.interfaces.tui
+python -m makker.lab.profile_startup
+python -m makker.lab.profile_startup --module makker.interfaces.tui
 ```
 
 It runs a fresh interpreter under `-X importtime` (heaviest imports, rolled up per
@@ -100,11 +100,11 @@ agent stack, so light commands like `--version` stay fast.
 The hot path (our own Python during a turn):
 
 ```bash
-python -m jutul_agent.lab.profile_turn --scenario long_output --repeat 5
+python -m makker.lab.profile_turn --scenario long_output --repeat 5
 ```
 
 It cProfiles rendering a scenario through the full agent runtime and TUI with the
-fakes, and reports the jutul-agent functions by self-time. Use it to find a slow
+fakes, and reports the makker functions by self-time. Use it to find a slow
 render or middleware path, and to catch a regression that makes turns sluggish.
 
 Run any of these before and after a change to measure the effect.

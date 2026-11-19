@@ -8,18 +8,18 @@ import pytest
 from textual.widgets import Markdown
 
 from _tui import submit_prompt
-from jutul_agent.agent.builder import build_agent
-from jutul_agent.interfaces.tui import TUIApp
-from jutul_agent.interfaces.tui.widgets import MessageBlock, ToolBlock
-from jutul_agent.lab.fakes import (
+from makker.agent.builder import build_agent
+from makker.interfaces.tui import TUIApp
+from makker.interfaces.tui.widgets import MessageBlock, ToolBlock
+from makker.lab.fakes import (
     FakeJulia,
     make_fake_adapter,
     make_scripted_model,
     scripted_final,
     scripted_tool_call,
 )
-from jutul_agent.session import Session
-from jutul_agent.trace import TraceLog
+from makker.session import Session
+from makker.trace import TraceLog
 
 
 async def test_multi_tool_turn_renders_full_block_sequence(

@@ -6,9 +6,9 @@ import asyncio
 
 import pytest
 
-from jutul_agent.julia.session import EvalResult
-from jutul_agent.lab.fakes import FakeJulia
-from jutul_agent.simulators.warmup import (
+from makker.julia.session import EvalResult
+from makker.lab.fakes import FakeJulia
+from makker.simulators.warmup import (
     GL_CONTEXT_WARMUP,
     HYPRE_THREADS_SETUP,
     WEB_BACKEND_SETUP,
@@ -134,7 +134,7 @@ async def test_fake_julia_reset_counts_invocations() -> None:
 def test_all_real_adapters_name_a_warm_package() -> None:
     """Every simulator declares a per-sim warm package (placeholders too)."""
 
-    from jutul_agent.simulators import registry
+    from makker.simulators import registry
 
     for name in registry.names():
         adapter = registry.get(name)

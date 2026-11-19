@@ -1,0 +1,35 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+GraphMakie = "1ecd5474-83a3-4783-bb4f-06765db800d2"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+LayeredLayouts = "f4a74d36-062a-4d48-97cd-1356bad1de4e"
+NetworkLayout = "46757867-2c16-5918-afeb-47bfcb05e46a"
+Jutul = "2b460a1a-8a2b-45b2-b125-b5c536396eb9"
+JutulAgent = "79b12aa6-73c9-4fa8-9c54-e97745f42687"
+JutulAgentMocca = "118bae70-9d54-4e00-8665-eefd5efc28fa"
+Mocca = "eb14e3ba-90c8-11ed-0ecf-1dd2ea0d109c"
+
+# The web interface's interactive plotting backend. Keep it here rather than in a
+# separate env stacked over this one: Julia resolves each env independently, so
+# only a resolve that also sees the simulator's constraints can pick Makie and HTTP
+# versions that satisfy both. See docs/architecture.md.
+Bonito = "824d6782-a2ef-11e9-3a09-e5662e0c26f8"
+WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
+
+# Minimum simulator release supported by the bundled skills. Mocca's own
+# compatibility rules resolve the Jutul and plotting stack.
+[compat]
+Mocca = "0.1.0"
+
+# Both deps are makker's in-env Julia runtime, declared as relative `[sources]`
+# paths so they survive the copy into a workspace. JutulAgent is the shared,
+# sim-agnostic core (figure capture, ensemble helpers, generic-Makie warm-up) — it
+# has a single source in the repo (src/makker/julia_runtime/JutulAgent) that
+# env_setup copies in at bootstrap. JutulAgentMocca is this env's per-simulator
+# warm-up package (the solve/plot bake + @recompile_invalidations).
+[sources]
+JutulAgent = {path = "JutulAgent"}
+JutulAgentMocca = {path = "JutulAgentMocca"}

@@ -17,8 +17,8 @@ from langchain_core.messages import (
 from openrouter import OpenRouter
 from PIL import Image
 
-from jutul_agent.agent.openrouter import ChatOpenRouterWithToolImages
-from jutul_agent.agent.plot_julia import _reply
+from makker.agent.openrouter import ChatOpenRouterWithToolImages
+from makker.agent.plot_julia import _reply
 
 
 @pytest.mark.parametrize("stream", [False, True])

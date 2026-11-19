@@ -6,14 +6,14 @@ import pytest
 from textual.app import App
 from textual.widgets import Input, OptionList, Static
 
-from jutul_agent.interfaces.tui.model_menu import ApiKeyModal, ModelMenu, OllamaPullModal
-from jutul_agent.ollama_client import PullProgress
+from makker.interfaces.tui.model_menu import ApiKeyModal, ModelMenu, OllamaPullModal
+from makker.ollama_client import PullProgress
 
 
 @pytest.fixture(autouse=True)
 def _offline_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    from jutul_agent import models
-    from jutul_agent.interfaces.tui import model_menu
+    from makker import models
+    from makker.interfaces.tui import model_menu
 
     monkeypatch.setattr(model_menu, "discover_available_models", models.discover_models)
 
@@ -41,8 +41,8 @@ async def test_model_menu_lists_discovered_models() -> None:
 
 
 async def test_model_menu_adds_api_listed_models(monkeypatch: pytest.MonkeyPatch) -> None:
-    from jutul_agent import models
-    from jutul_agent.interfaces.tui import model_menu
+    from makker import models
+    from makker.interfaces.tui import model_menu
 
     def catalog():
         groups = {name: list(items) for name, items in models.discover_models().items()}
@@ -64,7 +64,7 @@ async def test_model_menu_adds_api_listed_models(monkeypatch: pytest.MonkeyPatch
 async def test_model_menu_shows_recommended_and_cloud_ollama(monkeypatch) -> None:
     # No installed local models in tests; recommended-to-pull local models and
     # hosted cloud models still appear so you can pick without typing a tag.
-    from jutul_agent import ollama_client
+    from makker import ollama_client
 
     async def _none() -> list[str]:
         return []
@@ -84,7 +84,7 @@ async def test_model_menu_shows_recommended_and_cloud_ollama(monkeypatch) -> Non
 async def test_model_menu_shows_recent_section(monkeypatch) -> None:
     # A free-text id that isn't in any provider catalog can only appear via the
     # Recent section, so its presence proves that section is rendered.
-    from jutul_agent.interfaces.tui import model_menu as mm
+    from makker.interfaces.tui import model_menu as mm
 
     monkeypatch.setattr(mm, "load_recent_models", lambda: ["openrouter:custom/model"])
     app = _Host()

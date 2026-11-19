@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from jutul_agent.agent.plot_julia_src import (
+from makker.agent.plot_julia_src import (
     FIG_SIZE_MARKER,
     FIT_ASPECT_FRACTION,
     FIT_SQUASH_FLOOR,
@@ -284,7 +284,7 @@ def test_size_block_echoes_the_authored_size_before_any_fit() -> None:
     # Both echoes ship: the authored size (before any resize, what a later
     # re-fit anchors its floors to) and the resulting size (what the browser
     # stages). The authored echo must come before the fit touches the figure.
-    from jutul_agent.agent.plot_julia_src import FIG_AUTHORED_MARKER
+    from makker.agent.plot_julia_src import FIG_AUTHORED_MARKER
 
     code = web_live_call(
         user_code="lines(1:10)",
@@ -301,7 +301,7 @@ def test_size_block_echoes_the_authored_size_before_any_fit() -> None:
 def test_resize_call_resizes_the_routed_figure_and_echoes() -> None:
     # The refit path: an in-place resize! of a routed live figure, echoing the
     # resulting size; a route without a figure answers without touching anything.
-    from jutul_agent.agent.plot_julia_src import resize_web_fig_call
+    from makker.agent.plot_julia_src import resize_web_fig_call
 
     code = resize_web_fig_call("/viz/res", 1200, 1000)
     assert 'get(Main.__JUTUL_WEB_FIGS__, raw"/viz/res", nothing)' in code
@@ -320,7 +320,7 @@ def test_every_resize_survives_a_figure_whose_browser_session_died() -> None:
     # it would abort the block before the echo, so the caller reads a failure
     # for a resize that happened and stops trusting the figure's size. Every
     # resize is therefore wrapped, and the echo still runs.
-    from jutul_agent.agent.plot_julia_src import resize_web_fig_call
+    from makker.agent.plot_julia_src import resize_web_fig_call
 
     sized = web_live_call(
         user_code="lines(1:10)",
@@ -362,7 +362,7 @@ def test_live_route_lets_each_new_view_take_the_figure_over() -> None:
 def test_live_routes_are_reported_after_they_change(tmp_path) -> None:
     # The session keeps the reported list, so a replay offers live views only of
     # figures the kernel still serves.
-    from jutul_agent.agent.plot_julia_src import LIVE_ROUTES_MARKER, web_live_call
+    from makker.agent.plot_julia_src import LIVE_ROUTES_MARKER, web_live_call
 
     serve = web_live_call(
         user_code="fig = Figure()",
@@ -378,7 +378,7 @@ def test_live_routes_are_reported_after_they_change(tmp_path) -> None:
 def test_the_session_keeps_the_reported_routes() -> None:
     from types import SimpleNamespace
 
-    from jutul_agent.agent.plot_julia import note_live_routes
+    from makker.agent.plot_julia import note_live_routes
 
     session = SimpleNamespace(live_routes={"/viz/old"})
     note_live_routes(session, "ok\n__JUTUL_LIVE_ROUTES__=/viz/a /viz/b--pop1\n")

@@ -2,15 +2,15 @@
 
 Everything else about the feature is tested with Julia stubbed out, which is the
 right trade for tens of minutes of build time. What no stub can answer is
-whether the image jutul-agent produces actually does the thing it exists to do:
+whether the image makker produces actually does the thing it exists to do:
 start a kernel with the packages already in memory. That is what these check.
 
 They need a workspace that has been built, so they are gated on
-``JUTUL_AGENT_SYSIMAGE_WORKSPACE`` pointing at one:
+``MAKKER_SYSIMAGE_WORKSPACE`` pointing at one:
 
-    jutul-agent init --sim jutuldarcy --workspace /tmp/ws
-    jutul-agent sysimage build --workspace /tmp/ws
-    JUTUL_AGENT_SYSIMAGE_WORKSPACE=/tmp/ws pytest tests/test_sysimage_integration.py
+    makker init --sim jutuldarcy --workspace /tmp/ws
+    makker sysimage build --workspace /tmp/ws
+    MAKKER_SYSIMAGE_WORKSPACE=/tmp/ws pytest tests/test_sysimage_integration.py
 
 The weekly simulator workflow builds one and sets the variable; locally these
 skip until you point them at a workspace of your own.
@@ -23,13 +23,13 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent import sysimage
-from jutul_agent.juliakernel import JuliaKernel, KernelConfig
-from jutul_agent.workspace import resolve_julia_project
+from makker import sysimage
+from makker.juliakernel import JuliaKernel, KernelConfig
+from makker.workspace import resolve_julia_project
 
 pytestmark = pytest.mark.integration
 
-WORKSPACE_VAR = "JUTUL_AGENT_SYSIMAGE_WORKSPACE"
+WORKSPACE_VAR = "MAKKER_SYSIMAGE_WORKSPACE"
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def built() -> tuple[Path, Path, Path]:
 def display():
     """A DISPLAY for the kernel, as production gives it."""
 
-    from jutul_agent.display import has_display, managed_display, xvfb_available
+    from makker.display import has_display, managed_display, xvfb_available
 
     if has_display():
         yield None

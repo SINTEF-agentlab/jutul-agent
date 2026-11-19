@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from jutul_agent.lab.fakes import make_event
-from jutul_agent.transcript.attempts import Attempt, build_attempt_tree
+from makker.lab.fakes import make_event
+from makker.transcript.attempts import Attempt, build_attempt_tree
 
 
 def _attempt_payload(

@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.juliakernel import JuliaKernel, KernelConfig, OutputChunk
-from jutul_agent.juliakernel.connection import KernelConnection
-from jutul_agent.juliakernel.kernel import JuliaStartupError, _thread_flag, describe_exit
+from makker.juliakernel import JuliaKernel, KernelConfig, OutputChunk
+from makker.juliakernel.connection import KernelConnection
+from makker.juliakernel.kernel import JuliaStartupError, _thread_flag, describe_exit
 
 _HAS_JULIA = shutil.which("julia") is not None
 needs_julia = pytest.mark.skipif(not _HAS_JULIA, reason="requires `julia` on PATH")

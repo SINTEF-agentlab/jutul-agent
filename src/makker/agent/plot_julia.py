@@ -1,0 +1,784 @@
+"""Julia plotting tools: capture Makie figures as session artifacts.
+
+Native plotting runs on GLMakie. The tool opens a live window for the user only
+when the session can show one (an interactive run with a display); otherwise it
+renders offscreen to a PNG. Headless Linux still renders, via the xvfb-wrapped
+Julia process (see the kernel). If GLMakie cannot load at all, the tool
+returns a clear error rather than degrading to a backend where the native
+plotters do not work.
+
+When ``view=True`` the saved PNG is downscaled and returned to the model as a
+multimodal image block, so the agent can see the plot it just made.
+
+On the web surface, figures render in the browser with WGLMakie. They are served
+live from a per-session Bonito server when it can start, so a figure's in-figure
+widgets (a timestep slider, a field selector) run their Julia callbacks and update
+the view; if the server can't start, a self-contained static HTML export is
+embedded instead (camera control still works, the widgets do not).
+
+This module is the orchestration: it loads the backend, runs the generated Julia
+(see ``plot_julia_src``), records the artifact, and builds the model-facing reply.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import io
+import re
+import socket
+import sys
+import uuid
+from pathlib import Path
+from typing import Annotated, Any
+
+from langchain_core.tools import InjectedToolCallId, tool
+
+from makker.agent import plot_julia_src as jl
+from makker.paths import workspace_root
+from makker.session import Session
+from makker.simulators import warmup
+from makker.simulators.base import SimulatorAdapter
+from makker.trace.schema import ARTIFACT, artifact_payload
+
+_SLOT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
+
+# Longest-edge cap (px) for the downscaled image fed back to the model. Keeps
+# per-image token cost bounded across an investigation loop.
+_VIEW_MAX_EDGE = 1024
+
+_INVALID_SLOT = "ERROR: invalid slot name (use letters, digits, '.', '_', '-'; max 64 characters)."
+
+
+def _resolve_slot(slot: str | None) -> tuple[str | None, str | None]:
+    """Validate an optional slot, returning ``(clean slot, error)``.
+
+    A missing slot is fine (``(None, None)``); a malformed one returns the error
+    string the tool should reply with, so each tool does one check instead of two.
+    """
+    if not slot:
+        return None, None
+    slot = slot.strip()
+    if not slot or not _SLOT_RE.match(slot):
+        return None, _INVALID_SLOT
+    return slot, None
+
+
+def _truncate(text: str | None, limit: int) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
+async def _load_plot_backend(session: Session, adapter: SimulatorAdapter) -> str | None:
+    """Load GLMakie and the capture helpers into the REPL once per session.
+
+    Returns an error string, or ``None`` on success. The error is actionable when
+    GLMakie can't load: the tool drives GLMakie for everything, so without it
+    plotting is unavailable here.
+    """
+
+    helper = await _load_agent_runtime(session)
+    if helper is not None:
+        return helper
+
+    gl = await session.julia.eval("using GLMakie")
+    if gl.error:
+        return (
+            f"ERROR: GLMakie could not load in the {adapter.name} Julia environment, so "
+            "plotting is unavailable here. On a headless Linux server install xvfb "
+            "(makker auto-detects it) or a GL driver; otherwise rebuild the env with "
+            f"`makker init --sim {adapter.name} --force`. "
+            f"Julia said: {_truncate(gl.error, 300)}"
+        )
+
+    return None
+
+
+async def _load_agent_runtime(session: Session) -> str | None:
+    """Load the capture helpers (``JutulAgent.JutulAgentPlots``), through the same
+    statement the session's warm-up uses.
+
+    They ship precompiled, so this only pays load latency, but the order the packages
+    load in decides how much of that precompilation survives: a pkgimage is valid only
+    for the world it was baked in, and pulling the shared package in ahead of the
+    simulator's rebuilds the parts of the bake that were inferred through a method the
+    simulator brings. Warm-up normally gets here first; a plot requested before it
+    finishes must not establish a different order.
+    """
+
+    loaded = await session.julia.eval(warmup.load_statement(session.simulator.warm_package))
+    if loaded.error:
+        return f"ERROR: failed to load JutulAgent plot helpers: {loaded.error}"
+    return None
+
+
+async def _load_web_plot_backend(session: Session, adapter: SimulatorAdapter) -> str | None:
+    """Load the web plotting backends once: WGLMakie + Bonito, plus GLMakie.
+
+    The web surface builds and renders figures with WGLMakie. The shared
+    runtime also loads GLMakie for native captures and other simulators whose
+    plotters use GLMakie extensions. CairoMakie supplies the provisional PNG
+    poster.
+    """
+
+    # The live figures are held by JutulAgent.JutulAgentPlots, so this surface needs the
+    # helpers just as the native one does, and before the backends so that the order
+    # the packages load in is the one they were baked in.
+    helper = await _load_agent_runtime(session)
+    if helper is not None:
+        return helper
+
+    loaded = await session.julia.eval("import CairoMakie, WGLMakie, Bonito")
+    if loaded.error:
+        return (
+            f"ERROR: interactive web plots need WGLMakie + Bonito in the {adapter.name} "
+            f"env, which did not load. Rebuild the env with "
+            f"`makker init --sim {adapter.name} --force`. Julia said: "
+            f"{_truncate(loaded.error, 300)}"
+        )
+    # Retain compatibility with other simulators that use GLMakie extensions.
+    await session.julia.eval(jl.IMPORT_GLMAKIE)
+    # Both guards patch over upstream bugs, once per session and before any figure is
+    # built. Each reports whether it took: when the method it replaces moves upstream it
+    # stops applying silently, and the only symptom is a mouse button that no longer works
+    # in the browser.
+    prefer = await session.julia.eval(jl.PREFER_OPEN_SCREEN_GUARD)
+    if f"{jl.SCREEN_PREFERENCE_MARKER}=ok" not in (prefer.output or ""):
+        print(
+            "warning: could not make screen resolution prefer an open screen; clicking "
+            "a plot (selecting a cell) may not respond "
+            f"({_truncate(prefer.output or prefer.error, 200)})",
+            file=sys.stderr,
+        )
+    guard = await session.julia.eval(jl.PICK_EMPTY_BUFFER_GUARD)
+    if f"{jl.PICK_GUARD_MARKER}=ok" not in (guard.output or ""):
+        print(
+            "warning: could not guard WGLMakie's pick against an empty buffer; a plot "
+            "whose plotter picks on click may not respond to that mouse button "
+            f"({_truncate(guard.output or guard.error, 200)})",
+            file=sys.stderr,
+        )
+    return None
+
+
+def _free_port() -> int:
+    """Pick a free localhost TCP port for the session's Bonito server."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _encode_view_image(png_path: Path, max_edge: int = _VIEW_MAX_EDGE) -> str:
+    """Downscale png_path to max_edge on its longest side and return base64 PNG."""
+    from PIL import Image
+
+    with Image.open(png_path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((max_edge, max_edge))  # only shrinks; preserves aspect
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _reply(summary: str, png_path: Path, view: bool) -> str | list[dict[str, Any]]:
+    """The model-facing reply: the summary alone, or summary plus the downscaled
+    image when ``view`` asked to see it. Vision is best-effort and never fails the
+    plot, so an image that can't be encoded degrades to a noted text reply.
+    """
+
+    if not view:
+        return summary
+    try:
+        b64 = _encode_view_image(png_path)
+    except Exception as exc:
+        return f"{summary}; (could not attach image for viewing: {exc})"
+    return [
+        {"type": "text", "text": summary},
+        {"type": "image", "mime_type": "image/png", "base64": b64},
+    ]
+
+
+def _finalize(
+    session: Session,
+    *,
+    abs_path: Path,
+    rel_path: str,
+    caption: str,
+    tool_call_id: str,
+    size: list[int] | None,
+    dpi: int | None,
+    slot: str | None,
+    source_code: str,
+    view: bool,
+    lead: str,
+    extra_parts: list[str],
+    kind: str = "plot",
+) -> str | list[dict[str, Any]]:
+    """Record the PNG artifact and build the reply (text, or text plus image when view).
+
+    Shared by plot_julia and recapture_plot. The PNG artifact is always recorded
+    for the transcript and report; the live Makie window or the TUI's open-artifact
+    action is how the user actually sees it.
+
+    ``kind`` routes the browser: ``"plot"`` pins a canvas view, anything else
+    (a recapture's ``"snapshot"``) shows inline.
+    """
+
+    session.trace.append(
+        ARTIFACT,
+        artifact_payload(
+            path=rel_path,
+            mime="image/png",
+            caption=caption or slot or rel_path.rsplit("/", 1)[-1],
+            tool_call_id=tool_call_id,
+            format="png",
+            kind=kind,
+            size_px=size,
+            dpi=dpi,
+            slot=slot,
+            source_code=source_code,
+        ),
+    )
+    try:
+        shown = abs_path.relative_to(workspace_root()).as_posix()
+    except ValueError:
+        shown = abs_path.as_posix()
+    summary = "; ".join(p for p in [f"{lead} {shown}", *extra_parts] if p)
+    return _reply(summary, abs_path, view)
+
+
+def _finalize_web(
+    session: Session,
+    *,
+    png_abs: Path,
+    png_rel: str,
+    html_rel: str,
+    caption: str,
+    tool_call_id: str | None,
+    slot: str | None,
+    source_code: str,
+    view: bool,
+    live_url: str | None = None,
+    size_px: list[int] | None = None,
+    authored_px: list[int] | None = None,
+) -> str | list[dict[str, Any]]:
+    """Record the interactive plot artifact and build the reply.
+
+    The artifact becomes the browser ``viz``: when ``live_url`` is set the figure
+    is served live from the session's Bonito server (its widgets work) and the
+    durable record is the PNG; otherwise the self-contained HTML export is the
+    record and what's embedded. The PNG is also the poster/thumbnail and ``view``.
+    """
+
+    # A PNG is saved when some rasteriser can render the figure offscreen; it is the
+    # poster/thumbnail and the durable record. A scene none of them can draw yields
+    # none, and the interactive view still carries the figure.
+    has_poster = png_abs.exists()
+    # The durable record: a live plot's PNG poster when one was rendered, else the
+    # static HTML export (a non-live plot always exports one; the live path exports a
+    # WebGL fallback only when no rasteriser could render the scene). Recording the PNG
+    # when none was written would leave a dead path that 404s on resume.
+    if live_url and has_poster:
+        rec_path, mime, fmt = png_rel, "image/png", "png"
+    else:
+        rec_path, mime, fmt = html_rel, "text/html", "html"
+    session.trace.append(
+        ARTIFACT,
+        artifact_payload(
+            path=rec_path,
+            mime=mime,
+            caption=caption or slot or rec_path.rsplit("/", 1)[-1],
+            tool_call_id=tool_call_id,
+            format=fmt,
+            kind="plot",
+            size_px=size_px,
+            authored_px=authored_px,
+            poster=png_rel if has_poster else None,
+            slot=slot,
+            live_url=live_url,
+            source_code=source_code,
+        ),
+    )
+    summary = "served a live interactive plot" if live_url else "rendered an interactive plot"
+    summary += f" ({rec_path})"
+    if slot:
+        summary += f"; slot={slot}"
+    return _reply(summary, png_abs, view and has_poster)
+
+
+def note_live_routes(session: Session, output: str | None) -> None:
+    """Keep the routes the kernel reported it still serves (``LIVE_ROUTES_MARKER``)."""
+    match = re.search(rf"{jl.LIVE_ROUTES_MARKER}=(.*)", output or "")
+    if match is not None:
+        session.live_routes = set(match.group(1).split())
+
+
+def _parse_size(output: str | None, marker: str = jl.FIG_SIZE_MARKER) -> list[int] | None:
+    """A figure pixel size read back from a tagged echo line: the resulting
+    size by default, or the authored size via ``jl.FIG_AUTHORED_MARKER``."""
+    match = re.search(rf"{marker}=(\d+)x(\d+)", output or "")
+    if match is None:
+        return None
+    return [int(match.group(1)), int(match.group(2))]
+
+
+def _panel_fit(session: Session) -> list[int] | None:
+    """The browser canvas panel's size from the client's hint, or ``None``
+    without a plausible one (no client yet, or a degenerate measurement),
+    which leaves the figure's authored size untouched. The fit rule itself
+    lives in the generated Julia; see ``jl._fig_size_block``.
+    """
+    hint = session.web_canvas_hint
+    if not hint:
+        return None
+    w, h = hint
+    if not (100 <= w <= 8192 and 100 <= h <= 8192):
+        return None
+    return [w, h]
+
+
+def _plot_id_of(payload: dict[str, Any]) -> str:
+    """A recorded plot's route identity: its slot, else its file stem.
+
+    The tool routes a slotted plot on its slot and an unslotted one on
+    ``plot-<id>`` (the artifact file stem), so replaying through the same rule
+    lands on the same route and the browser view revives in place.
+    """
+    slot = payload.get("slot")
+    if slot:
+        return str(slot)
+    rec = str(payload.get("path") or "")
+    return rec.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+
+
+# How long a re-fit may hold the kernel. Evals serialize on one lock and have no
+# deadline of their own, which is right for work the user asked for (a simulation
+# may run for an hour) and wrong for this. A re-fit is cosmetic and nobody waits
+# on its result, so an eval that wedges here would hold the lock and every later
+# turn would sit silent behind it. With a deadline the view simply stays scaled,
+# which is the fallback the client already renders; cancelling interrupts the
+# eval in Julia and frees the lock.
+REFIT_TIMEOUT_S = 20.0
+
+
+async def refit_web(
+    session: Session, route_id: str, size: list[int], authored: list[int] | None = None
+) -> tuple[str | None, list[int] | None]:
+    """Resize a live figure's served layout in place; ``(error, echoed size)``.
+
+    The cheap sibling of ``replot_web`` for a view whose frame changed size:
+    no code re-runs and the figure's state (camera, widget values) is kept.
+    See ``jl.resize_web_fig_call`` for why this direction is the robust one.
+    Bounded by ``REFIT_TIMEOUT_S``: cosmetic work must never wedge a session.
+    """
+
+    call = jl.resize_web_fig_call(jl.viz_route(route_id), *size, authored=authored)
+    try:
+        result = await asyncio.wait_for(session.julia.eval(call), REFIT_TIMEOUT_S)
+    except TimeoutError:
+        return "the resize did not finish in time", None
+    if result.error:
+        return f"the resize failed: {_truncate(result.error, 200)}", None
+    echoed = _parse_size(result.output)
+    if echoed is None:
+        return "no live figure on that route", None
+    return None, echoed
+
+
+async def replot_web(
+    session: Session,
+    payload: dict[str, Any],
+    *,
+    route_suffix: str = "",
+    record: bool = True,
+    fit_to: list[int] | None = None,
+) -> tuple[str | None, str | None, list[int] | None]:
+    """Re-run a recorded plot's code through the live web path; ``(error, url, size)``.
+
+    ``payload`` is the plot's artifact payload from the trace (the server looks
+    it up there — recorded code only, never code a client sent). With ``record``
+    the figure re-serves on its original route and the artifact is re-finalized,
+    so the side-output flush delivers a fresh ``viz`` and the browser view
+    revives in place (the regenerate button). With ``record=False`` the figure
+    serves on ``route_suffix``'s separate route and only the live URL is
+    returned — an independent, ephemeral view for a popout window.
+
+    ``fit_to`` is a panel the client measured (the popup window on a popout);
+    the replay fits the figure to it by the same rule as a fresh plot, never
+    a raw resize that could crush a wide layout into a small window. Without
+    one, the replay fits to the session's panel hint the way a fresh plot
+    does. The returned size is the figure's *echoed* real size; presentation
+    must trust the echo, never the request.
+
+    The code replays into the current kernel state: variables it used may have
+    changed or be gone after a restart, so a failure is reported, not hidden.
+    """
+
+    code = str(payload.get("source_code") or "")
+    if not code:
+        return "this plot has no recorded code to re-run", None, None
+    err = await _load_web_plot_backend(session, session.simulator)
+    if err is not None:
+        return err, None, None
+    # Idempotent: an existing server answers with its real port, a fresh kernel
+    # gets one started. Either way the reverse proxy learns where to dial.
+    started = await session.julia.eval(
+        jl.web_server_start(_free_port(), session.session_id, base_path=session.base_path)
+    )
+    match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
+    if started.error or match is None:
+        reason = _truncate(started.error or "the server did not report a port", 200)
+        return f"the session's live plot server is unavailable ({reason})", None, None
+    session.web_plot_port = int(match.group(1))
+
+    plot_id = _plot_id_of(payload)
+    route = jl.viz_route(f"{plot_id}{route_suffix}")
+    live_url = f"/live/{session.session_id}{route}"
+    png_rel = f"artifacts/{plot_id}.png"
+    png_abs = session.output_dir / png_rel
+    html_rel = png_rel[:-4] + ".html"
+
+    result = await session.julia.eval(
+        jl.web_live_call(
+            user_code=code,
+            png_path=png_abs,
+            html_path=session.output_dir / html_rel,
+            route=route,
+            fit=fit_to if fit_to is not None else _panel_fit(session),
+            poster=record,
+        )
+    )
+    note_live_routes(session, result.output)
+    if result.error:
+        return f"the plot code failed when re-run: {_truncate(result.error, 300)}", None, None
+    size_px = _parse_size(result.output)
+    if record:
+        _finalize_web(
+            session,
+            png_abs=png_abs,
+            png_rel=png_rel,
+            html_rel=html_rel,
+            live_url=live_url,
+            caption=str(payload.get("caption") or ""),
+            tool_call_id=None,
+            slot=payload.get("slot"),
+            source_code=code,
+            view=False,
+            size_px=size_px,
+            authored_px=_parse_size(result.output, jl.FIG_AUTHORED_MARKER),
+        )
+    return None, live_url, size_px
+
+
+def make_plot_julia_tool(session: Session, *, surface: str | None = None):
+    artifacts_dir = session.output_dir / "artifacts"
+    adapter = session.simulator
+    web = (surface or session.surface) == "web"
+    backend_loaded = False  # one-shot memo: the backend loads once per session
+    live_base: str | None = None  # the session's Bonito base URL once it's serving
+    warned_no_live = False  # so a persistent server failure warns once, not per plot
+
+    async def ensure_ready() -> str | None:
+        """Load the backend on first use; return an error string if it can't load.
+
+        On the web surface this also starts the session's Bonito server, so plots
+        are served live (their in-figure widgets work). Starting the server is
+        retried on each plot until it succeeds, so a transient failure (e.g. the
+        picked port was grabbed in the race before Bonito bound it) doesn't disable
+        live serving for the rest of the session; until it succeeds, plots render
+        via the static export (a warning, not an error)."""
+        nonlocal backend_loaded, live_base, warned_no_live
+        if backend_loaded:
+            # The memos outlive the kernel: a reset (`reset_julia`) silently
+            # clears the backend and the Bonito server while the Python session
+            # keeps both flags, so probe and redo whatever the kernel lost.
+            probe = await session.julia.eval(jl.plot_state_probe(web))
+            flags = re.search(rf"{jl.PLOT_STATE_MARKER}=(\w+),(\w+)", probe.output or "")
+            if flags is None or flags.group(1) != "true":
+                backend_loaded = False
+            if flags is None or flags.group(2) != "true":
+                live_base = None
+                session.web_plot_port = None
+                session.live_routes = set()
+        if not backend_loaded:
+            loader = _load_web_plot_backend if web else _load_plot_backend
+            err = await loader(session, adapter)
+            if err is not None:
+                return err  # don't latch: a fixable load failure can be retried
+            backend_loaded = True
+        if web and live_base is None:
+            started = await session.julia.eval(
+                jl.web_server_start(_free_port(), session.session_id, base_path=session.base_path)
+            )
+            # The server prints its bound port on a uniquely-tagged line; read that
+            # rather than scanning for digits (a startup log line could carry others).
+            match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
+            if started.error or match is None:
+                if not warned_no_live:
+                    warned_no_live = True
+                    reason = started.error or "the server did not report a port"
+                    print(
+                        f"warning: live plot serving unavailable ({_truncate(reason, 200)}); "
+                        "falling back to static interactive exports.",
+                        file=sys.stderr,
+                    )
+            else:
+                # A site-relative path, not the raw ``127.0.0.1:<port>`` Bonito
+                # actually listens on: the browser reaches it through this app
+                # server's ``/live/...`` reverse proxy (see interfaces/server/app.py),
+                # which is the one port whatever forwarded this session's connection
+                # (an SSH tunnel, VS Code/Cursor remote, Docker) already knows about.
+                # ``session.web_plot_port`` is what tells that proxy where to send it.
+                live_base = f"/live/{session.session_id}"
+                session.web_plot_port = int(match.group(1))
+        return None
+
+    @tool
+    async def plot_julia(
+        code: str,
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        caption: str = "",
+        size: list[int] | None = None,
+        dpi: int | None = None,
+        slot: str | None = None,
+        view: bool = False,
+        window: bool = True,
+    ) -> str | list[dict[str, Any]]:
+        """Run Julia plotting code and turn the figure into something the user can see.
+
+        `plot_julia` is the bridge between a figure drawn in the REPL and a shareable
+        result: it saves the figure as a PNG artifact (recorded in the transcript and
+        report) and, in an interactive session, opens a live Makie window. Build
+        figures only here, never in `run_julia` (that draws a figure nobody can see).
+
+        Prefer your simulator's documented native plotters (the `plotting-basics` and
+        per-simulator skills name them); otherwise build a `Figure` inline. Just run
+        the code: you don't need to return a `Figure` or avoid `display`, since the
+        tool captures whatever figure your code produced. It selects WGLMakie for
+        the web interface and GLMakie for native capture; do not activate a backend
+        yourself. Keep native viewer controls unless the user requests a static
+        figure or a custom view.
+
+        Give related plots a stable `slot`: the same `slot` refreshes one window
+        in place (good for iterating), distinct slots get distinct windows, and
+        `recapture_plot(slot=...)` / `close_plots(slot=...)` address that window.
+
+        Args:
+            code: Julia plotting code (a native plotter call or inline figure).
+            caption: Optional caption shown in the transcript.
+            size: Optional `(width, height)` in pixels. Leave it unset unless the
+                user asked for exact dimensions: in the browser the tool fits the
+                figure to the user's panel automatically, and an explicit size
+                turns that fit off.
+            dpi: Optional DPI for the PNG.
+            slot: Stable name (`artifacts/<slot>.png`) and window key; reuse it to
+                refresh the same plot/window.
+            view: Also return the downscaled image so you can see it, to verify a
+                fit or diagnose. Not needed for every plot.
+            window: Open a live window for the user (default true). Set false to
+                compute/inspect a plot without opening a window for them.
+
+        Returns:
+            A confirmation string, or, when `view`, a text+image content list.
+        """
+        err = await ensure_ready()
+        if err is not None:
+            return err
+
+        safe_slot, slot_err = _resolve_slot(slot)
+        if slot_err:
+            return slot_err
+
+        # The plot id is the artifact file stem, so the plot's live route and
+        # its recorded path agree: a replay derives the route from the record,
+        # and only the same route revives the browser view in place.
+        plot_id = safe_slot or f"plot-{uuid.uuid4().hex[:12]}"
+        rel_path = f"artifacts/{plot_id}.png"
+
+        abs_path = session.output_dir / rel_path
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        if web:
+            html_rel = rel_path[:-4] + ".html"
+            html_abs = session.output_dir / html_rel
+            # Without an explicit size, fit the figure to the browser panel (the
+            # client keeps the session's hint fresh): full-size text at the
+            # panel's own size, width floored against squashing a wide layout.
+            fit = _panel_fit(session) if size is None else None
+            # Serve live (in-figure widgets work) when the session's Bonito server
+            # is up; otherwise fall back to a self-contained static export.
+            if live_base:
+                route = jl.viz_route(plot_id)
+                call = jl.web_live_call(
+                    user_code=code,
+                    png_path=abs_path,
+                    html_path=html_abs,
+                    route=route,
+                    size=size,
+                    fit=fit,
+                )
+                live_url = f"{live_base}{route}"
+            else:
+                call = jl.web_render_call(
+                    user_code=code, png_path=abs_path, html_path=html_abs, size=size, fit=fit
+                )
+                live_url = None
+            result = await session.julia.eval(call)
+            note_live_routes(session, result.output)
+            if result.error:
+                return f"ERROR: {result.error}"
+            return _finalize_web(
+                session,
+                png_abs=abs_path,
+                png_rel=rel_path,
+                html_rel=html_rel,
+                live_url=live_url,
+                caption=caption,
+                tool_call_id=tool_call_id,
+                slot=safe_slot,
+                source_code=code,
+                view=view,
+                size_px=_parse_size(result.output),
+                authored_px=_parse_size(result.output, jl.FIG_AUTHORED_MARKER),
+            )
+
+        open_window = window and session.open_windows
+        result = await session.julia.eval(
+            jl.render_call(
+                user_code=code,
+                abs_path=abs_path,
+                size=size,
+                dpi=dpi,
+                open_window=open_window,
+                window_key=safe_slot or plot_id,
+            )
+        )
+        if result.error:
+            return f"ERROR: {result.error}"
+
+        extra: list[str] = []
+        if safe_slot:
+            extra.append(f"slot={safe_slot}")
+        if size is not None:
+            extra.append(f"size={size[0]}x{size[1]}")
+        if open_window:
+            extra.append("opened window")
+        return _finalize(
+            session,
+            abs_path=abs_path,
+            rel_path=rel_path,
+            caption=caption,
+            tool_call_id=tool_call_id,
+            size=size,
+            dpi=dpi,
+            slot=safe_slot,
+            source_code=code,
+            view=view,
+            lead="saved plot to",
+            extra_parts=extra,
+        )
+
+    return plot_julia
+
+
+def make_recapture_tool(session: Session, *, surface: str | None = None):
+    artifacts_dir = session.output_dir / "artifacts"
+    web = (surface or session.surface) == "web"
+
+    @tool
+    async def recapture_plot(
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        caption: str = "",
+        view: bool = True,
+        slot: str | None = None,
+    ) -> str | list[dict[str, Any]]:
+        """Snapshot an open plot at its CURRENT view and show it to you.
+
+        Use this when the user has rotated/zoomed/stepped a live plot (a native
+        window, or a live view in the web canvas) and asks what it looks like now.
+        It captures that plot at its current camera/timestep and (by default)
+        returns the downscaled image so you can describe the new view.
+
+        `slot` selects **which** plot: the slot you gave it in `plot_julia`. Omit
+        it for the most recently opened/refreshed one. You can't drive the plot
+        (advance its timestep yourself) or resize it; you only snapshot what the
+        user currently has, at the size they have it. Errors if there's no such
+        open plot.
+
+        Args:
+            caption: Optional caption shown in the transcript.
+            view: Return the image so you can see it (default true; that's the point).
+            slot: Which plot to recapture (its slot); omit for the most recent.
+
+        Returns:
+            A confirmation string, or, when `view`, a text+image content list.
+        """
+        safe_slot, slot_err = _resolve_slot(slot)
+        if slot_err:
+            return slot_err
+        rel_path = f"artifacts/recapture-{uuid.uuid4().hex[:12]}.png"
+        abs_path = session.output_dir / rel_path
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        if web:
+            # The browser owns the current view, so the snapshot comes from the plot's
+            # connected live session.
+            call = jl.web_recapture_call(slot=safe_slot or "", png_path=abs_path)
+        else:
+            call = jl.recapture_call(key=safe_slot or "", png_path=abs_path)
+        result = await session.julia.eval(call)
+        if result.error:
+            return f"ERROR: {result.error}"
+        if jl.WEB_RECAPTURE_REFUSED in result.output:
+            return f"ERROR: {result.output.split(jl.WEB_RECAPTURE_REFUSED, 1)[1].strip()}"
+
+        extra: list[str] = []
+        if safe_slot:
+            extra.append(f"plot={safe_slot}" if web else f"window={safe_slot}")
+        return _finalize(
+            session,
+            abs_path=abs_path,
+            rel_path=rel_path,
+            caption=caption,
+            tool_call_id=tool_call_id,
+            size=None,
+            dpi=None,
+            slot=None,
+            source_code=f"recapture_plot(slot={slot!r})" if slot else "recapture_plot()",
+            view=view,
+            lead="recaptured view to",
+            extra_parts=extra,
+            kind="snapshot",
+        )
+
+    return recapture_plot
+
+
+def make_close_plots_tool(session: Session, *, surface: str | None = None):
+    web = (surface or session.surface) == "web"
+
+    @tool
+    async def close_plots(slot: str | None = None) -> str:
+        """Close interactive plots (native windows, or live views in the web canvas).
+
+        Pass a `slot` to close that one plot; omit to close all of them. Use it
+        when the user asks to close/clear plots, or to tidy up a long session
+        (each live plot holds its data in memory until closed or superseded).
+
+        Args:
+            slot: The plot to close (its slot); omit to close all.
+
+        Returns:
+            A short confirmation.
+        """
+        safe_slot, slot_err = _resolve_slot(slot)
+        if slot_err:
+            return slot_err
+        make_call = jl.close_web_plots_call if web else jl.close_windows_call
+        result = await session.julia.eval(make_call(safe_slot or ""))
+        note_live_routes(session, result.output)
+        if result.error:
+            return f"ERROR: {result.error}"
+        return f"closed plot: {safe_slot}" if safe_slot else "closed all plots"
+
+    return close_plots

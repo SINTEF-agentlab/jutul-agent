@@ -14,9 +14,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from jutul_agent.simulators import env_setup
-from jutul_agent.simulators.base import SimulatorAdapter
-from jutul_agent.workspace import WARM_SOURCE_MARKER, workspace_julia_env
+from makker.simulators import env_setup
+from makker.simulators.base import SimulatorAdapter
+from makker.workspace import WARM_SOURCE_MARKER, workspace_julia_env
 
 
 def _adapter(module_dir: Path) -> SimulatorAdapter:
@@ -102,7 +102,7 @@ def test_workspace_env_lock_serializes_processes(tmp_path: Path) -> None:
     script = (
         "from pathlib import Path\n"
         "import sys\n"
-        "from jutul_agent.simulators.env_setup import _workspace_env_lock\n"
+        "from makker.simulators.env_setup import _workspace_env_lock\n"
         "Path(sys.argv[2]).touch()\n"
         "with _workspace_env_lock(Path(sys.argv[1])):\n"
         "    Path(sys.argv[3]).touch()\n"
@@ -154,7 +154,7 @@ def test_windows_lock_retries_only_contention(
         with env_setup._workspace_env_lock(tmp_path):
             pass
         assert calls == [1, 1, 2]
-    assert (tmp_path / ".jutul-agent" / "env-prepare.lock").read_bytes() == b""
+    assert (tmp_path / ".makker" / "env-prepare.lock").read_bytes() == b""
 
 
 def _make_template(tmp_path: Path) -> Path:
@@ -741,7 +741,7 @@ def _stale_env(tmp_path: Path, *, template_compat: str, manifest: str) -> tuple[
 
 
 def test_compat_ranges_follow_julia_caret_semantics() -> None:
-    from jutul_agent.workspace import compat_ranges
+    from makker.workspace import compat_ranges
 
     assert compat_ranges("0.4") == [((0, 4, 0), (0, 5, 0))]
     assert compat_ranges("^0.5.4") == [((0, 5, 4), (0, 6, 0))]
@@ -754,7 +754,7 @@ def test_compat_ranges_follow_julia_caret_semantics() -> None:
 
 
 def test_outdated_env_packages_reports_versions_outside_the_template(tmp_path: Path) -> None:
-    from jutul_agent.workspace import outdated_env_packages
+    from makker.workspace import outdated_env_packages
 
     module_dir, workspace = _stale_env(
         tmp_path,
@@ -768,7 +768,7 @@ def test_outdated_env_packages_reports_versions_outside_the_template(tmp_path: P
 
 def test_a_dev_linked_package_leaves_the_versions_to_the_developer(tmp_path: Path) -> None:
     """A local checkout's own bounds may differ from the template's on purpose."""
-    from jutul_agent.workspace import newer_env_packages, outdated_env_packages
+    from makker.workspace import newer_env_packages, outdated_env_packages
 
     module_dir, workspace = _stale_env(
         tmp_path,
@@ -786,7 +786,7 @@ def test_a_dev_linked_package_leaves_the_versions_to_the_developer(tmp_path: Pat
 
 
 def test_newer_packages_are_told_apart_from_outdated_ones(tmp_path: Path) -> None:
-    from jutul_agent.workspace import newer_env_packages, outdated_env_packages
+    from makker.workspace import newer_env_packages, outdated_env_packages
 
     module_dir, workspace = _stale_env(
         tmp_path,
@@ -862,8 +862,8 @@ def test_prepare_workspace_env_refuses_an_outdated_simulator(
         )
     message = str(raised.value)
     assert "Foo 0.3.12" in message and "requires Foo 0.4" in message
-    assert "jutul-agent upgrade" in message
-    assert "jutul-agent init --force --sim test" in message
+    assert "makker upgrade" in message
+    assert "makker init --force --sim test" in message
 
 
 def test_upgrade_env_raises_compat_and_updates_in_place(
@@ -909,5 +909,5 @@ def test_upgrade_env_restores_the_project_when_the_update_fails(
 
     with pytest.raises(env_setup.EnvSetupError) as raised:
         env_setup.upgrade_env(_adapter(module_dir), workspace, env, "test")
-    assert "jutul-agent init --force --sim test" in str(raised.value)
+    assert "makker init --force --sim test" in str(raised.value)
     assert (env / "Project.toml").read_text(encoding="utf-8") == before

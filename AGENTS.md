@@ -1,8 +1,8 @@
-# jutul-agent
+# makker
 
 ## Purpose
 
-jutul-agent is an assistant for Julia scientific simulation work on the Jutul
+makker is an assistant for Julia scientific simulation work on the Jutul
 ecosystem, built on Deep Agents.
 
 ## Working rules
@@ -67,18 +67,18 @@ and check on staged `.py` files. To verify the whole tree like CI:
 
 ## Important paths
 
-- `src/jutul_agent/paths.py`: the three runtime anchors (`PACKAGE_ROOT`
+- `src/makker/paths.py`: the three runtime anchors (`PACKAGE_ROOT`
   (install), `workspace_root()` (CWD), `state_home()` (sessions)) and the path
   policy (`resolve_in_workspace`, `is_host_path`), the one place that maps
   agent-visible paths to real files.
-- `src/jutul_agent/workspace.py`: workspace config
-  (`.jutul-agent/config.toml`), simulator auto-detect, Julia-env bootstrap.
-- `src/jutul_agent/session.py`: `Session`, the unit of work for one
+- `src/makker/workspace.py`: workspace config
+  (`.makker/config.toml`), simulator auto-detect, Julia-env bootstrap.
+- `src/makker/session.py`: `Session`, the unit of work for one
   invocation.
-- `src/jutul_agent/models.py`: provider metadata and the model catalog
-  discovery. `src/jutul_agent/display.py`: display detection and Xvfb
+- `src/makker/models.py`: provider metadata and the model catalog
+  discovery. `src/makker/display.py`: display detection and Xvfb
   management for headless plotting.
-- `src/jutul_agent/agent/builder.py`: deepagents wiring (composite backend,
+- `src/makker/agent/builder.py`: deepagents wiring (composite backend,
   HarnessProfile registration, `build_agent` entry point). Custom tools sit
   alongside (`tools.py`, `plot_julia.py`, `memory.py`, `approval.py`,
   `turns.py`, and `added_dirs.py`, which records `/add-dir` folders);
@@ -86,33 +86,33 @@ and check on staged `.py` files. To verify the whole tree like CI:
   approval prompt, and transcript. The Julia-side plot capture lives in the
   `julia_runtime/JutulAgent` package. The full system prompt is assembled in
   `prompts.py` (each rule stated once).
-- `src/jutul_agent/simulators/`: adapter dataclass, registry, env bootstrap +
+- `src/makker/simulators/`: adapter dataclass, registry, env bootstrap +
   launch-time preparation (`env_setup.prepare_workspace_env`), shared skills,
   and one folder per simulator (see below).
-- `src/jutul_agent/julia/`: the `JuliaSession` Protocol (`session.py`) and the
+- `src/makker/julia/`: the `JuliaSession` Protocol (`session.py`) and the
   Julia toolchain checks (`requirements.py`).
-- `src/jutul_agent/juliakernel/`: the backend, a self-contained, supervised
+- `src/makker/juliakernel/`: the backend, a self-contained, supervised
   Julia runtime (`kernel.py` + stdlib-only `server.jl`) with live output and
   SIGINT interrupt. Splittable into a standalone package.
-- `src/jutul_agent/trace/`: SQLite event log and `TraceRecorder` middleware.
-- `src/jutul_agent/transcript/`: renderers that consume a trace
+- `src/makker/trace/`: SQLite event log and `TraceRecorder` middleware.
+- `src/makker/transcript/`: renderers that consume a trace
   (HTML transcript, markdown transcript, investigation report).
-- `src/jutul_agent/approval_preview.py`: the approval card body every surface
+- `src/makker/approval_preview.py`: the approval card body every surface
   renders for a pending tool call.
-- `src/jutul_agent/session_host.py`: the one session bootstrap and turn-policy
+- `src/makker/session_host.py`: the one session bootstrap and turn-policy
   loop behind every front end.
-- `src/jutul_agent/interfaces/`: `cli`, the Textual `tui`, and the `server`
+- `src/makker/interfaces/`: `cli`, the Textual `tui`, and the `server`
   (FastAPI REST + per-session WebSocket). The browser UI is a React + TypeScript
   app in `server/webapp/` (see its README), built into `server/web_dist/`
   (committed and shipped, so an install needs no Node). `server/updates.py`
   runs an update started from the browser: `uv tool upgrade`, the env step of
-  `jutul-agent upgrade`, then a restart of the server into the new version.
+  `makker upgrade`, then a restart of the server into the new version.
 - `tests/`: end-to-end, chat, CLI, and tool coverage. `tests/integration/`
   needs Julia; `tests/live/` needs an LLM provider key.
 
 ## Per-simulator layout
 
-Each simulator lives under `src/jutul_agent/simulators/<name>/` and owns
+Each simulator lives under `src/makker/simulators/<name>/` and owns
 exactly three things:
 
 - `adapter.py`: constructs the `SimulatorAdapter`. Set
@@ -123,7 +123,7 @@ exactly three things:
   `@recompile_invalidations` + `@compile_workload` bakes that simulator's
   GLMakie-aware solve/plot into the precompile cache, so the first solve is fast).
   The shared, sim-agnostic `JutulAgent` package (figure capture, ensemble helpers,
-  generic-Makie warm-up) has a single source in `src/jutul_agent/julia_runtime/` and
+  generic-Makie warm-up) has a single source in `src/makker/julia_runtime/` and
   is copied into the env at bootstrap (also a relative `[sources]` dep). The
   `Manifest.toml` is generated on instantiate (gitignored). The whole `julia_env/`
   folder is copied into a workspace on bootstrap, so the relative `[sources]` paths
@@ -145,7 +145,7 @@ silently at runtime. The contacts:
 - `agent/tools.py`: reads `langgraph.pregel._tools._tool_call_writer`
   (ContextVar) to stream live Julia output as tool-output deltas.
   Import-guarded: if it moves, streaming silently disables.
-- `agent/turns.py` + `jutul_agent/lab/fakes.py`: consume the v3
+- `agent/turns.py` + `makker/lab/fakes.py`: consume the v3
   `astream_events` typed projections (`run.messages` / `run.tool_calls` /
   `run.interrupts` / `run.output`); the fakes mirror that shape, so a
   projection change shows up as test failures.

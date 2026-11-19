@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from jutul_agent.trace.messages import content_to_str, reasoning_to_str
+from makker.trace.messages import content_to_str, reasoning_to_str
 
 
 def test_content_to_str_plain_string() -> None:

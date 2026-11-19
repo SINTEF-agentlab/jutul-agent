@@ -13,10 +13,10 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 
-from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
-from jutul_agent.paths import set_state_home, set_workspace_root
-from jutul_agent.session import Session
-from jutul_agent.simulators.base import SimulatorAdapter
+from makker.lab.fakes import FakeJulia, make_fake_adapter
+from makker.paths import set_state_home, set_workspace_root
+from makker.session import Session
+from makker.simulators.base import SimulatorAdapter
 
 load_dotenv()
 
@@ -35,7 +35,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 @pytest.fixture(autouse=True)
 def _reset_workspace_overrides(tmp_path: Path, monkeypatch):
-    from jutul_agent import paths
+    from makker import paths
 
     # Use tmp_path as workspace so session output dirs stay isolated and
     # don't pollute the project root.  Tests that need a specific workspace
@@ -43,7 +43,7 @@ def _reset_workspace_overrides(tmp_path: Path, monkeypatch):
     paths.set_workspace_root(tmp_path)
     paths.set_state_home(tmp_path / "state")
     # Suppress OS file-open calls (image viewer, browser) during tests.
-    monkeypatch.setenv("JUTUL_AGENT_NO_OPEN", "1")
+    monkeypatch.setenv("MAKKER_NO_OPEN", "1")
     yield
     paths.set_workspace_root(None)
     paths.set_state_home(None)
@@ -61,7 +61,7 @@ def _offline_titling(monkeypatch):
     async def _no_title(model_id, conversation):
         return None
 
-    monkeypatch.setattr("jutul_agent.agent.titling.generate_session_title", _no_title)
+    monkeypatch.setattr("makker.agent.titling.generate_session_title", _no_title)
 
 
 @pytest.fixture

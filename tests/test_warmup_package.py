@@ -20,9 +20,9 @@ import inspect
 import re
 import tomllib
 
-from jutul_agent.agent import plot_julia_src
-from jutul_agent.simulators import registry
-from jutul_agent.workspace import SHARED_JULIA_PACKAGE_DIRNAME, shared_julia_package_path
+from makker.agent import plot_julia_src
+from makker.simulators import registry
+from makker.workspace import SHARED_JULIA_PACKAGE_DIRNAME, shared_julia_package_path
 
 _SHARED = "JutulAgent"
 _SHARED_CORE_FILES = ("src/JutulAgent.jl", "src/plots.jl", "src/ensemble.jl")

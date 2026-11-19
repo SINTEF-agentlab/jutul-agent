@@ -34,7 +34,7 @@ test suite.
 
 ## Fakes, not mocks
 
-`jutul_agent.lab.fakes` provides hand-written fakes (a fake simulator
+`makker.lab.fakes` provides hand-written fakes (a fake simulator
 adapter, a fake Julia session that returns scripted results, scripted
 agents) instead of patch-based mocks. Tests build real objects (`Session`,
 backends, tools) around a fake edge, so they exercise real wiring and

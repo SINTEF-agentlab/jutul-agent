@@ -6,14 +6,14 @@ from pathlib import Path
 
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
-from jutul_agent.agent.turns import (
+from makker.agent.turns import (
     TurnReasoningDelta,
     TurnRunner,
     TurnTextDelta,
     TurnTextEnd,
     TurnToolEvent,
 )
-from jutul_agent.lab.fakes import (
+from makker.lab.fakes import (
     ScriptedV3Agent,
     interrupt_agent,
     tool_call_events,
@@ -21,7 +21,7 @@ from jutul_agent.lab.fakes import (
     v3_tool_event,
     v3_values_event,
 )
-from jutul_agent.trace import TraceLog
+from makker.trace import TraceLog
 
 
 def _message_agent() -> ScriptedV3Agent:

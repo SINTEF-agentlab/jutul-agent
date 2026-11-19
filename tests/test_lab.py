@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.lab.scenarios import all_scenarios, get
-from jutul_agent.lab.tui import capture, normalize_screen, svg_to_text
+from makker.lab.scenarios import all_scenarios, get
+from makker.lab.tui import capture, normalize_screen, svg_to_text
 
 # Plain-text TUI captures (regenerated via the lab); distinct from the
 # syrupy .ambr snapshots under __snapshots__, which `--snapshot-update` owns.
@@ -35,7 +35,7 @@ def test_capture_writes_svg_text_and_transcript(tmp_path):
     svg = paths["svg"].read_text(encoding="utf-8")
     assert "<svg" in svg
     text = paths["txt"].read_text(encoding="utf-8")
-    assert "jutul-agent" in text  # the header rendered
+    assert "makker" in text  # the header rendered
     assert "Vector" in text  # the tool output reached the screen
     assert paths["transcript"].read_text(encoding="utf-8").strip()
 
@@ -50,7 +50,7 @@ def test_scenario_renders_and_matches_snapshot(scenario, tmp_path):
     paths = capture(scenario, tmp_path)
     assert paths["svg"].stat().st_size > 0
     screen = normalize_screen(paths["txt"].read_text(encoding="utf-8"))
-    assert "jutul-agent" in screen
+    assert "makker" in screen
 
     golden = _SNAPSHOTS / f"{scenario.name}.txt"
     if os.environ.get("JUTUL_LAB_UPDATE"):
@@ -67,7 +67,7 @@ def test_scenario_renders_and_matches_snapshot(scenario, tmp_path):
 
 
 def test_parse_importtime_rolls_up_by_package():
-    from jutul_agent.lab.profile_startup import parse_importtime
+    from makker.lab.profile_startup import parse_importtime
 
     stderr = (
         "import time: self [us] | cumulative | imported package\n"
@@ -83,7 +83,7 @@ def test_parse_importtime_rolls_up_by_package():
 
 
 def test_measure_phases_returns_timings():
-    from jutul_agent.lab.profile_startup import measure_phases
+    from makker.lab.profile_startup import measure_phases
 
     phases = measure_phases(repeat=1)
     assert set(phases) == {"session_create", "build_agent"}
@@ -91,10 +91,10 @@ def test_measure_phases_returns_timings():
 
 
 def test_profile_turn_surfaces_our_functions():
-    from jutul_agent.lab.profile_turn import profile_turn
+    from makker.lab.profile_turn import profile_turn
 
     rows = profile_turn("answer", repeat=1)
-    assert rows, "the turn profiler should find some jutul-agent functions"
+    assert rows, "the turn profiler should find some makker functions"
     assert all(r.tottime >= 0 and r.calls > 0 for r in rows)
     # It reports our code, not the lab itself.
     assert all(not r.function.startswith("lab/") for r in rows)

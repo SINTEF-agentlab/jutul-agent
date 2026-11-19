@@ -1,0 +1,978 @@
+"""Set up and reconcile a workspace's Julia environment.
+
+Each simulator ships a template env at ``simulators/<name>/julia_env/``
+(already declaring the simulator's package dependencies). Bootstrap = copy
+the template into the workspace, optionally ``Pkg.develop`` a user-provided
+source path, optionally ``Pkg.instantiate`` to precompile.
+:func:`prepare_workspace_env` is the launch-time entry point that makes a
+missing or drifted env ready, best-effort, before the kernel starts.
+
+A workspace that already has its own root ``Project.toml`` is left alone:
+the user owns that env, and we only run dev and instantiate on request.
+"""
+
+from __future__ import annotations
+
+import errno
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import tomllib
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from pathlib import Path
+
+import tomli_w
+
+from makker.paths import workspace_root
+from makker.simulators.base import SimulatorAdapter
+from makker.workspace import (
+    PRECOMPILE_MARKER,
+    WARM_SOURCE_MARKER,
+    WorkspaceBootstrapError,
+    bootstrap_julia_env,
+    dependency_source_is_current,
+    ensure_env_template_stamp,
+    env_declares_warm_packages,
+    env_precompile_is_current,
+    env_template_drifted,
+    mark_dependency_source,
+    mark_env_precompiled,
+    mark_warm_source,
+    newer_env_packages,
+    outdated_env_packages,
+    recopy_warm_sources,
+    resolve_julia_project,
+    sync_julia_env_with_template,
+    sync_julia_project_with_dependencies,
+    user_owns_root_project,
+    warm_source_is_current,
+    workspace_dir,
+    workspace_is_simulator_source,
+    write_env_template_stamp,
+)
+
+
+class EnvSetupError(RuntimeError):
+    pass
+
+
+class EnvOutdatedError(EnvSetupError):
+    """The env resolved simulator packages older than this install supports.
+
+    ``outdated`` lists ``(package, resolved version, required compat)``, so a front
+    end can offer the update instead of only quoting the commands.
+    """
+
+    def __init__(self, message: str, outdated: list[tuple[str, str, str]]) -> None:
+        super().__init__(message)
+        self.outdated = outdated
+
+
+def _info(msg: str) -> None:
+    """Print a progress line with uvicorn's own "INFO:" console prefix.
+
+    Env setup runs both from the CLI and inline before the web server starts;
+    matching uvicorn's format (and its stderr stream) keeps these progress
+    lines visually consistent with its own startup log lines instead of
+    reading as unrelated stray output when interleaved on the console.
+    """
+    print(f"INFO:     {msg}", file=sys.stderr, flush=True)
+
+
+def is_workspace_env_ready(workspace: Path | None = None) -> bool:
+    """A workspace env is ready when its resolved project has a Project.toml."""
+
+    project = resolve_julia_project(workspace)
+    return (project / "Project.toml").exists()
+
+
+def manifest_has_package(julia_project: Path, package: str) -> bool:
+    """True if the env's ``Manifest.toml`` actually resolves ``package``.
+
+    A ``Project.toml`` can list a dependency that the manifest never resolved
+    (deps edited, or a template merged, without a follow-up ``Pkg.resolve`` /
+    ``Pkg.instantiate``). Such a package is *declared* but not installed, and
+    ``using <package>`` then fails at runtime with "is required but does not
+    seem to be installed", even though ``makker doctor``'s Julia-runs check
+    passes. Inspecting the manifest catches that before launch.
+    """
+
+    manifest = julia_project / "Manifest.toml"
+    if not manifest.exists():
+        return False
+    try:
+        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    deps = data.get("deps")
+    if isinstance(deps, dict):  # manifest format 2.0: [[deps.Pkg]]
+        return package in deps
+    # format 1.0: package sections are top-level tables
+    return package in data
+
+
+def project_has_package(julia_project: Path, package: str) -> bool:
+    """True if ``package`` is a direct dependency in the env's Project.toml."""
+
+    proj = julia_project / "Project.toml"
+    if not proj.exists():
+        return False
+    try:
+        data = tomllib.loads(proj.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    return package in (data.get("deps") or {})
+
+
+# One tab-separated "JPKG" line per resolved package: name, on-disk source dir,
+# and whether it is a `Pkg.develop` checkout (writable) rather than a registry
+# install. Run through a Julia subprocess to resolve installed sources without
+# loading them; the JPKG tag lets the parser skip any unrelated output
+# interleaved on stdout.
+ENUMERATE_PACKAGES_CODE = (
+    "import Pkg\n"
+    "for (_u, _i) in Pkg.dependencies()\n"
+    "    _i.source === nothing && continue\n"
+    '    println("JPKG\\t", _i.name, "\\t", _i.source, "\\t", _i.is_tracking_path ? 1 : 0)\n'
+    "end\n"
+)
+
+
+def parse_enumerated_packages(output: str) -> dict[str, tuple[Path, bool]]:
+    """Parse ``ENUMERATE_PACKAGES_CODE`` output to ``{name: (source_dir, is_dev)}``.
+
+    Lines without the JPKG tag and packages whose source dir no longer exists
+    are skipped.
+    """
+
+    sources: dict[str, tuple[Path, bool]] = {}
+    for line in output.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 4 or parts[0] != "JPKG":
+            continue
+        _, name, path, is_dev = (p.strip() for p in parts)
+        candidate = Path(path)
+        if name and candidate.is_dir():
+            sources[name] = (candidate, is_dev == "1")
+    return sources
+
+
+def resolve_env_package_sources(julia_project: Path) -> dict[str, tuple[Path, bool]]:
+    """Source dir + dev flag of every package the env resolves.
+
+    Enumerates ``Pkg.dependencies()`` (reads the manifest, no loading/compiling)
+    so the agent can browse the simulator, its dependencies, and anything it
+    later installs at their real ``pkgdir`` paths. Returns ``{name: (source_dir,
+    is_dev)}`` where ``is_dev`` marks a ``Pkg.develop`` checkout (writable).
+    Best-effort: an unresolved manifest, missing Julia, or a vanished path
+    yields ``{}``.
+    """
+
+    if shutil.which("julia") is None:
+        return {}
+    try:
+        result = subprocess.run(
+            [
+                "julia",
+                f"--project={julia_project}",
+                "--startup-file=no",
+                "-e",
+                ENUMERATE_PACKAGES_CODE,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    if result.returncode != 0:
+        return {}
+    return parse_enumerated_packages(result.stdout)
+
+
+# Install deps without precompiling: auto-precompile is off so one package's
+# precompile error can't abort the download/resolve step.
+_INSTANTIATE = 'withenv("JULIA_PKG_PRECOMPILE_AUTO" => "0") do; Pkg.instantiate(); end'
+_UPDATE = 'withenv("JULIA_PKG_PRECOMPILE_AUTO" => "0") do; Pkg.update(); end'
+# A registry refresh needs the network; failing it must not block offline use,
+# where the local registry copy is the freshest knowledge available anyway.
+_REGISTRY_UPDATE = (
+    "try; Pkg.Registry.update(); catch e; "
+    '@warn "Registry update failed (offline?); resolving against the local copy" '
+    "exception=e; end"
+)
+# Precompile everything that can be, best-effort. GLMakie is a default dep but can
+# fail to precompile on a headless box with no GL/display (Makie issue #2791); that
+# must not break the env, so we swallow the rest (plotting then errors at use).
+_PRECOMPILE = (
+    "try; Pkg.precompile(); catch e; "
+    '@warn "Some packages failed to precompile (continuing; GL plotting may be '
+    'unavailable here)" exception=e; end'
+)
+_RESILIENT_INSTANTIATE = [_INSTANTIATE, _PRECOMPILE]
+
+
+def bootstrap_workspace(
+    adapter: SimulatorAdapter,
+    *,
+    workspace: Path | None = None,
+    source_path: Path | None = None,
+    precompile: bool = False,
+    force: bool = False,
+) -> Path:
+    """Prepare the workspace's Julia env for ``adapter``.
+
+    Steps:
+      1. If the workspace lacks both a root ``Project.toml`` and a
+         workspace-local env, copy the template from the install.
+         With ``force``, replace an existing workspace-local env first.
+      2. If ``source_path`` is set, ``Pkg.develop(path=source_path)`` in
+         the workspace env, overriding managed simulator compat (safe to re-run).
+      3. If ``precompile``, ``Pkg.instantiate()`` then ``Pkg.precompile()``. The
+         plotting stack is warmed by the env's ``JutulAgent`` package,
+         whose ``@compile_workload`` bakes the Makie save path into the
+         precompile cache (run under xvfb here so the GL bake has a context).
+
+    Returns the path to the resolved Julia project.
+    """
+    ws = workspace if workspace is not None else workspace_root()
+    with _workspace_env_lock(ws):
+        return _bootstrap_workspace_unlocked(
+            adapter, workspace=ws, source_path=source_path, precompile=precompile, force=force
+        )
+
+
+def _bootstrap_workspace_unlocked(
+    adapter: SimulatorAdapter,
+    *,
+    workspace: Path,
+    source_path: Path | None = None,
+    precompile: bool = False,
+    force: bool = False,
+) -> Path:
+
+    try:
+        bootstrap_julia_env(adapter.julia_env_template_path, workspace=workspace, force=force)
+    except WorkspaceBootstrapError as exc:
+        raise EnvSetupError(str(exc)) from exc
+
+    project = resolve_julia_project(workspace)
+
+    # If the workspace itself is the simulator source, skip Pkg.develop:
+    # the user is editing the package in place.
+    is_source = workspace_is_simulator_source(adapter.primary_package, workspace)
+
+    cmds: list[str] = ["using Pkg"]
+    if source_path is not None and not is_source:
+        cmds.append(f'Pkg.develop(path=raw"{source_path}")')
+    if precompile:
+        cmds.extend(_RESILIENT_INSTANTIATE)
+
+    with _local_source_compat(adapter, workspace, project, source_path):
+        if len(cmds) > 1:
+            _run_pkg(project, cmds)
+    if precompile:
+        # Catch a broken/half-resolved manifest here (Julia fails to boot in the
+        # env) instead of at launch. The kernel server is stdlib-only, so a
+        # trivial eval is the right probe.
+        verify_julia_runs(project)
+        mark_env_precompiled(project)  # so launch skips a redundant bake
+
+    return project
+
+
+@contextmanager
+def _local_source_compat(
+    adapter: SimulatorAdapter, workspace: Path, project: Path, source_path: Path | None
+) -> Iterator[None]:
+    """Let a simulator checkout's own compat decide; roll back on failure.
+
+    The template bounds the simulator and the packages it shares with makker
+    (Jutul, say) to the released versions this install was made for. A checkout can
+    be ahead of those: an unreleased JutulDarcy that needs a newer Jutul. So drop
+    the template's bound on the simulator and on every package the checkout itself
+    declares compat for, and let the checkout's bounds govern.
+    """
+    if source_path is None or user_owns_root_project(workspace):
+        yield
+        return
+
+    project_file = project / "Project.toml"
+    before = project_file.read_bytes()
+    data = tomllib.loads(before.decode("utf-8"))
+    package = adapter.primary_package
+    compat = data.get("compat", {})
+    if not compat:
+        yield
+        return
+
+    # Only relax compat for a checkout of the intended simulator.
+    try:
+        source = tomllib.loads((source_path / "Project.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise EnvSetupError(f"Cannot read --source-path {source_path}/Project.toml: {exc}") from exc
+    if source.get("name") != package or source.get("uuid") != data.get("deps", {}).get(package):
+        raise EnvSetupError(
+            f"--source-path {source_path} must be a {package} checkout with its UUID"
+        )
+    source_compat = source.get("compat", {})
+    relaxed = [
+        name for name in compat if name == package or (name in source_compat and name != "julia")
+    ]
+    if not relaxed:
+        yield
+        return
+
+    backups = {project_file: before, **{p: p.read_bytes() for p in project.glob("Manifest*.toml")}}
+    dropped = {name: compat.pop(name) for name in relaxed}
+    project_file.write_text(tomli_w.dumps(data), encoding="utf-8")
+    bounds = ", ".join(f"{name} {spec!r}" for name, spec in dropped.items())
+    _info(f"Using local {package} checkout; its own compat replaces the managed {bounds}.")
+    try:
+        yield
+    except BaseException:
+        for path in project.glob("Manifest*.toml"):
+            if path not in backups:
+                path.unlink()
+        for path, contents in backups.items():
+            path.write_bytes(contents)
+        raise
+
+
+def precompile_env(project: Path) -> None:
+    """Instantiate and precompile the env in place; bakes the warm-up packages.
+
+    Idempotent and quick when the env is already precompiled. Streams Julia's
+    progress (not captured) so a real bake reads as work in progress, not a hang.
+    Precompile is best-effort (a headless GLMakie failure is warned, not fatal);
+    a hard instantiate failure raises ``EnvSetupError``.
+    """
+    _run_pkg(project, ["using Pkg", _INSTANTIATE, _PRECOMPILE], echo=False)
+
+
+def julia_probe(project: Path, *, timeout: float = 600.0) -> tuple[bool, str]:
+    """Run a trivial eval in ``project``; ``(ok, output tail)`` for diagnosis.
+
+    The kernel's server is stdlib-only, so the real failure mode is a broken or
+    half-resolved manifest. One probe shared by env verification and doctor.
+    """
+    argv = ["julia", f"--project={project}", "--startup-file=no", "-e", "print(1 + 1)"]
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    if result.returncode == 0:
+        return True, ""
+    return False, "\n".join((result.stderr or result.stdout or "").strip().splitlines()[-12:])
+
+
+def verify_julia_runs(project: Path) -> None:
+    """Confirm Julia boots cleanly in ``project``; raises ``EnvSetupError`` if not."""
+
+    _info("Verifying Julia runs in the env...")
+    ok, tail = julia_probe(project)
+    if not ok:
+        detail = f" Julia said:\n{tail}" if tail else ""
+        raise EnvSetupError(f"Julia failed to run in {project}.{detail}")
+
+
+def resolve_and_instantiate(
+    project: Path, *, precompile: bool = True, capture: bool = False
+) -> None:
+    """Re-resolve the manifest and install deps.
+
+    Plain ``Pkg.instantiate`` errors if a dep appears in Project.toml but
+    not the Manifest.toml (e.g. after auto-syncing new deps in). Running
+    ``Pkg.resolve`` first updates the manifest from Project.toml before
+    install.
+
+    ``Pkg.resolve`` assumes the General registry already exists and fails with
+    "no registries have been installed" on a fresh Julia depot (unlike
+    ``Pkg.instantiate``, ``resolve`` does not bootstrap it). So install General
+    first when none is reachable.
+
+    ``precompile=False`` installs without the (potentially minutes-long) precompile
+    bake, leaving it for ``init``; used at launch so a self-healing
+    sync doesn't block startup. ``capture=True`` hides Julia's output and folds a
+    failure into a short ``EnvSetupError`` instead of dumping a backtrace.
+    """
+
+    cmds = [
+        "using Pkg",
+        'isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General")',
+        "Pkg.resolve()",
+        _INSTANTIATE,
+    ]
+    if precompile:
+        cmds.append(_PRECOMPILE)
+    _run_pkg(project, cmds, capture=capture)
+
+
+def update_env(project: Path) -> None:
+    """Pull every dependency to the latest registry-compatible version.
+
+    Envs carry no version pins, so a fresh instantiate tracks upstream while
+    an existing manifest freezes whatever the registry served at build time.
+    ``Pkg.update`` re-resolves the manifest the way a fresh build would,
+    which is what keeps a cached env aligned with current releases. A failed
+    resolve raises ``EnvSetupError``: a stale env should be a loud stop, not
+    a silent result. Precompile is tolerant the same way the bootstrap is (a
+    headless GL failure warns), and the marker is refreshed so later
+    reconciles stay cheap.
+    """
+
+    _run_pkg(project, ["using Pkg", _REGISTRY_UPDATE, _UPDATE, _PRECOMPILE], echo=False)
+    mark_env_precompiled(project)
+
+
+def _run_pkg(project: Path, cmds: list[str], *, capture: bool = False, echo: bool = True) -> None:
+    if shutil.which("julia") is None:
+        raise EnvSetupError("`julia` is not on PATH")
+
+    argv = [
+        "julia",
+        f"--project={project}",
+        "--startup-file=no",
+        "-e",
+        "; ".join(cmds),
+    ]
+    # On headless Linux, wrap in xvfb so the GL-dependent precompile has an
+    # OpenGL context: the @compile_workload bakes save a real GLMakie figure
+    # (the shared JutulAgent package, and each JutulAgent<Sim> package's
+    # _warm_plot). This is the same wrap the runtime uses. A real display, or
+    # any non-Linux OS, skips it.
+    from makker.display import should_wrap_xvfb
+
+    if should_wrap_xvfb():
+        argv = ["xvfb-run", "-a", "-s", "-screen 0 1280x1024x24", *argv]
+
+    # Precompiling this env is one of the two places a machine can run out of
+    # memory with nothing to show for it (the image build is the other), so it
+    # runs under the same memory-judged ceiling.
+    from makker.julia.precompile import julia_environment
+    from makker.juliakernel.kernel import describe_exit
+
+    env = julia_environment()
+
+    if capture:
+        # Best-effort callers (the launch-time self-heal) want a quiet run and a
+        # short error, not a page of Julia backtrace on the terminal.
+        result = subprocess.run(argv, check=False, capture_output=True, text=True, env=env)
+        if result.returncode != 0:
+            tail = "\n".join((result.stdout + result.stderr).strip().splitlines()[-12:])
+            raise EnvSetupError(f"Julia failed ({describe_exit(result.returncode)}):\n{tail}")
+        return
+
+    if echo:
+        print(f"$ {' '.join(argv)}")
+    result = subprocess.run(argv, check=False, env=env)
+    if result.returncode != 0:
+        # Spelled out because the status that matters here carries no message of
+        # its own: a Julia killed for memory while precompiling prints nothing.
+        raise EnvSetupError(f"Julia failed ({describe_exit(result.returncode)}); see output above")
+
+
+# ---------------------------------------------------------------------------
+# Launch-time preparation.
+
+
+def prepare_workspace_env(
+    adapter: SimulatorAdapter,
+    *,
+    workspace: Path,
+    julia_project: Path,
+    sim_name: str | None = None,
+    dependencies: Sequence[Path] | None = None,
+) -> None:
+    """Make the workspace's Julia env ready for ``adapter`` before launch.
+
+    A missing env is bootstrapped from the template (raises ``EnvSetupError``
+    on failure). An existing one is reconciled best-effort, printing progress:
+
+    - A managed env built for a *different* simulator can't be merged; e.g.
+      BattMo and JutulDarcy pin incompatible shared deps; so it is rebuilt
+      from the active template. A user-owned root ``Project.toml`` is never
+      touched.
+    - New template deps are synced in (self-healing after a ``git pull``),
+      rolling back on an install conflict.
+    - A simulator that is declared but never resolved is installed (the
+      "doctor is happy but ``using <Sim>`` fails" trap).
+    - The warm-up precompile is baked when something changed, so the first
+      solve is fast without paying the bake on every launch.
+    """
+
+    with _workspace_env_lock(workspace):
+        _prepare_workspace_env_unlocked(adapter, workspace, julia_project, sim_name, dependencies)
+
+
+@contextmanager
+def _workspace_env_lock(workspace: Path):
+    """Serialize env preparation across sessions and processes sharing a workspace."""
+    path = workspace_dir(workspace) / "env-prepare.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+
+            lock.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno != errno.EACCES:
+                        raise
+                    time.sleep(0.2)
+            try:
+                yield
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _prepare_workspace_env_unlocked(
+    adapter: SimulatorAdapter,
+    workspace: Path,
+    julia_project: Path,
+    sim_name: str | None,
+    dependencies: Sequence[Path] | None,
+) -> None:
+    if not is_workspace_env_ready(workspace):
+        # Implicit auto-bootstrap (without dev or precompile; those are init's job).
+        _bootstrap_workspace_unlocked(adapter, workspace=workspace)
+    elif not user_owns_root_project(workspace):
+        foreign = _foreign_simulator(julia_project, adapter)
+        if foreign is not None:
+            _rebuild_managed_env(adapter, workspace, sim_name, reason=f"was built for {foreign}")
+            return
+
+        check_env_versions(adapter, workspace, julia_project, sim_name)
+        _sync_workspace_env(adapter, workspace, julia_project, sim_name)
+        _refresh_warm_sources(adapter, workspace, julia_project, sim_name)
+
+    _sync_project_dependencies(julia_project, dependencies)
+
+    _ensure_simulator_installed(adapter, workspace, julia_project, sim_name)
+    _ensure_env_warmed(workspace, julia_project, sim_name, dependencies)
+    _reconcile_env_template(adapter, workspace, julia_project)
+
+
+def check_env_versions(
+    adapter: SimulatorAdapter, workspace: Path, julia_project: Path, sim_name: str | None
+) -> None:
+    """Refuse a managed env whose simulator is older than this install supports.
+
+    The bundled skills are written for the template's simulator versions, so an env
+    resolved under an older makker would run with guidance its simulator does
+    not support. Its ``[compat]`` came from that older template, so nothing else
+    would ever move it forward. An env the user owns (a root ``Project.toml``, or
+    one passed with ``--julia-project``) is not checked.
+    """
+
+    if user_owns_root_project(workspace):
+        return
+    outdated = outdated_env_packages(julia_project, adapter.julia_env_template_path)
+    if not outdated:
+        return
+    found = ", ".join(f"{package} {version}" for package, version, _ in outdated)
+    needed = ", ".join(f"{package} {spec}" for package, _, spec in outdated)
+    sim = f" --sim {sim_name}" if sim_name else ""
+    raise EnvOutdatedError(
+        f"this workspace's Julia environment has {found}, but this version of "
+        f"makker requires {needed}. Update it, keeping packages added to it:\n"
+        f"    makker upgrade\n"
+        f"or rebuild it from scratch:\n    makker init --force{sim}",
+        outdated,
+    )
+
+
+def newer_simulator_note(
+    adapter: SimulatorAdapter, workspace: Path, julia_project: Path
+) -> str | None:
+    """A note when the env runs simulator packages newer than this install was made for.
+
+    Not a refusal: a simulator developer trying an unreleased or just-released
+    version lands here, and so does a folder a newer makker set up.
+    """
+
+    if user_owns_root_project(workspace):
+        return None
+    newer = newer_env_packages(julia_project, adapter.julia_env_template_path)
+    if not newer:
+        return None
+    found = ", ".join(f"{package} {version}" for package, version, _ in newer)
+    made_for = ", ".join(f"{package} {spec}" for package, _, spec in newer)
+    return (
+        f"this folder's Julia environment has {found}, newer than this version of "
+        f"makker was made for ({made_for}). It runs, but the bundled skills may "
+        "not cover what changed."
+    )
+
+
+def upgrade_env(
+    adapter: SimulatorAdapter, workspace: Path, julia_project: Path, sim_name: str | None
+) -> None:
+    """Move a managed env forward to the installed template, keeping added packages.
+
+    Brings in deps the template added, raises the ``[compat]`` of each package
+    outside the template's range to the template's, then updates and precompiles.
+    Other bounds stay, including the one a local simulator checkout removed. A
+    failed resolve restores the ``Project.toml`` and points at the clean rebuild.
+    """
+
+    with _workspace_env_lock(workspace):
+        project_toml = julia_project / "Project.toml"
+        before = project_toml.read_text(encoding="utf-8")
+        template = adapter.julia_env_template_path
+        try:
+            sync_julia_env_with_template(template, workspace=workspace)
+            data = tomllib.loads(project_toml.read_text(encoding="utf-8"))
+            outdated = outdated_env_packages(julia_project, template)
+            data.setdefault("compat", {}).update({pkg: spec for pkg, _, spec in outdated})
+            project_toml.write_text(tomli_w.dumps(data), encoding="utf-8")
+            _info(f"Upgrading the workspace's {adapter.display_name} environment...")
+            update_env(julia_project)
+        except (EnvSetupError, OSError, tomllib.TOMLDecodeError) as exc:
+            project_toml.write_text(before, encoding="utf-8")
+            rebuild = "makker init --force" + (f" --sim {sim_name}" if sim_name else "")
+            raise EnvSetupError(
+                f"could not upgrade the environment in place ({exc}). Rebuild it "
+                f"from scratch instead:\n    {rebuild}"
+            ) from exc
+        write_env_template_stamp(julia_project, template)
+
+
+def _foreign_simulator(julia_project: Path, adapter: SimulatorAdapter) -> str | None:
+    """Display name of another simulator whose package this env declares.
+
+    Shared Jutul-stack packages (e.g. JutulDarcy for Fimbul) are in the active
+    adapter's ``package_imports`` and don't count; only a different
+    simulator's primary package marks the env as built for something else.
+    """
+
+    from makker.simulators import registry
+
+    for name in registry.names():
+        other = registry.get(name)
+        if other.name == adapter.name or other.primary_package in adapter.package_imports:
+            continue
+        if project_has_package(julia_project, other.primary_package):
+            return other.display_name
+    return None
+
+
+def _rebuild_managed_env(
+    adapter: SimulatorAdapter, ws: Path, sim_name: str | None, *, reason: str
+) -> None:
+    """Replace the managed workspace env with the active simulator's template."""
+
+    _info(
+        f"Workspace Julia env {reason}; rebuilding it for {adapter.display_name} "
+        "from the template (one-time, can take a few minutes)..."
+    )
+    try:
+        _bootstrap_workspace_unlocked(adapter, workspace=ws, force=True, precompile=True)
+    except EnvSetupError as exc:
+        _warn_rebuild(adapter.primary_package, sim_name, exc)
+
+
+def _warn_rebuild(pkg: str, sim_name: str | None, exc: Exception) -> None:
+    rebuild = "makker init --force"
+    if sim_name:
+        rebuild += f" --sim {sim_name}"
+    print(
+        f"warning: could not prepare {pkg} ({exc}).\n"
+        f"         The agent may fail to load it. Rebuild the env with:\n"
+        f"             {rebuild}",
+        file=sys.stderr,
+    )
+
+
+def _sync_workspace_env(
+    adapter: SimulatorAdapter,
+    ws: Path,
+    julia_project: Path,
+    sim_name: str | None,
+) -> None:
+    """Bring the workspace env up to date with its simulator template, then install.
+
+    Self-healing: when an upstream change adds packages to the template (e.g. the
+    JutulAgent warm-up packages), ``sync_julia_env_with_template`` brings the deps,
+    plus the ``[sources]`` paths and package directories they need, into the env,
+    so a plain ``git pull`` + launch keeps working without a manual rebuild. We only
+    resolve and instantiate here so the install is quick; the warm-up bake runs
+    afterwards in :func:`_ensure_env_warmed` (with visible progress).
+
+    Best-effort: if the install fails (e.g. the new deps conflict with what is
+    pinned), we roll the Project.toml back so the env is no worse than before and
+    point at the clean-rebuild command. Either way we proceed to launch.
+    """
+
+    project_toml = julia_project / "Project.toml"
+    before = project_toml.read_text(encoding="utf-8") if project_toml.exists() else None
+
+    try:
+        added = sync_julia_env_with_template(
+            adapter.julia_env_template_path,
+            workspace=ws,
+        )
+    except Exception as exc:
+        print(f"warning: env sync failed: {exc}", file=sys.stderr)
+        return
+
+    if not added:
+        return
+
+    _info(f"Updating workspace env with {', '.join(added)} (added upstream)...")
+    try:
+        resolve_and_instantiate(julia_project, precompile=False, capture=True)
+        # The env now matches the current template; refresh the stamp so the
+        # drift check below doesn't then flag the very change we just healed.
+        write_env_template_stamp(julia_project, adapter.julia_env_template_path)
+    except EnvSetupError as exc:
+        if before is not None:
+            project_toml.write_text(before, encoding="utf-8")
+        rebuild = "makker init --force"
+        if sim_name:
+            rebuild += f" --sim {sim_name}"
+        print(
+            f"warning: could not install {', '.join(added)} — rolled the env back, so it "
+            "still works as before and the agent will start normally.\n"
+            f"         To rebuild it cleanly, run: {rebuild}\n"
+            f"         (cause: {exc})",
+            file=sys.stderr,
+        )
+
+
+def _sync_project_dependencies(julia_project: Path, dependencies: Sequence[Path] | None) -> None:
+    """Add capability-provided deps to the active Julia project.
+
+    Also re-resolves an already-declared dependency whose own ``Project.toml``
+    gained a dep the env's ``Manifest.toml`` doesn't know about yet: see
+    :func:`~makker.workspace.sync_julia_project_with_dependencies` for why
+    a plain ``Pkg.instantiate`` can't self-heal that case.
+    """
+
+    try:
+        changed = sync_julia_project_with_dependencies(
+            julia_project,
+            dependencies,
+            warn=lambda msg: print(f"warning: {msg}", file=sys.stderr),
+        )
+    except Exception as exc:
+        print(f"warning: capability dependency sync failed: {exc}", file=sys.stderr)
+        return
+
+    if changed:
+        _info(f"Updating Julia project dependencies ({', '.join(changed)})...")
+        try:
+            resolve_and_instantiate(julia_project, precompile=False, capture=True)
+        except EnvSetupError as exc:
+            print(
+                "Warning: could not resolve and instantiate the "
+                + f"capability dependencies: ({exc}). ",
+                file=sys.stderr,
+            )
+            return
+
+
+def _refresh_warm_sources(
+    adapter: SimulatorAdapter,
+    ws: Path,
+    julia_project: Path,
+    sim_name: str | None,
+) -> None:
+    """Re-copy the in-env JutulAgent runtime when the install's source has changed.
+
+    The warm packages are dev-pathed copies, only laid down at bootstrap, so after
+    a makker update an existing managed env keeps the old JutulAgent until a
+    manual rebuild. We detect that by fingerprint, re-copy the packages, and
+    re-resolve so a new in-package dependency installs; the bake re-runs in
+    :func:`_ensure_env_warmed` because the re-copy dropped the precompile marker.
+    The env is marked current only after a successful resolve, so a conflict (which
+    we warn about and launch through) retries next launch.
+    """
+
+    template = adapter.julia_env_template_path
+    if warm_source_is_current(julia_project, template):
+        return
+    with tempfile.TemporaryDirectory(prefix="warm-source-", dir=julia_project.parent) as temp:
+        backup = Path(temp)
+        env_root = julia_project.resolve()
+        targets = _warm_source_targets(env_root)
+        for target in targets:
+            saved = backup / target.relative_to(env_root)
+            if target.is_dir():
+                shutil.copytree(target, saved)
+            elif target.exists():
+                saved.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, saved)
+
+        try:
+            if not recopy_warm_sources(julia_project, template):
+                return  # user-owned env (no [sources]); nothing to refresh
+            _info("Updating the in-env JutulAgent runtime (makker was updated)…")
+            resolve_and_instantiate(julia_project, precompile=False, capture=True)
+        except (EnvSetupError, OSError) as exc:
+            for target in targets:
+                saved = backup / target.relative_to(env_root)
+                if target.is_dir():
+                    shutil.rmtree(target)
+                elif target.exists():
+                    target.unlink()
+                if saved.is_dir():
+                    shutil.copytree(saved, target)
+                elif saved.exists():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(saved, target)
+            rebuild = "makker init --force"
+            if sim_name:
+                rebuild += f" --sim {sim_name}"
+            print(
+                f"warning: could not refresh the JutulAgent runtime ({exc}). The agent "
+                f"will start on the previous copy; rebuild cleanly with: {rebuild}",
+                file=sys.stderr,
+            )
+            return
+    mark_warm_source(julia_project, template)
+
+
+def _warm_source_targets(julia_project: Path) -> list[Path]:
+    """Files and env-local source directories a failed refresh must restore."""
+    targets = [
+        julia_project / name
+        for name in ("Project.toml", "Manifest.toml", PRECOMPILE_MARKER, WARM_SOURCE_MARKER)
+    ]
+    try:
+        data = tomllib.loads((julia_project / "Project.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return targets
+    for spec in data.get("sources", {}).values():
+        path = spec.get("path") if isinstance(spec, dict) else None
+        if not isinstance(path, str):
+            continue
+        source = Path(path)
+        if source.is_absolute():
+            continue
+        target = (julia_project / source).resolve()
+        if (
+            target != julia_project.resolve()
+            and target.is_relative_to(julia_project.resolve())
+            and target not in targets
+        ):
+            targets.append(target)
+    return targets
+
+
+def _ensure_simulator_installed(
+    adapter: SimulatorAdapter, ws: Path, julia_project: Path, sim_name: str | None
+) -> None:
+    """Install the simulator package if the env declares but never resolved it.
+
+    Catches the "`makker doctor` is happy but `using <Sim>` fails" trap:
+    the Project lists the package but the Manifest never resolved it, so it
+    loads neither at startup nor in the agent's first call. Cheap when the env
+    is healthy (a manifest read); only pays the install cost when needed. If
+    the resolve itself fails on a managed env (a broken or conflicted manifest),
+    rebuild it from the template. Best-effort; on failure we warn and launch.
+    """
+
+    # A simulator checkout is itself the active package and therefore normally
+    # has no entry for itself in its Manifest. More generally, a root project is
+    # user-owned: resolving it here would rewrite the user's Manifest on every
+    # launch, in direct violation of the workspace env ownership boundary.
+    if user_owns_root_project(ws):
+        return
+
+    pkg = adapter.primary_package
+    if manifest_has_package(julia_project, pkg):
+        return
+
+    _info(
+        f"Workspace Julia env has not resolved {pkg} yet — installing "
+        "(one-time, can take a few minutes)..."
+    )
+    try:
+        # Resolve + install only; the warm-up bake is _ensure_env_warmed's job.
+        resolve_and_instantiate(julia_project, precompile=False)
+    except EnvSetupError:
+        _rebuild_managed_env(adapter, ws, sim_name, reason="could not be resolved")
+
+
+def _reconcile_env_template(adapter: SimulatorAdapter, ws: Path, julia_project: Path) -> None:
+    """Record that the managed env now matches the installed template.
+
+    By the time this runs, the env has passed the version check (an older simulator
+    is refused before here), gained any deps the template added, and had its bundled
+    packages refreshed. A changed template leaves nothing to fix, so refresh the
+    stamp rather than warn. Never touches a user-owned root env.
+    """
+
+    if user_owns_root_project(ws) or not env_declares_warm_packages(julia_project):
+        return
+    template = adapter.julia_env_template_path
+    if env_template_drifted(julia_project, template):
+        write_env_template_stamp(julia_project, template)
+    else:
+        ensure_env_template_stamp(julia_project, template)
+
+
+def _ensure_env_warmed(
+    ws: Path,
+    julia_project: Path,
+    sim_name: str | None,
+    dependencies: Sequence[Path] | None = None,
+) -> None:
+    """Precompile the managed env before launch, but only when something changed.
+
+    The per-simulator ``JutulAgent<Sim>`` package's precompile runs the
+    ``@recompile_invalidations`` solve that makes the first real solve fast
+    (seconds instead of ~30 s). When the env changed (a fresh install, or new deps
+    pulled in) we bake it here; blocking launch until it's ready, and streaming
+    Julia's progress so it reads as work in progress, not a silent hang in the first
+    eval. When nothing changed, a marker check skips it with no Julia process, so a
+    plain launch stays fast. Best-effort: on failure the agent still starts.
+
+    A capability's own package is checked separately. It is path-sourced and lives
+    outside the env, so editing it leaves the Manifest untouched and the marker above
+    still looks current — launch would skip the bake and the session's first ``using``
+    would pay it instead, with no output, inside a tool call. That is indistinguishable
+    from a hang, and a capability that bakes a workload can spend minutes there.
+    """
+
+    # Only the managed env carries the warm-up packages; a user-owned env is theirs.
+    if user_owns_root_project(ws) or not env_declares_warm_packages(julia_project):
+        return
+    if env_precompile_is_current(julia_project) and dependency_source_is_current(
+        julia_project, dependencies
+    ):
+        return  # nothing changed since the last bake; skip without spawning Julia
+
+    _info("Precompiling the Julia env (one-time after a change; can take a few minutes)...")
+    try:
+        precompile_env(julia_project)
+    except EnvSetupError as exc:
+        retry = "makker init"
+        if sim_name:
+            retry += f" --sim {sim_name}"
+        print(
+            f"warning: env precompile did not finish ({exc}); the agent will start, "
+            f"but the first solve may be slow. Retry with: {retry}",
+            file=sys.stderr,
+        )
+        return
+    mark_env_precompiled(julia_project)
+    mark_dependency_source(julia_project, dependencies)

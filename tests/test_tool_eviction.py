@@ -13,16 +13,16 @@ from pathlib import Path
 from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from jutul_agent.agent.builder import build_agent
-from jutul_agent.julia.session import EvalResult
-from jutul_agent.lab.fakes import (
+from makker.agent.builder import build_agent
+from makker.julia.session import EvalResult
+from makker.lab.fakes import (
     FakeJulia,
     make_fake_adapter,
     make_scripted_model,
     scripted_final,
     scripted_tool_call,
 )
-from jutul_agent.session import Session
+from makker.session import Session
 
 
 async def test_large_tool_result_offloaded_to_backend(tmp_path: Path) -> None:

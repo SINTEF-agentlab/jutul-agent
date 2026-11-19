@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.paths import user_config_path
-from jutul_agent.user_config import UserConfig, load_user_config, write_user_config
+from makker.paths import user_config_path
+from makker.user_config import UserConfig, load_user_config, write_user_config
 
 # The autouse ``_reset_workspace_overrides`` fixture points state_home at a
 # fresh tmp dir per test, so ``user_config_path()`` is isolated here.
@@ -29,8 +29,8 @@ def test_write_empty_user_config_writes_empty_file() -> None:
 
 
 def test_user_config_path_under_state_home() -> None:
-    # config.toml sits at the root of the jutul-agent home, beside workspaces/.
-    from jutul_agent.paths import state_home
+    # config.toml sits at the root of the makker home, beside workspaces/.
+    from makker.paths import state_home
 
     assert user_config_path() == state_home() / "config.toml"
     assert isinstance(user_config_path(), Path)

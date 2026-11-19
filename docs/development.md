@@ -7,7 +7,7 @@ the start, is its own page: [agent-first development](agent-first.md).
 ## Setup
 
 ```sh
-git clone <this-repo> && cd jutul-agent
+git clone <this-repo> && cd makker
 uv sync --extra eval
 uv run pre-commit install
 ```
@@ -20,7 +20,7 @@ tags change; fetching a new release tag does not require a manual reinstall.
 ## Repository layout
 
 ```
-src/jutul_agent/
+src/makker/
   paths.py         install / workspace / state-home anchors, path-resolution policy
   workspace.py     config loader, simulator auto-detect, env bootstrap helpers
   session.py       Session: the unit of one invocation
@@ -91,7 +91,7 @@ Before and after a change to the prompt, a skill, or a tool, run the cheap
 suites on the default model:
 
 ```sh
-uv run jutul-agent eval canary guardrails
+uv run makker eval canary guardrails
 ```
 
 See [evaluation](evaluation.md) for scorers, RunConfig attribution, and
@@ -127,7 +127,7 @@ tag rather than a manual version bump. A tag `vX.Y.Z` builds as version
 `X.Y.Z`; commits past it build as the next patch's `.devN` pre-release
 (for example, two commits after `v0.2.0` build as `0.2.1.dev2+g<hash>`). The
 runtime reads the version back through `importlib.metadata`
-(`jutul_agent.__version__`), and the update checker compares it against the
+(`makker.__version__`), and the update checker compares it against the
 latest release published on PyPI.
 
 Publishing is automated by `.github/workflows/release.yml`, which runs when a
@@ -135,7 +135,7 @@ GitHub Release is published: it builds the sdist and wheel, verifies the built
 version equals the release tag, and uploads to PyPI with trusted publishing
 (OIDC), so no API token is stored in the repository. Trusted publishing is
 configured once on PyPI (a publisher for owner `SINTEF-agentlab`, repository
-`jutul-agent`, workflow `release.yml`, environment `pypi`) against a GitHub
+`makker`, workflow `release.yml`, environment `pypi`) against a GitHub
 Environment of the same name.
 
 Cutting a release:
@@ -145,8 +145,8 @@ Cutting a release:
    creates the tag), and write the release notes.
 3. Publishing the release triggers the workflow, which builds and uploads to
    PyPI.
-4. Verify with `uv tool install --reinstall jutul-agent`, then check that
-   `jutul-agent --version` reports `X.Y.Z` and the new release shows on the
+4. Verify with `uv tool install --reinstall makker`, then check that
+   `makker --version` reports `X.Y.Z` and the new release shows on the
    PyPI project page.
 
 ## The docs site

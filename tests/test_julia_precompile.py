@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-from jutul_agent.julia import precompile
+from makker.julia import precompile
 
 
 def test_the_ceiling_is_judged_by_memory_not_by_cores(monkeypatch: pytest.MonkeyPatch) -> None:

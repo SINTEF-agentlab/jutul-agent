@@ -1,12 +1,12 @@
 # Architecture
 
-jutul-agent is a Python harness around a persistent Julia process. The Python
+makker is a Python harness around a persistent Julia process. The Python
 side runs the agent loop, the tools, and all bookkeeping, while the Julia
 side runs the simulator. One session means one workspace, one Julia process,
 one trace.
 
-![jutul-agent architecture](assets/architecture-light.svg#only-light)
-![jutul-agent architecture](assets/architecture-dark.svg#only-dark)
+![makker architecture](assets/architecture-light.svg#only-light)
+![makker architecture](assets/architecture-dark.svg#only-dark)
 
 <p class="ja-legend">
   <span class="ja-dot" style="background:#2563eb"></span> Python
@@ -18,13 +18,13 @@ one trace.
 
 ## Interfaces
 
-With no command, `jutul-agent` serves the web UI over an HTTP + WebSocket
+With no command, `makker` serves the web UI over an HTTP + WebSocket
 server (`web` names it explicitly), `tui` is the Textual terminal UI, and
 `run "<prompt>"` runs one headless turn, which is what scripts, CI, and the
 bench use. Subcommands handle the rest: `init`
 bootstraps a workspace, `doctor` diagnoses a broken setup, `transcript` renders
 a past session, `eval` runs bench suites. The CLI entry points live in
-`src/jutul_agent/interfaces/cli/`, the terminal UI in `interfaces/tui/`, and the
+`src/makker/interfaces/cli/`, the terminal UI in `interfaces/tui/`, and the
 server plus its bundled web app in `interfaces/server/` (its protocol has its
 own page: [the server interface](server-interface.md)).
 
@@ -50,7 +50,7 @@ titling), so front ends stay presentation-only.
 session: the system prompt, the custom tools, the filesystem, the model, and
 any capability layers (see "Composition and extension seams"). The agent loop
 itself (planning, tool dispatch, streaming) is
-deepagents/langgraph: jutul-agent deliberately does not own a loop. Generic
+deepagents/langgraph: makker deliberately does not own a loop. Generic
 agent machinery is built and improved elsewhere at a pace not worth
 competing with. The value of this project is the scientific harness around
 the loop and the specialization for the simulators, so that is where the
@@ -106,15 +106,15 @@ core. `build_agent` assembles:
    merges them with the base and simulator layers.
 
 Capabilities reach a session three ways: passed in directly, discovered from
-installed packages' `jutul_agent.extensions` entry points (`discover_extensions`),
+installed packages' `makker.extensions` entry points (`discover_extensions`),
 or built from a host application's declarative HTTP tool specs
 (`http_tool_capability`, which lets an app in any language expose its routines as
 tools over HTTP).
 
 Simulators are discovered separately by the registry (`simulators/registry.py`),
 which collects adapters from two sources: **bundled** subpackages under
-`jutul_agent.simulators` (found with `pkgutil`) and **installed** packages that
-publish a `SimulatorAdapter` under the `jutul_agent.simulators` entry-point group;
+`makker.simulators` (found with `pkgutil`) and **installed** packages that
+publish a `SimulatorAdapter` under the `makker.simulators` entry-point group;
 an installed adapter overrides a bundled one of the same name. A broken or
 invalid adapter (bad import, empty name, missing env template) warns and is
 skipped, never fatal, and the same holds for a broken capability.
@@ -209,7 +209,7 @@ investigation attempts, and approval round-trips. The recorder is a
 middleware (`trace/recorder.py`), so it sees the same stream the model does.
 
 The trace is the source of truth. Transcripts (HTML or markdown, via
-`jutul-agent transcript`) are renderings of it, and bench scorers grade
+`makker transcript`) are renderings of it, and bench scorers grade
 against it rather than trusting the model's final text. Conversation state
 for resuming and model switching lives separately in `checkpoints.sqlite`
 (langgraph's checkpointer). The event schema is documented in
@@ -218,7 +218,7 @@ for resuming and model switching lives separately in `checkpoints.sqlite`
 ## Models
 
 Model ids are opaque `provider:model` strings resolved by precedence:
-`--model` flag, workspace config, user config, `$JUTUL_AGENT_MODEL`, default.
+`--model` flag, workspace config, user config, `$MAKKER_MODEL`, default.
 `/model` in the TUI opens a selector that can also pull Ollama models and
 collect missing API keys. Keys live in a user-global `.env`
 (`credentials.py`), never in config files. Switching models mid-session

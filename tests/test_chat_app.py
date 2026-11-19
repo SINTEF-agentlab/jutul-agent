@@ -8,18 +8,18 @@ from langchain_core.messages import AIMessage, HumanMessage
 from textual.widgets import Footer
 
 from _tui import submit_prompt, wait_until_ready
-from jutul_agent.agent.turns import TurnTextDelta, TurnToolEvent
-from jutul_agent.interfaces.tui import TUIApp
-from jutul_agent.interfaces.tui.approval_menu import ApprovalMenu
-from jutul_agent.interfaces.tui.prompt import PromptTextArea
-from jutul_agent.interfaces.tui.widgets import (
+from makker.agent.turns import TurnTextDelta, TurnToolEvent
+from makker.interfaces.tui import TUIApp
+from makker.interfaces.tui.approval_menu import ApprovalMenu
+from makker.interfaces.tui.prompt import PromptTextArea
+from makker.interfaces.tui.widgets import (
     ApprovalBlock,
     MessageBlock,
     PromptGuide,
     ToolBlock,
     WelcomeBlock,
 )
-from jutul_agent.lab.fakes import (
+from makker.lab.fakes import (
     ScriptedV3Agent,
     interrupt_agent,
     streaming_agent,
@@ -28,7 +28,7 @@ from jutul_agent.lab.fakes import (
     v3_tool_event,
     v3_values_event,
 )
-from jutul_agent.session import Session
+from makker.session import Session
 
 _TRICKY_TOOL_NAME = "run_julia"
 _TRICKY_TOOL_ID = "call_Wadq4EXSvtuKOjcPsMw7lxy9"
@@ -480,7 +480,7 @@ async def test_warming_indicator_has_its_own_status_chip(session: Session) -> No
     turn nor a pending approval ever replaces it while Julia still compiles."""
     import asyncio
 
-    from jutul_agent.interfaces.tui.widgets import StatusBar
+    from makker.interfaces.tui.widgets import StatusBar
 
     warmup: asyncio.Future = asyncio.get_event_loop().create_future()
     app = TUIApp(agent=_stub_agent(), session=session, warmup_task=warmup)
@@ -535,7 +535,7 @@ async def test_clear_command_restores_welcome_card(session: Session) -> None:
 
 
 async def test_tui_recalls_history_with_ctrl_up_and_down(session: Session) -> None:
-    from jutul_agent.lab.fakes import echo_agent
+    from makker.lab.fakes import echo_agent
 
     app = TUIApp(agent=echo_agent(), session=session)
 
@@ -566,7 +566,7 @@ async def test_tui_recalls_history_with_ctrl_up_and_down(session: Session) -> No
 
 
 async def test_tui_completes_slash_commands_with_tab(session: Session) -> None:
-    from jutul_agent.lab.fakes import echo_agent
+    from makker.lab.fakes import echo_agent
 
     app = TUIApp(agent=echo_agent(), session=session)
 
@@ -587,7 +587,7 @@ async def test_tui_completes_slash_commands_with_tab(session: Session) -> None:
 
 
 async def test_tui_renders_reasoning_from_v3_event_stream(session: Session) -> None:
-    from jutul_agent.lab.fakes import reasoning_agent
+    from makker.lab.fakes import reasoning_agent
 
     app = TUIApp(agent=reasoning_agent(), session=session)
 
@@ -626,7 +626,7 @@ async def test_tui_prompt_stays_compact_with_long_multiline_draft(session: Sessi
 
 
 async def test_tui_multiline_submit_shows_user_message_immediately(session: Session) -> None:
-    from jutul_agent.lab.fakes import echo_agent
+    from makker.lab.fakes import echo_agent
 
     app = TUIApp(agent=echo_agent(), session=session)
 
@@ -645,8 +645,8 @@ async def test_tui_multiline_submit_shows_user_message_immediately(session: Sess
 
 
 async def test_add_dir_command_adds_folder(session: Session, tmp_path: Path) -> None:
-    from jutul_agent.agent.added_dirs import added_dirs
-    from jutul_agent.agent.builder import build_backend
+    from makker.agent.added_dirs import added_dirs
+    from makker.agent.builder import build_backend
 
     extra = tmp_path / "shared-data"
     extra.mkdir()
@@ -664,7 +664,7 @@ async def test_add_dir_command_adds_folder(session: Session, tmp_path: Path) -> 
 
 
 async def test_add_dir_command_reports_bad_path(session: Session, tmp_path: Path) -> None:
-    from jutul_agent.agent.builder import build_backend
+    from makker.agent.builder import build_backend
 
     backend = build_backend(workspace=tmp_path)
     app = TUIApp(agent=_stub_agent(), session=session, backend=backend)
@@ -679,8 +679,8 @@ async def test_add_dir_command_reports_bad_path(session: Session, tmp_path: Path
 
 
 async def test_add_dir_command_lists_when_no_arg(session: Session, tmp_path: Path) -> None:
-    from jutul_agent.agent.added_dirs import add_dir
-    from jutul_agent.agent.builder import build_backend
+    from makker.agent.added_dirs import add_dir
+    from makker.agent.builder import build_backend
 
     extra = tmp_path / "alpha"
     extra.mkdir()
@@ -700,7 +700,7 @@ async def test_add_dir_command_lists_when_no_arg(session: Session, tmp_path: Pat
 
 
 async def test_model_command_opens_selector(session: Session) -> None:
-    from jutul_agent.interfaces.tui.model_menu import ModelMenu
+    from makker.interfaces.tui.model_menu import ModelMenu
 
     app = TUIApp(agent=_stub_agent(), session=session, model_label="openai:gpt-5.4-mini")
     async with app.run_test() as pilot:
@@ -713,9 +713,9 @@ async def test_model_command_opens_selector(session: Session) -> None:
 async def test_model_switch_rebuilds_and_persists_to_workspace(
     session: Session, tmp_path: Path, monkeypatch
 ) -> None:
-    from jutul_agent import ollama_client
-    from jutul_agent.agent.builder import build_backend
-    from jutul_agent.workspace import load_workspace_config
+    from makker import ollama_client
+    from makker.agent.builder import build_backend
+    from makker.workspace import load_workspace_config
 
     # Local model is reachable + already pulled, so the switch is deterministic.
     monkeypatch.setattr(ollama_client, "is_reachable", _async_return(True))
@@ -752,9 +752,9 @@ async def test_model_switch_rebuilds_and_persists_to_workspace(
 async def test_cloud_ollama_switch_skips_pull(
     session: Session, tmp_path: Path, monkeypatch
 ) -> None:
-    from jutul_agent import ollama_client
-    from jutul_agent.agent.builder import build_backend
-    from jutul_agent.interfaces.tui.model_menu import OllamaPullModal
+    from makker import ollama_client
+    from makker.agent.builder import build_backend
+    from makker.interfaces.tui.model_menu import OllamaPullModal
 
     monkeypatch.setattr(ollama_client, "is_reachable", _async_return(True))
 
@@ -791,9 +791,9 @@ async def test_cloud_ollama_switch_skips_pull(
 async def test_model_switch_preserves_added_dirs(
     session: Session, tmp_path: Path, monkeypatch
 ) -> None:
-    from jutul_agent import ollama_client
-    from jutul_agent.agent.added_dirs import add_dir
-    from jutul_agent.agent.builder import build_backend
+    from makker import ollama_client
+    from makker.agent.added_dirs import add_dir
+    from makker.agent.builder import build_backend
 
     monkeypatch.setattr(ollama_client, "is_reachable", _async_return(True))
     monkeypatch.setattr(ollama_client, "is_installed", _async_return(True))
@@ -826,7 +826,7 @@ async def test_model_switch_preserves_added_dirs(
 
 
 async def test_model_switch_without_key_opens_api_key_modal(session: Session, monkeypatch) -> None:
-    from jutul_agent.interfaces.tui.model_menu import ApiKeyModal
+    from makker.interfaces.tui.model_menu import ApiKeyModal
 
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     calls: list[str] = []
@@ -855,9 +855,9 @@ async def test_api_key_modal_stores_key_and_switches(
 ) -> None:
     from textual.widgets import Input
 
-    from jutul_agent.agent.builder import build_backend
-    from jutul_agent.credentials import user_env_path
-    from jutul_agent.interfaces.tui.model_menu import ApiKeyModal
+    from makker.agent.builder import build_backend
+    from makker.credentials import user_env_path
+    from makker.interfaces.tui.model_menu import ApiKeyModal
 
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     calls: list[str] = []
@@ -892,7 +892,7 @@ async def test_api_key_modal_stores_key_and_switches(
 
 
 async def test_local_model_without_tools_is_refused(session: Session, monkeypatch) -> None:
-    from jutul_agent import ollama_client
+    from makker import ollama_client
 
     monkeypatch.setattr(ollama_client, "is_reachable", _async_return(True))
     monkeypatch.setattr(ollama_client, "is_installed", _async_return(True))
@@ -920,7 +920,7 @@ async def test_local_model_without_tools_is_refused(session: Session, monkeypatc
 async def test_local_model_switch_notes_when_ollama_unreachable(
     session: Session, monkeypatch
 ) -> None:
-    from jutul_agent import ollama_client
+    from makker import ollama_client
 
     monkeypatch.setattr(ollama_client, "is_reachable", _async_return(False))
     calls: list[str] = []
@@ -945,9 +945,9 @@ async def test_local_model_switch_notes_when_ollama_unreachable(
 async def test_local_model_switch_pulls_then_switches(
     session: Session, tmp_path: Path, monkeypatch
 ) -> None:
-    from jutul_agent import ollama_client
-    from jutul_agent.agent.builder import build_backend
-    from jutul_agent.ollama_client import PullProgress
+    from makker import ollama_client
+    from makker.agent.builder import build_backend
+    from makker.ollama_client import PullProgress
 
     monkeypatch.setattr(ollama_client, "is_reachable", _async_return(True))
     monkeypatch.setattr(ollama_client, "is_installed", _async_return(False))
@@ -1005,7 +1005,7 @@ async def test_message_block_streams_before_mount_completes() -> None:
     from textual.app import App
     from textual.containers import VerticalScroll
 
-    from jutul_agent.interfaces.tui.widgets import MessageBlock
+    from makker.interfaces.tui.widgets import MessageBlock
 
     class _Host(App[None]):
         def compose(self):
@@ -1025,8 +1025,8 @@ async def test_assistant_stream_survives_flush_during_append() -> None:
     from textual.app import App
     from textual.containers import VerticalScroll
 
-    from jutul_agent.interfaces.tui.app import _AssistantStream
-    from jutul_agent.interfaces.tui.widgets import MessageBlock
+    from makker.interfaces.tui.app import _AssistantStream
+    from makker.interfaces.tui.widgets import MessageBlock
 
     class _Host(App[None]):
         def compose(self):
@@ -1046,7 +1046,7 @@ async def test_assistant_stream_survives_flush_during_append() -> None:
 
 def test_every_command_spec_has_a_handler() -> None:
     """Declaring a spec in commands.py requires the matching TUIApp method."""
-    from jutul_agent.interfaces.tui.commands import ALL_COMMANDS
+    from makker.interfaces.tui.commands import ALL_COMMANDS
 
     for spec in ALL_COMMANDS:
         handler = getattr(TUIApp, spec.handler_attr, None)
@@ -1157,8 +1157,8 @@ async def test_long_assistant_message_is_not_inner_clipped(session: Session) -> 
 
 
 async def test_reasoning_collapses_when_answer_starts(session: Session) -> None:
-    from jutul_agent.interfaces.tui.widgets import ReasoningBlock
-    from jutul_agent.lab.fakes import reasoning_agent
+    from makker.interfaces.tui.widgets import ReasoningBlock
+    from makker.lab.fakes import reasoning_agent
 
     app = TUIApp(agent=reasoning_agent(), session=session)
     async with app.run_test() as pilot:
@@ -1190,7 +1190,7 @@ async def test_first_prompt_adopts_session_title(session: Session) -> None:
 
 
 async def test_resumed_session_replays_history(tmp_path: Path, fake_julia, fake_adapter) -> None:
-    from jutul_agent.session import Session as SessionCls
+    from makker.session import Session as SessionCls
 
     original = SessionCls.create(julia=fake_julia, state_root=tmp_path, simulator=fake_adapter)
     original.adopt_title("Earlier battery work")
@@ -1232,8 +1232,8 @@ def _usage_agent() -> ScriptedV3Agent:
 
 
 async def test_context_command_reports_usage(session: Session, monkeypatch) -> None:
-    from jutul_agent import models
-    from jutul_agent.interfaces.tui.widgets import StatusBar
+    from makker import models
+    from makker.interfaces.tui.widgets import StatusBar
 
     monkeypatch.setattr(models, "context_window", lambda model_id: 400_000)
     app = TUIApp(agent=_usage_agent(), session=session, model_label="openai:gpt-5.4-mini")
@@ -1269,8 +1269,8 @@ async def test_compact_command_handles_stub_agent(session: Session) -> None:
 
 
 async def test_memory_command_shows_overview_and_notes(session: Session) -> None:
-    from jutul_agent.agent.memory import ensure_memory_dir
-    from jutul_agent.paths import workspace_memory_dir
+    from makker.agent.memory import ensure_memory_dir
+    from makker.paths import workspace_memory_dir
 
     memory_dir = ensure_memory_dir(workspace_memory_dir())
     (memory_dir / "battmo-quirk.md").write_text("Voltage lives in time_series.\n", encoding="utf-8")
@@ -1317,7 +1317,7 @@ async def test_memory_edit_opens_editor_with_suspend(session: Session, monkeypat
 def test_resolve_editor_prefers_env_then_platform(monkeypatch) -> None:
     import shutil
 
-    from jutul_agent.interfaces.tui.app import _resolve_editor
+    from makker.interfaces.tui.app import _resolve_editor
 
     monkeypatch.setenv("VISUAL", "code --wait")
     monkeypatch.setenv("EDITOR", "vim")
@@ -1341,7 +1341,7 @@ def test_resolve_editor_prefers_env_then_platform(monkeypatch) -> None:
 async def test_approval_state_clears_once_decided(session: Session) -> None:
     """Deciding an approval consumes it: the pending chip and the 'approval
     required' activity must not stick around through the resumed turn."""
-    from jutul_agent.interfaces.tui.widgets import StatusBar
+    from makker.interfaces.tui.widgets import StatusBar
 
     agent = interrupt_agent()
     app = TUIApp(agent=agent, session=session)
@@ -1363,7 +1363,7 @@ async def test_approval_state_clears_once_decided(session: Session) -> None:
 
 
 async def test_typed_reply_marks_tool_block_rejected(session: Session) -> None:
-    from jutul_agent.lab.fakes import Interrupt
+    from makker.lab.fakes import Interrupt
 
     interrupt = Interrupt(
         id="interrupt-1",
@@ -1408,8 +1408,8 @@ async def test_typed_reply_marks_tool_block_rejected(session: Session) -> None:
 async def test_compact_updates_context_figure_immediately(session: Session, monkeypatch) -> None:
     """`/compact` must drop the ctx figure right away, not leave it stale
     until the next reply."""
-    from jutul_agent.agent import summarization
-    from jutul_agent.interfaces.tui.widgets import StatusBar
+    from makker.agent import summarization
+    from makker.interfaces.tui.widgets import StatusBar
 
     app = TUIApp(agent=_stub_agent(), session=session, model_label="openai:gpt-5.4-mini")
 
@@ -1463,12 +1463,12 @@ async def test_resolvable_approval_adds_no_redundant_note(session: Session) -> N
 async def test_resumed_session_resurfaces_pending_approval(session: Session) -> None:
     """A session resumed while paused on an approval shows the approval again
     instead of orphaning the paused turn."""
-    from jutul_agent.lab.fakes import interrupt_agent
+    from makker.lab.fakes import interrupt_agent
 
     agent = interrupt_agent()
     # Leave a pending approval in the (mock) persisted graph state, the way a
     # closed TUI would have.
-    from jutul_agent.agent.turns import TurnRunner
+    from makker.agent.turns import TurnRunner
 
     await TurnRunner(agent, thread_id=session.session_id).run_prompt("run it")
     session.resumed = True

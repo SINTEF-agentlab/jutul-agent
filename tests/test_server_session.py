@@ -1,6 +1,6 @@
 """End-to-end tests for the server: REST lifecycle and the turn WebSocket.
 
-The agent and Julia kernel are fakes (see ``jutul_agent.lab.fakes``), so a turn runs through the
+The agent and Julia kernel are fakes (see ``makker.lab.fakes``), so a turn runs through the
 real ``TurnRunner`` and wire protocol without a provider API or a Julia process.
 A test ``SessionManager`` is injected with a host factory that wraps those fakes.
 """
@@ -19,18 +19,18 @@ from typing import Any, ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
-from jutul_agent.agent.capabilities import Branding, Capability
-from jutul_agent.interfaces.server.app import artifact_wire_events, create_app
-from jutul_agent.interfaces.server.manager import SessionBusyError, SessionManager
-from jutul_agent.lab.fakes import (
+from makker.agent.capabilities import Branding, Capability
+from makker.interfaces.server.app import artifact_wire_events, create_app
+from makker.interfaces.server.manager import SessionBusyError, SessionManager
+from makker.lab.fakes import (
     FakeJulia,
     echo_agent,
     interrupt_agent,
     make_fake_adapter,
     streaming_agent,
 )
-from jutul_agent.session import Session, default_session_id
-from jutul_agent.session_host import SessionHost
+from makker.session import Session, default_session_id
+from makker.session_host import SessionHost
 
 
 def _manager(
@@ -78,7 +78,7 @@ def _provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_models_endpoint(tmp_path: Path) -> None:
-    from jutul_agent.interfaces.server import protocol
+    from makker.interfaces.server import protocol
 
     with _client(echo_agent, tmp_path) as client:
         body = client.get("/models").json()
@@ -91,7 +91,7 @@ def test_models_endpoint(tmp_path: Path) -> None:
 
 
 def test_live_models_endpoint_uses_provider_catalog(tmp_path: Path, monkeypatch) -> None:
-    from jutul_agent import models
+    from makker import models
 
     info = models.ModelInfo("openai:gpt-6-luna", "gpt-6-luna", "API-listed")
     monkeypatch.setattr(models, "discover_available_models", lambda: {"openai": [info]})
@@ -113,7 +113,7 @@ def test_models_endpoint_reports_the_launch_default_model(tmp_path: Path) -> Non
     # /models reports the server's actual default so the UI seeds the right model: the
     # launch --model when set, else the catalog default. Otherwise the UI would show
     # and resume onto the catalog default even when the server runs a different model.
-    from jutul_agent.models import DEFAULT_MODEL
+    from makker.models import DEFAULT_MODEL
 
     app = create_app(_manager(echo_agent, tmp_path), default_model="provider:custom")
     with TestClient(app) as c:
@@ -177,7 +177,7 @@ def test_create_session_requires_credential(
 
 
 def test_disk_resume_reports_stale_sysimage_as_conflict(tmp_path: Path) -> None:
-    from jutul_agent import sysimage
+    from makker import sysimage
 
     async def unavailable_factory(**_kwargs) -> SessionHost:
         raise sysimage.SysimageUnavailable(
@@ -185,7 +185,7 @@ def test_disk_resume_reports_stale_sysimage_as_conflict(tmp_path: Path) -> None:
                 status=sysimage.DIVERGENT,
                 reason="  edited since the image was built:\n    JutulAgentJutulDarcy",
             ),
-            command="jutul-agent web",
+            command="makker web",
         )
 
     manager = SessionManager(host_factory=unavailable_factory)
@@ -205,7 +205,7 @@ def test_outdated_environment_is_a_conflict_not_a_server_error(
     tmp_path: Path, endpoint: str
 ) -> None:
     """The page shows the explanation instead of waiting on a failed request."""
-    from jutul_agent.simulators.env_setup import EnvSetupError
+    from makker.simulators.env_setup import EnvSetupError
 
     async def outdated_factory(**_kwargs) -> SessionHost:
         raise EnvSetupError("has JutulDarcy 0.3.12, but requires JutulDarcy 0.4")
@@ -225,7 +225,7 @@ def test_outdated_environment_is_a_conflict_not_a_server_error(
 def test_version_reports_the_install_and_the_simulator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from jutul_agent import update_check
+    from makker import update_check
 
     env = tmp_path / "env"
     env.mkdir()
@@ -235,7 +235,7 @@ def test_version_reports_the_install_and_the_simulator(
     app = create_app(_manager(echo_agent, tmp_path), default_sim="jutuldarcy", julia_project=env)
     with TestClient(app) as client:
         info = client.get("/version").json()
-    assert info["jutul_agent"] and "+" not in info["jutul_agent"]
+    assert info["makker"] and "+" not in info["makker"]
     assert info["simulator"] == {"package": "JutulDarcy", "version": "0.4.0"}
     assert info["update"] == "9.9.9"
     monkeypatch.setenv(update_check.DISABLE_ENV_VAR, "1")
@@ -283,8 +283,8 @@ def test_simulators_endpoint_reports_no_branding_when_nothing_declares_it(
 
 def test_simulators_endpoint_carries_installed_branding(tmp_path: Path, monkeypatch) -> None:
     # An installed capability names the welcome screen and supplies its starter
-    # prompts, so a demo built on jutul-agent introduces itself, not the simulator.
-    from jutul_agent.agent import capabilities as capabilities_mod
+    # prompts, so a demo built on makker introduces itself, not the simulator.
+    from makker.agent import capabilities as capabilities_mod
 
     branded = Capability(
         name="demo",
@@ -308,7 +308,7 @@ def test_simulators_endpoint_carries_installed_branding(tmp_path: Path, monkeypa
 def test_simulators_endpoint_ignores_branding_from_another_surface(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from jutul_agent.agent import capabilities as capabilities_mod
+    from makker.agent import capabilities as capabilities_mod
 
     tui_only = Capability(name="demo", surfaces=("tui",), branding=Branding(display_name="Demo"))
     monkeypatch.setattr(capabilities_mod, "discover_extensions", lambda: [tui_only])
@@ -330,7 +330,7 @@ def test_bound_simulator_uses_one_and_rejects_mismatch(tmp_path: Path) -> None:
 
 
 def test_default_approval_mode_applies_when_request_omits_it(tmp_path: Path) -> None:
-    # `jutul-agent web --approval-mode auto` sets the default policy for new sessions;
+    # `makker web --approval-mode auto` sets the default policy for new sessions;
     # a per-request approval_mode still wins (and the UI can change it live).
     seen: list[str | None] = []
 
@@ -356,7 +356,7 @@ def test_default_approval_mode_applies_when_request_omits_it(tmp_path: Path) -> 
 
 
 def test_default_model_applies_when_request_omits_it(tmp_path: Path) -> None:
-    # `jutul-agent web --model <m>` sets the default model for new sessions; a
+    # `makker web --model <m>` sets the default model for new sessions; a
     # per-request model (the UI's picker) still wins.
     seen: list[str | None] = []
 
@@ -385,8 +385,8 @@ async def test_launch_defaults_reach_session_host_start(monkeypatch, tmp_path: P
     # The folder-fixed launch knobs (--threads/--add-dir/--ephemeral-memory/
     # --julia-project) ride in the default host factory's closure and are handed
     # to SessionHost.start for every session, so the server honours them.
-    from jutul_agent.interfaces.server import manager as manager_mod
-    from jutul_agent.interfaces.server.manager import SessionLaunchDefaults, make_host_factory
+    from makker.interfaces.server import manager as manager_mod
+    from makker.interfaces.server.manager import SessionLaunchDefaults, make_host_factory
 
     captured: dict[str, Any] = {}
 
@@ -395,7 +395,7 @@ async def test_launch_defaults_reach_session_host_start(monkeypatch, tmp_path: P
         return SimpleNamespace(session=SimpleNamespace())
 
     monkeypatch.setattr(manager_mod.SessionHost, "start", staticmethod(fake_start))
-    monkeypatch.setattr("jutul_agent.simulators.registry.get", lambda name: f"adapter:{name}")
+    monkeypatch.setattr("makker.simulators.registry.get", lambda name: f"adapter:{name}")
 
     factory = make_host_factory(
         SessionLaunchDefaults(
@@ -443,12 +443,12 @@ async def test_start_wires_surface_and_capability_dependencies(
     ``prepare_workspace_env`` call — both added in this branch alongside the
     capability-dependencies feature.
     """
-    import jutul_agent.juliakernel as juliakernel_mod
-    from jutul_agent.agent import builder as builder_mod
-    from jutul_agent.agent import capabilities as capabilities_mod
-    from jutul_agent.julia import requirements as requirements_mod
-    from jutul_agent.simulators import env_setup as env_setup_mod
-    from jutul_agent.simulators import warmup as warmup_mod
+    import makker.juliakernel as juliakernel_mod
+    from makker.agent import builder as builder_mod
+    from makker.agent import capabilities as capabilities_mod
+    from makker.julia import requirements as requirements_mod
+    from makker.simulators import env_setup as env_setup_mod
+    from makker.simulators import warmup as warmup_mod
 
     workspace = tmp_path / "ws"
     workspace.mkdir()
@@ -559,7 +559,7 @@ def test_web_ui_is_served(tmp_path: Path) -> None:
     with _client(echo_agent, tmp_path) as client:
         root = client.get("/")
     assert root.status_code == 200
-    assert "jutul-agent" in root.text
+    assert "makker" in root.text
 
 
 def test_create_list_delete(tmp_path: Path) -> None:
@@ -648,7 +648,7 @@ def test_reconfigure_keeps_state_consistent_when_build_fails(tmp_path: Path, mon
     def boom(*args, **kwargs):
         raise ValueError("unknown approval mode 'bogus'")
 
-    monkeypatch.setattr("jutul_agent.agent.builder.build_agent", boom)
+    monkeypatch.setattr("makker.agent.builder.build_agent", boom)
     with pytest.raises(ValueError):
         host.reconfigure(approval_mode="bogus")
 
@@ -682,7 +682,7 @@ async def test_stream_delta_renders_terminal_output_and_trailing_flushes() -> No
     # returns collapse to one line, not a stack) and the client replaces the card.
     # Throttling is leading+trailing, so a delta within the interval still gets shown
     # by a trailing flush rather than lingering until the next event.
-    from jutul_agent.interfaces.server.app import _StreamState
+    from makker.interfaces.server.app import _StreamState
 
     ws = _FakeWS()
     st = _StreamState(ws, None)  # type: ignore[arg-type]
@@ -804,8 +804,8 @@ async def test_side_outputs_forward_artifacts_and_ui_commands(tmp_path: Path) ->
     flush turns it into a ``ui`` wire message. The kinds are read back from the
     trace, so a writer and this reader agreeing is the whole contract.
     """
-    from jutul_agent.interfaces.server.app import _StreamState
-    from jutul_agent.trace import schema
+    from makker.interfaces.server.app import _StreamState
+    from makker.trace import schema
 
     session = Session.create(
         julia=FakeJulia(), state_root=tmp_path, simulator=make_fake_adapter(tmp_path)
@@ -992,8 +992,8 @@ def test_artifact_wire_events_prefixes_base_path() -> None:
 
 def _plot_eval_handler(code: str):
     """Answers for the Julia the replot path evaluates, keyed on its markers."""
-    from jutul_agent.agent import plot_julia_src as jl
-    from jutul_agent.julia.session import EvalResult
+    from makker.agent import plot_julia_src as jl
+    from makker.julia.session import EvalResult
 
     if "Bonito.Server" in code and "__JUTUL_WEB_PORT__" in code:
         return EvalResult(output="__JUTUL_WEB_PORT__=9123")
@@ -1011,8 +1011,8 @@ def _plot_eval_handler(code: str):
 
 def _plot_state(tmp_path: Path):
     """A stream state over a session whose trace holds one replayable plot."""
-    from jutul_agent.interfaces.server.app import _StreamState
-    from jutul_agent.trace import schema
+    from makker.interfaces.server.app import _StreamState
+    from makker.trace import schema
 
     session = Session.create(
         julia=FakeJulia(eval_handler=_plot_eval_handler),
@@ -1169,7 +1169,7 @@ def test_fit_target_is_the_panel_shape_scaled_only_by_the_floors() -> None:
     # The one fit rule (the Python twin of jl._fig_size_block): aspect clamped
     # near the authored shape (letterbox rather than distort), fitted inside
     # the panel at full text size, scaled up only by the squash floors.
-    from jutul_agent.interfaces.server.app import _fit_target
+    from makker.interfaces.server.app import _fit_target
 
     # A panel at least as big as the figure, shaped within the clamp: the
     # target IS the panel, no bands.
@@ -1196,7 +1196,7 @@ async def test_refit_anchors_its_floor_to_the_authored_size(tmp_path: Path) -> N
     # A wide-authored figure re-fitted for a narrow panel keeps its *authored*
     # width, not whatever it was last resized to, so repeated refits never
     # ratchet it narrower; the panel only decides its shape.
-    from jutul_agent.trace import schema
+    from makker.trace import schema
 
     st, ws, session = _plot_state(tmp_path)
     session.trace.append(
@@ -1229,7 +1229,7 @@ async def test_refit_widens_a_tall_figure_only_to_the_distortion_bound(tmp_path:
     # A portrait-authored figure re-fitted for a wide flat panel widens only to
     # 3/2 of its authored aspect, and keeps its authored height: full height at
     # full text size with mild side bands, never stretched flat.
-    from jutul_agent.trace import schema
+    from makker.trace import schema
 
     st, ws, session = _plot_state(tmp_path)
     session.trace.append(
@@ -1280,8 +1280,8 @@ async def test_a_wedged_refit_gives_the_kernel_back(tmp_path: Path) -> None:
     # later turn would sit silent behind it, the worst failure to have in
     # front of an audience. The re-fit gives up instead, and the view simply
     # stays scaled.
-    from jutul_agent.agent import plot_julia
-    from jutul_agent.agent.plot_julia import refit_web
+    from makker.agent import plot_julia
+    from makker.agent.plot_julia import refit_web
 
     _st, _ws, session = _plot_state(tmp_path)
     started = asyncio.Event()
@@ -1420,7 +1420,7 @@ def test_context_endpoint_renders_panel(tmp_path: Path) -> None:
     # connection because the endpoint runs in a threadpool and the session's own
     # SQLite connection is bound to the thread it was created on — a regression
     # guard for the cross-thread error that returned a 500.
-    from jutul_agent.trace import TraceLog
+    from makker.trace import TraceLog
 
     manager = _manager(echo_agent, tmp_path)
     with TestClient(create_app(manager)) as client:
@@ -1446,7 +1446,7 @@ async def test_disconnect_leaves_a_running_turn_alone() -> None:
     # Switching sessions closes the socket, and the teardown used to cancel the
     # turn with it: a simulation minutes in died because the user looked at
     # another chat. The turn writes to the trace either way, so it is left to run.
-    from jutul_agent.interfaces.server.app import _StreamState
+    from makker.interfaces.server.app import _StreamState
 
     host = SimpleNamespace(set_busy=lambda _busy: None)
     st = _StreamState(_FakeWS(), host)  # type: ignore[arg-type]
@@ -1528,25 +1528,25 @@ async def test_a_busy_session_is_never_evicted_or_deleted(tmp_path: Path) -> Non
 def test_max_live_sessions_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
     # Each live session pins a Julia process, so the cap is a memory decision that
     # belongs to whoever runs the server, not to a constant in the source.
-    from jutul_agent.interfaces.server.manager import DEFAULT_MAX_LIVE
+    from makker.interfaces.server.manager import DEFAULT_MAX_LIVE
 
     def cap() -> int:
         return SessionManager()._max_live
 
-    monkeypatch.delenv("JUTUL_AGENT_MAX_LIVE_SESSIONS", raising=False)
+    monkeypatch.delenv("MAKKER_MAX_LIVE_SESSIONS", raising=False)
     assert cap() == DEFAULT_MAX_LIVE
 
-    monkeypatch.setenv("JUTUL_AGENT_MAX_LIVE_SESSIONS", "10")
+    monkeypatch.setenv("MAKKER_MAX_LIVE_SESSIONS", "10")
     assert cap() == 10
 
     # A typo must not stop the server from starting, and neither must a value
     # that would leave no room for the session being opened.
     for bad in ("", "  ", "lots", "0", "-3", "3.5"):
-        monkeypatch.setenv("JUTUL_AGENT_MAX_LIVE_SESSIONS", bad)
+        monkeypatch.setenv("MAKKER_MAX_LIVE_SESSIONS", bad)
         assert cap() == DEFAULT_MAX_LIVE, bad
 
     # An explicit argument still wins, which is what the tests here rely on.
-    monkeypatch.setenv("JUTUL_AGENT_MAX_LIVE_SESSIONS", "10")
+    monkeypatch.setenv("MAKKER_MAX_LIVE_SESSIONS", "10")
     assert SessionManager(max_live=2)._max_live == 2
 
 
@@ -1554,8 +1554,8 @@ def test_opening_a_session_does_not_reorder_the_list(tmp_path: Path) -> None:
     # Ordering is by when a chat was last worked on, so merely reopening one must
     # not send it to the top. A resume writes lifecycle events, and counting every
     # event kind made a session look freshly edited just for being clicked.
-    from jutul_agent.session import sessions_root
-    from jutul_agent.trace import TraceLog
+    from makker.session import sessions_root
+    from makker.trace import TraceLog
 
     root = sessions_root()
     root.mkdir(parents=True, exist_ok=True)
@@ -1592,8 +1592,8 @@ def test_live_marker_follows_the_kernel_budget(tmp_path: Path) -> None:
     # of a long history can never be live: opening one evicts the oldest, which
     # loses its marker. What must always hold is that the session you just clicked
     # comes back live, whether or not it had been evicted.
-    from jutul_agent.session import sessions_root
-    from jutul_agent.trace import TraceLog
+    from makker.session import sessions_root
+    from makker.trace import TraceLog
 
     root = sessions_root()
     root.mkdir(parents=True, exist_ok=True)
@@ -1661,8 +1661,8 @@ def test_history_marks_live_sessions(tmp_path: Path) -> None:
     # The sidebar draws its dot from this, so it has to track the in-memory
     # registry: live while the host is resident, and never for a session this
     # server only knows from disk.
-    from jutul_agent.session import sessions_root
-    from jutul_agent.trace import TraceLog
+    from makker.session import sessions_root
+    from makker.trace import TraceLog
 
     root = sessions_root()
     root.mkdir(parents=True, exist_ok=True)
@@ -1707,8 +1707,8 @@ def test_history_derives_title_when_none_stored(tmp_path: Path) -> None:
     # A real conversation whose title file never landed (its titling never persisted)
     # must still appear in history, derived from its first prompt, instead of
     # vanishing. An abandoned new-chat (no prompt) is hidden.
-    from jutul_agent.session import sessions_root
-    from jutul_agent.trace import TraceLog
+    from makker.session import sessions_root
+    from makker.trace import TraceLog
 
     root = sessions_root()  # workspace_state_dir()/sessions under the autouse fixture
     root.mkdir(parents=True, exist_ok=True)
@@ -1739,8 +1739,8 @@ def test_history_caps_by_last_use_not_creation(tmp_path: Path) -> None:
     # The `limit` cap is applied AFTER sorting by last use, not before: an old-created
     # but recently-used session must survive the cut, and a newest-created but
     # least-recently-used one is dropped.
-    from jutul_agent.session import sessions_root
-    from jutul_agent.trace import TraceLog
+    from makker.session import sessions_root
+    from makker.trace import TraceLog
 
     root = sessions_root()
     root.mkdir(parents=True, exist_ok=True)
@@ -1778,7 +1778,7 @@ async def test_end_all_tool_streams_clears_state_and_cancels_flushes() -> None:
     import asyncio
     import contextlib
 
-    from jutul_agent.interfaces.server.app import _StreamState
+    from makker.interfaces.server.app import _StreamState
 
     st = _StreamState(_FakeWS(), None)  # type: ignore[arg-type]
     st._tool_streams["c1"] = "partial output"
@@ -1799,8 +1799,8 @@ def test_history_ordered_by_last_use_not_creation(tmp_path: Path) -> None:
     # History is ordered by when each session was last used (its latest event), not
     # by when it was created: a session with an older id but more recent activity
     # comes first. This is the "order I last used it" the user expects.
-    from jutul_agent.session import sessions_root
-    from jutul_agent.trace import TraceLog
+    from makker.session import sessions_root
+    from makker.trace import TraceLog
 
     root = sessions_root()
     root.mkdir(parents=True, exist_ok=True)
@@ -1825,8 +1825,8 @@ def test_history_ordered_by_last_use_not_creation(tmp_path: Path) -> None:
 
 
 def test_session_overview_reads_sim_first_prompt_and_last_activity(tmp_path: Path) -> None:
-    from jutul_agent.interfaces.server.app import _session_overview
-    from jutul_agent.trace import TraceLog
+    from makker.interfaces.server.app import _session_overview
+    from makker.trace import TraceLog
 
     sd = tmp_path / "s1"
     sd.mkdir()
@@ -1847,7 +1847,7 @@ def test_session_overview_reads_sim_first_prompt_and_last_activity(tmp_path: Pat
 
 
 def test_messages_endpoint_replays_conversation(tmp_path: Path) -> None:
-    from jutul_agent.trace import TraceLog
+    from makker.trace import TraceLog
 
     manager = _manager(echo_agent, tmp_path)
     with TestClient(create_app(manager)) as client:
@@ -1881,7 +1881,7 @@ def test_messages_endpoint_finishes_resultless_tool_calls(tmp_path: Path) -> Non
     # Some tool calls never record a result (e.g. a write_todos that ends a turn).
     # Replay must still emit a terminal event so the card resolves instead of
     # spinning forever on resume.
-    from jutul_agent.trace import TraceLog
+    from makker.trace import TraceLog
 
     manager = _manager(echo_agent, tmp_path)
     with TestClient(create_app(manager)) as client:
@@ -1898,8 +1898,8 @@ def test_messages_endpoint_finishes_resultless_tool_calls(tmp_path: Path) -> Non
 def test_first_turn_generates_llm_title(tmp_path: Path, monkeypatch: Any) -> None:
     # After the first turn the server replaces the first-prompt title with a
     # content-aware one (best-effort) and nudges the front end to refresh history.
-    from jutul_agent import session as session_mod
-    from jutul_agent.agent import titling
+    from makker import session as session_mod
+    from makker.agent import titling
 
     async def fake_title(model_id: Any, conversation: str) -> str:
         return "Reservoir Sweep Study"
@@ -2448,7 +2448,7 @@ async def test_cancel_answers_even_with_no_turn_running(tmp_path: Path) -> None:
 
 
 async def test_reconnected_socket_cannot_overlap_or_lose_the_running_turn(tmp_path: Path) -> None:
-    from jutul_agent.interfaces.server.app import _StreamState
+    from makker.interfaces.server.app import _StreamState
 
     first, _ws, _session = _plot_state(tmp_path)
     second_ws = _FakeWS()
@@ -2482,7 +2482,7 @@ async def test_reconnected_socket_cannot_overlap_or_lose_the_running_turn(tmp_pa
 
 
 async def test_reconnected_socket_resyncs_when_the_old_turn_finishes(tmp_path: Path) -> None:
-    from jutul_agent.interfaces.server.app import _StreamState
+    from makker.interfaces.server.app import _StreamState
 
     first, _ws, _session = _plot_state(tmp_path)
     second_ws = _FakeWS()

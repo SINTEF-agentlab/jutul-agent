@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from jutul_agent.simulators import registry
-from jutul_agent.simulators.base import SimulatorAdapter
+from makker.simulators import registry
+from makker.simulators.base import SimulatorAdapter
 
 
 def test_known_simulators_are_discovered() -> None:
@@ -30,7 +30,7 @@ def test_unknown_simulator_raises() -> None:
 
 
 def _adapter(tmp_path, name: str) -> SimulatorAdapter:
-    from jutul_agent.lab.fakes import make_fake_adapter
+    from makker.lab.fakes import make_fake_adapter
 
     adapter = make_fake_adapter(tmp_path, name=name, display_name=name.title())
     # Discovery validates adapters now; give the fake a real env template.

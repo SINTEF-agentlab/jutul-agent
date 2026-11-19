@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from jutul_agent.lab.fakes import make_event
-from jutul_agent.transcript import render_html
+from makker.lab.fakes import make_event
+from makker.transcript import render_html
 
 
 def test_render_html_is_complete_document(snapshot) -> None:
@@ -145,7 +145,7 @@ def test_render_html_has_csp_with_script_hash() -> None:
     import base64
     import hashlib
 
-    from jutul_agent.transcript.html import _SCRIPT
+    from makker.transcript.html import _SCRIPT
 
     head = render_html([make_event(1, "message_user", {"content": "hi"})]).split("</head>")[0]
     want = base64.b64encode(hashlib.sha256(_SCRIPT.encode()).digest()).decode()
@@ -340,7 +340,7 @@ def test_lifecycle_kinds_render_as_markers_not_raw_dumps() -> None:
     """session_title/session_resume/context_compaction are session structure:
     title in the header, dividers in the timeline, never the raw-payload
     catch-all card (which stays the fallback for truly unknown kinds)."""
-    from jutul_agent.transcript import render_markdown
+    from makker.transcript import render_markdown
 
     events = [
         make_event(1, "session_start", {"session_id": "abc", "simulator": "battmo"}),
@@ -376,7 +376,7 @@ def test_report_does_not_inline_files_outside_the_artifact_dirs(tmp_path) -> Non
     transcript enforces: an absolute or traversal path never pulls bytes in."""
     import base64
 
-    from jutul_agent.transcript.report import render_report
+    from makker.transcript.report import render_report
 
     run = tmp_path / "run"
     (run / "artifacts").mkdir(parents=True)

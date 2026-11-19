@@ -15,14 +15,14 @@ Manifest). The shared JutulAgent package lives once in ``julia_runtime/`` and is
 synced into the env at bootstrap; an in-place instantiate must do the same first.
 To run locally:
 
-    uv run python -c "from pathlib import Path; from jutul_agent.workspace import \
+    uv run python -c "from pathlib import Path; from makker.workspace import \
         sync_shared_julia_package as s; \
-        s(Path('src/jutul_agent/simulators/jutuldarcy/julia_env'))"
-    julia --project=src/jutul_agent/simulators/jutuldarcy/julia_env \
+        s(Path('src/makker/simulators/jutuldarcy/julia_env'))"
+    julia --project=src/makker/simulators/jutuldarcy/julia_env \
         -e 'using Pkg; Pkg.instantiate()'
     uv run pytest tests/integration/test_julia_plot_integration.py
 
-Set JUTUL_AGENT_TEST_JULIA_PROJECT to reuse a prepared JutulDarcy environment.
+Set MAKKER_TEST_JULIA_PROJECT to reuse a prepared JutulDarcy environment.
 
 On headless Linux GLMakie needs a virtual display; the ``plot_display`` fixture
 starts a private Xvfb (as production does via ``managed_display``). CI runs these
@@ -37,17 +37,17 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.agent import plot_julia_src as jl
-from jutul_agent.agent.plot_julia import make_plot_julia_tool
-from jutul_agent.display import has_display, managed_display, xvfb_available
-from jutul_agent.juliakernel import JuliaKernel, KernelConfig
-from jutul_agent.session import Session
-from jutul_agent.simulators.env_setup import manifest_has_package
-from jutul_agent.simulators.jutuldarcy import JUTULDARCY
-from jutul_agent.workspace import sync_shared_julia_package
+from makker.agent import plot_julia_src as jl
+from makker.agent.plot_julia import make_plot_julia_tool
+from makker.display import has_display, managed_display, xvfb_available
+from makker.juliakernel import JuliaKernel, KernelConfig
+from makker.session import Session
+from makker.simulators.env_setup import manifest_has_package
+from makker.simulators.jutuldarcy import JUTULDARCY
+from makker.workspace import sync_shared_julia_package
 
 JUTULDARCY_ENV = Path(
-    os.environ.get("JUTUL_AGENT_TEST_JULIA_PROJECT", JUTULDARCY.julia_env_template_path)
+    os.environ.get("MAKKER_TEST_JULIA_PROJECT", JUTULDARCY.julia_env_template_path)
 )
 
 
@@ -135,7 +135,7 @@ pytestmark = pytest.mark.integration
     reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
 )
 async def test_web_warmup_does_not_open_native_screens(plot_display) -> None:
-    from jutul_agent.simulators.warmup import start_warmup
+    from makker.simulators.warmup import start_warmup
 
     async with JuliaKernel(_plot_kernel_config(plot_display)) as julia:
         await start_warmup(julia, JUTULDARCY.warm_package, native_plotting=False)

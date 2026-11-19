@@ -1,5 +1,5 @@
-jutul-agent · FakeSim · openai:gpt-5.4-mini · <session> · default
-jutul-agent
+makker · FakeSim · openai:gpt-5.4-mini · <session> · default
+makker
 
 
 
@@ -13,7 +13,7 @@ jutul-agent
 
 
 ┌─ Welcome ──────────────────────────────────────────────────────────────────────────────────────────────┐
-│jutul-agent is ready for FakeSim. Ctrl+C interrupts a turn (twice to exit) · /help for commands.│
+│makker is ready for FakeSim. Ctrl+C interrupts a turn (twice to exit) · /help for commands.│
 ││
 └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 

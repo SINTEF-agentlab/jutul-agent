@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.interfaces.cli import main
-from jutul_agent.paths import set_state_home, set_workspace_root, workspace_state_dir
+from makker.interfaces.cli import main
+from makker.paths import set_state_home, set_workspace_root, workspace_state_dir
 
 
 def _session_dir(workspace: Path, state_home: Path, session_id: str) -> Path:
@@ -20,7 +20,7 @@ def _session_dir(workspace: Path, state_home: Path, session_id: str) -> Path:
 
 
 def _make_trace(workspace: Path, state_home: Path, session_id: str) -> Path:
-    from jutul_agent.trace import TraceLog
+    from makker.trace import TraceLog
 
     sess_dir = _session_dir(workspace, state_home, session_id)
     sess_dir.mkdir(parents=True, exist_ok=True)
@@ -112,9 +112,9 @@ def test_transcript_bundle_zips_artifacts_from_the_output_dir(tmp_path: Path, ca
     import base64
     import zipfile
 
-    from jutul_agent.paths import session_output_dir
-    from jutul_agent.trace import TraceLog
-    from jutul_agent.trace.schema import ARTIFACT, artifact_payload
+    from makker.paths import session_output_dir
+    from makker.trace import TraceLog
+    from makker.trace.schema import ARTIFACT, artifact_payload
 
     workspace = tmp_path / "ws"
     workspace.mkdir()

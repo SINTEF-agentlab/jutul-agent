@@ -6,9 +6,9 @@ import asyncio
 import importlib.util
 from pathlib import Path
 
-from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
-from jutul_agent.session import Session
-from jutul_agent.trace import schema
+from makker.lab.fakes import FakeJulia, make_fake_adapter
+from makker.session import Session
+from makker.trace import schema
 
 _DEMO_PATH = Path(__file__).resolve().parents[1] / "examples" / "demo-app" / "demo.py"
 
