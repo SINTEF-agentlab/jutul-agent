@@ -85,6 +85,8 @@ SKIPPED_FILES = (
     "scripts/rename_to_makker.py",
     "src/makker/legacy.py",
     "tests/test_legacy.py",
+    "tests/test_bridge.py",
+    ".github/workflows/release-bridge.yml",
 )
 
 # Where the product name is prose. Elsewhere it is a command, a path or an
@@ -331,6 +333,11 @@ def main() -> int:
     # The system python3 is often older than the project's, and would split f-strings differently.
     if sys.version_info < (3, 12):  # noqa: UP036
         sys.exit("Run this with Python 3.12 or newer: uv run python scripts/rename_to_makker.py")
+    if Path(NEW_PACKAGE_DIR, "legacy.py").exists():
+        sys.exit(
+            "This tree is already past the rename, and now names the old project on "
+            "purpose in a few places. Run the script on a branch from before it."
+        )
     moved = move_package()
     julia_files = move_julia_packages()
     changed = rewrite_files()

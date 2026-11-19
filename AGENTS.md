@@ -59,6 +59,9 @@ GitHub Actions workflows:
   `main`.
 - `release.yml`: on a published GitHub release tagged `vX.Y.Z`, builds and
   uploads to PyPI. The tag is the only source of the version.
+- `release-bridge.yml`: manual, run from a release tag. Publishes the last
+  release of the old package, jutul-agent (`bridge/jutul-agent`), which installs
+  Makker and starts it so existing installs move across on their next update.
 
 ## Local git hooks
 
@@ -108,6 +111,10 @@ and check on staged `.py` files. To verify the whole tree like CI:
   (committed and shipped, so an install needs no Node). `server/updates.py`
   runs an update started from the browser: `uv tool upgrade`, the env step of
   `makker upgrade`, then a restart of the server into the new version.
+- `src/makker/legacy.py`: temporary. Everything that carries a jutul-agent
+  install over (data folder, workspace folder, Julia env, old output folders),
+  called from a few marked places. `bridge/` and `scripts/rename_to_makker.py`
+  belong to the same transition.
 - `tests/`: end-to-end, chat, CLI, and tool coverage. `tests/integration/`
   needs Julia; `tests/live/` needs an LLM provider key.
 
