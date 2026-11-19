@@ -315,3 +315,36 @@ def test_a_converted_env_takes_on_the_renamed_packages_like_any_template_additio
     assert (env / "Makker" / "Project.toml").is_file()
     assert (env / "MakkerJutulDarcy" / "Project.toml").is_file()
     assert "Statistics" in project["deps"]  # what the user added is still there
+
+
+def test_the_update_step_prepares_an_env_that_predates_the_rename(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Nothing in such an env is outdated, so the update used to call it current
+    # and leave the renamed packages to the first session.
+    from makker.interfaces.cli import upgrade as upgrade_cmd
+    from makker.simulators import env_setup, registry
+
+    _old_workspace(tmp_path)
+    legacy.adopt_workspace(tmp_path)
+    env = tmp_path / ".makker" / "julia-env"
+    adapter = registry.get("jutuldarcy")
+    monkeypatch.setattr(
+        upgrade_cmd, "workspace_env_status", lambda ws: (adapter, env, "jutuldarcy", [])
+    )
+    prepared: list[Path] = []
+    monkeypatch.setattr(
+        env_setup,
+        "prepare_workspace_env",
+        lambda adapter, *, workspace, julia_project, sim_name: prepared.append(julia_project),
+    )
+
+    assert legacy.env_predates_rename(env)
+    assert upgrade_cmd.update_workspace_env(tmp_path) == 0
+    assert prepared == [env]
+    assert "preparing it for Makker" in capsys.readouterr().out
+
+    legacy.convert_env(env)
+    assert not legacy.env_predates_rename(env)
+    assert upgrade_cmd.update_workspace_env(tmp_path) == 0
+    assert prepared == [env]  # an env that has been carried over is simply current

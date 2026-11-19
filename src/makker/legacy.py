@@ -146,6 +146,17 @@ def adopt_workspace(workspace: Path) -> None:
     _say(f"Renamed {old.name}/ to {new.name}/ in {workspace}.")
 
 
+def env_predates_rename(julia_project: Path) -> bool:
+    """Whether a managed environment still declares the old-named Julia packages."""
+
+    try:
+        data = tomllib.loads((julia_project / "Project.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    deps = data.get("deps")
+    return isinstance(deps, dict) and any(name.startswith(OLD_JULIA_PREFIX) for name in deps)
+
+
 def convert_env(julia_project: Path) -> bool:
     """Drop the old-named Julia packages from a managed environment.
 

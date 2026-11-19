@@ -19,7 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from makker import __version__
+from makker import __version__, legacy
 from makker.interfaces.cli._helpers import add_workspace_flags
 from makker.paths import workspace_root
 from makker.update_check import (
@@ -196,6 +196,11 @@ def update_workspace_env(ws: Path, *, sysimage: str | None = None) -> int:
         return 0
     adapter, project, sim, outdated = status
     if not outdated:
+        # Temporary: an environment from before the rename has no outdated package
+        # in it, yet needs the renamed ones. Bring them in now, with the update,
+        # where waiting is expected, not at the first session after it.
+        if legacy.env_predates_rename(project):
+            return _carry_env_over(adapter, ws, project, sim, sysimage)
         print(_current_or_newer(adapter, ws, project))
         return 0
     found, needed = _describe(outdated)
@@ -203,6 +208,29 @@ def update_workspace_env(ws: Path, *, sysimage: str | None = None) -> int:
     print(f"This folder's Julia environment has {found}; updating it to {needed}.", flush=True)
     rebuild_image = decide_sysimage(ws, interactive=sys.stdin.isatty(), choice=sysimage)
     return 0 if upgrade_workspace(adapter, ws, project, sim, sysimage=rebuild_image) else 1
+
+
+def _carry_env_over(adapter, ws: Path, project: Path, sim: str, sysimage: str | None) -> int:
+    """Prepare an environment jutul-agent set up for Makker, keeping its versions."""
+
+    from makker.interfaces.cli.init import _build_sysimage
+    from makker.simulators.env_setup import EnvSetupError, prepare_workspace_env
+    from makker.workspace import load_workspace_config
+
+    print(
+        "This folder's Julia environment was set up by jutul-agent; preparing it for Makker.",
+        flush=True,
+    )
+    rebuild_image = decide_sysimage(ws, interactive=sys.stdin.isatty(), choice=sysimage)
+    try:
+        prepare_workspace_env(adapter, workspace=ws, julia_project=project, sim_name=sim)
+    except EnvSetupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Updated the {adapter.display_name} environment at {project}.")
+    if rebuild_image and not _build_sysimage(adapter, ws, project, load_workspace_config(ws)):
+        return 1
+    return 0
 
 
 def decide_sysimage(ws: Path, *, interactive: bool, choice: str | None = None) -> bool:
