@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from makker import legacy
 from makker.julia.session import JuliaSession
 from makker.paths import session_output_dir, workspace_state_dir
 from makker.simulators.base import SimulatorAdapter
@@ -195,12 +196,14 @@ def existing_output_dir(session_id: str) -> Path | None:
     not under ``artifacts/``) — so a resumed plot or report still resolves rather
     than the empty stray dir winning just because it sorts first.
     """
-    base = session_output_dir(session_id)
+    current = session_output_dir(session_id)
     candidates: list[Path] = []
-    if base.is_dir():
-        candidates.append(base)
-    if base.parent.is_dir():
-        candidates += [m for m in sorted(base.parent.glob(base.name + "-*")) if m.is_dir()]
+    # Temporary: a session from before the rename keeps its output where it wrote it.
+    for base in (current, legacy.previous_output_dir(current)):
+        if base.is_dir():
+            candidates.append(base)
+        if base.parent.is_dir():
+            candidates += [m for m in sorted(base.parent.glob(base.name + "-*")) if m.is_dir()]
     if not candidates:
         return None
 

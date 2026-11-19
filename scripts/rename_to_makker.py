@@ -80,7 +80,12 @@ OLD_JULIA_NAME = "JutulAgent"
 NEW_JULIA_NAME = "Makker"
 
 SKIPPED_DIRS = (f"{NEW_PACKAGE_DIR}/interfaces/server/web_dist/", "bridge/")
-SKIPPED_FILES = ("scripts/rename_to_makker.py",)
+# The code that carries an old install across has to know the old names.
+SKIPPED_FILES = (
+    "scripts/rename_to_makker.py",
+    "src/makker/legacy.py",
+    "tests/test_legacy.py",
+)
 
 # Where the product name is prose. Elsewhere it is a command, a path or an
 # identifier, and stays lower-case.

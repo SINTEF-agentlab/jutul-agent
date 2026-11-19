@@ -44,6 +44,12 @@ def _reset_workspace_overrides(tmp_path: Path, monkeypatch):
     paths.set_state_home(tmp_path / "state")
     # Suppress OS file-open calls (image viewer, browser) during tests.
     monkeypatch.setenv("MAKKER_NO_OPEN", "1")
+    # A command run without --workspace or --state-home falls back to the real
+    # ones, so never let a test carry a real jutul-agent install across.
+    # tests/test_legacy.py calls the steps directly, on folders of its own.
+    from makker import legacy
+
+    monkeypatch.setattr(legacy, "adopt_previous_install", lambda *args, **kwargs: None)
     yield
     paths.set_workspace_root(None)
     paths.set_state_home(None)

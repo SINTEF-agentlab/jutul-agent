@@ -46,13 +46,22 @@ def set_state_home(path: Path | None) -> None:
     _state_home_override = path.resolve() if path is not None else None
 
 
-def state_home() -> Path:
-    if _state_home_override is not None:
-        return _state_home_override
+def default_state_home() -> Path:
+    """The standard data folder: where it is unless the user names another."""
     xdg = os.environ.get("XDG_DATA_HOME")
     if xdg:
         return Path(xdg).resolve() / "makker"
     return Path.home() / ".local" / "share" / "makker"
+
+
+def state_home() -> Path:
+    if _state_home_override is not None:
+        return _state_home_override
+    # Temporary: an install from before the rename keeps its data under the old
+    # name until Makker has moved it.
+    from makker import legacy
+
+    return legacy.resolve_state_home(default_state_home())
 
 
 def user_config_path() -> Path:

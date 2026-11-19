@@ -27,6 +27,7 @@ from pathlib import Path
 
 import tomli_w
 
+from makker import legacy
 from makker.paths import workspace_root
 from makker.simulators.base import SimulatorAdapter
 from makker.workspace import (
@@ -553,6 +554,7 @@ def _prepare_workspace_env_unlocked(
         # Implicit auto-bootstrap (without dev or precompile; those are init's job).
         _bootstrap_workspace_unlocked(adapter, workspace=workspace)
     elif not user_owns_root_project(workspace):
+        legacy.convert_env(julia_project)  # temporary: an env from before the rename
         foreign = _foreign_simulator(julia_project, adapter)
         if foreign is not None:
             _rebuild_managed_env(adapter, workspace, sim_name, reason=f"was built for {foreign}")
@@ -637,6 +639,7 @@ def upgrade_env(
         before = project_toml.read_text(encoding="utf-8")
         template = adapter.julia_env_template_path
         try:
+            legacy.convert_env(julia_project)  # temporary: an env from before the rename
             sync_julia_env_with_template(template, workspace=workspace)
             data = tomllib.loads(project_toml.read_text(encoding="utf-8"))
             outdated = outdated_env_packages(julia_project, template)

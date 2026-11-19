@@ -142,10 +142,20 @@ def add_workspace_flags(parser: argparse.ArgumentParser) -> None:
 def apply_workspace_flags(args: argparse.Namespace) -> None:
     set_workspace_root(args.workspace)
     set_state_home(args.state_home)
+    # Temporary: bring a jutul-agent install's data and workspace across first,
+    # so the keys below are read from where they now are.
+    from makker import legacy
+    from makker.paths import default_state_home, workspace_root
+
+    legacy.adopt_previous_install(
+        workspace_root(),
+        default_state_home=None if args.state_home else default_state_home(),
+    )
     # State home is set, so the global .env (at its root) can be loaded now.
     from makker.credentials import load_user_credentials
 
     load_user_credentials()
+    legacy.warn_about_old_settings()
 
 
 def known_packages_map() -> dict[str, str]:
