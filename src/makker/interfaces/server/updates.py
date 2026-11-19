@@ -40,7 +40,13 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 from makker.interfaces.cli.upgrade import workspace_env_status
 from makker.paths import state_home
-from makker.update_check import install_info, is_enabled, pending_update
+from makker.update_check import (
+    install_info,
+    is_enabled,
+    pending_update,
+    upgrade_command,
+    uv_tool_name,
+)
 from makker.workspace import load_workspace_config
 
 if TYPE_CHECKING:
@@ -81,13 +87,18 @@ _INSTALL_BLOCKERS = {
         "itself. Upgrade it the way you installed it, then start it again."
     ),
     "no-uv": (
-        "uv isn't on the PATH Makker was started with. Run `uv tool upgrade "
-        "makker` in a terminal, then start Makker again."
+        "uv isn't on the PATH Makker was started with. Run `{upgrade}` in a "
+        "terminal, then start Makker again."
     ),
     "no-restart": (
         "This server can't restart itself. Run `makker upgrade` in a terminal, then start it again."
     ),
 }
+
+
+def _install_note(blocker: str | None) -> str | None:
+    note = _INSTALL_BLOCKERS.get(blocker) if blocker else None
+    return note.replace("{upgrade}", upgrade_command()) if note else None
 
 
 class UpdateRefused(Exception):
@@ -214,7 +225,7 @@ class Updater:
             "latest": pending_update() if is_enabled() else None,
             "local": self.local,
             "can_install": blocker is None,
-            "install_note": _INSTALL_BLOCKERS.get(blocker) if blocker else None,
+            "install_note": _install_note(blocker),
             # Upgrading Makker continues in a separate window, which it then runs in.
             "separate_window": _separate_window(),
             # Not read during an update: after `uv tool upgrade` this process runs
@@ -234,7 +245,7 @@ class Updater:
             raise UpdateRefused(_INSTALL_BLOCKERS["not-local"])
         blocker = self.install_blocker() if install else None
         if blocker is not None:
-            raise UpdateRefused(_INSTALL_BLOCKERS[blocker])
+            raise UpdateRefused(_install_note(blocker) or blocker)
         with self._lock:
             if self.running:
                 raise UpdateRefused("An update is already running.")
@@ -253,7 +264,7 @@ class Updater:
             self._hand_off(job, sysimage)
             return
         try:
-            if job.install and self._step(job, ["uv", "tool", "upgrade", "makker"]):
+            if job.install and self._step(job, ["uv", "tool", "upgrade", uv_tool_name()]):
                 job.error = _UPGRADE_FAILED
                 job.state = "failed"
                 return
@@ -313,8 +324,8 @@ class Updater:
             "cwd": str(self._workspace),
             "steps": [
                 {
-                    "argv": [shutil.which("uv") or "uv", "tool", "upgrade", "makker"],
-                    "shown": "uv tool upgrade makker",
+                    "argv": [shutil.which("uv") or "uv", "tool", "upgrade", uv_tool_name()],
+                    "shown": upgrade_command(),
                     "error": _UPGRADE_FAILED,
                 },
                 {

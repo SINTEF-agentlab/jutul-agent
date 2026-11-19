@@ -27,6 +27,7 @@ from makker.update_check import (
     is_newer,
     refresh_cache,
     upgrade_command,
+    uv_tool_name,
 )
 
 # The Windows upgrade finishes after this process exits, so the new version updates
@@ -273,16 +274,17 @@ def _env_step_with_new_install(ws: Path) -> int:
     """Run the environment update with the newly installed Makker."""
 
     # The launcher this process started from: uv has just upgraded it in place.
-    # Looking it up on PATH instead could find another install entirely.
+    # Looking it up on PATH instead could find another install entirely, so when
+    # Makker was not started through its own launcher (it runs inside another
+    # tool, say) the interpreter of this same environment stands in for it.
     launcher = Path(sys.argv[0])
-    exe = str(launcher) if launcher.name.startswith("makker") and launcher.exists() else None
-    exe = exe or shutil.which("makker")
-    if exe is None:
-        print(f"\n{_NEXT_LAUNCH_HINT}")
-        return 0
+    if launcher.name.startswith("makker") and launcher.exists():
+        command = [str(launcher)]
+    else:
+        command = [sys.executable, "-m", "makker"]
     print("\n$ makker upgrade --env-only", flush=True)
     return subprocess.run(
-        [exe, "upgrade", "--env-only", "--workspace", str(ws)], check=False
+        [*command, "upgrade", "--env-only", "--workspace", str(ws)], check=False
     ).returncode
 
 
@@ -291,12 +293,12 @@ def _run_uv_tool_upgrade() -> int:
         print(
             "\nerror: `uv` is not on PATH, so the install can't be upgraded "
             "automatically. Install uv (https://docs.astral.sh/uv/), then run "
-            "`uv tool upgrade makker`.",
+            f"`uv tool upgrade {uv_tool_name()}`.",
             file=sys.stderr,
         )
         return 1
 
-    argv = ["uv", "tool", "upgrade", "makker"]
+    argv = ["uv", "tool", "upgrade", uv_tool_name()]
     if os.name == "nt":
         return _upgrade_detached_windows(argv)
 
@@ -327,7 +329,7 @@ def _upgrade_detached_windows(argv: list[str]) -> int:
     except OSError as exc:
         print(
             f"\nerror: couldn't start the upgrade ({exc}). Run it yourself from a "
-            "new terminal (not from inside Makker):\n    uv tool upgrade makker",
+            f"new terminal (not from inside Makker):\n    uv tool upgrade {uv_tool_name()}",
             file=sys.stderr,
         )
         return 1

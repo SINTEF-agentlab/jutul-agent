@@ -449,6 +449,25 @@ def workspace_dir(workspace: Path | None = None) -> Path:
     return (workspace or workspace_root()) / WORKSPACE_DIRNAME
 
 
+def ensure_workspace_dir(workspace: Path | None = None) -> Path:
+    """Create ``.makker/`` if it is missing, and keep it out of the user's repo.
+
+    The folder holds a Julia environment and maybe a system image of several
+    hundred megabytes, none of which belongs in version control. It ignores
+    itself, like ``makker-output/`` does, so a workspace that is a git repo
+    needs no entry of its own. An existing ``.gitignore`` is left as it is,
+    which is how someone who wants to commit ``config.toml`` says so.
+    """
+
+    path = workspace_dir(workspace)
+    path.mkdir(parents=True, exist_ok=True)
+    gitignore = path / ".gitignore"
+    if not gitignore.exists():
+        with contextlib.suppress(OSError):
+            gitignore.write_text("*\n", encoding="utf-8")
+    return path
+
+
 def workspace_config_path(workspace: Path | None = None) -> Path:
     return workspace_dir(workspace) / WORKSPACE_CONFIG_FILENAME
 
@@ -564,7 +583,7 @@ def write_workspace_config(
     """Persist ``config`` to ``.makker/config.toml``. Returns the path."""
 
     path = workspace_config_path(workspace)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_workspace_dir(workspace)
 
     lines: list[str] = []
     # A top-level key must precede any table.
@@ -1061,7 +1080,7 @@ def bootstrap_julia_env(
     if not template_path.exists():
         raise WorkspaceBootstrapError(f"no Julia env template at {template_path}")
 
-    target.parent.mkdir(parents=True, exist_ok=True)
+    ensure_workspace_dir(ws)
     if target.exists():
         shutil.rmtree(target)
     # Never carry a template's Manifest.toml into the workspace: it is environment-

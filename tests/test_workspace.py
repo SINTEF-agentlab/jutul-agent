@@ -750,3 +750,16 @@ def test_dependency_source_is_not_current_for_an_env_that_never_recorded_one(tmp
     assert not dependency_source_is_current(env, [tmp_path / "Nope" / "Project.toml"])
     # No capability packages at all is a stable, satisfiable state, not a forced bake.
     assert not dependency_source_is_current(env, [])
+
+
+def test_workspace_folder_keeps_itself_out_of_git(tmp_path: Path) -> None:
+    from makker.workspace import ensure_workspace_dir, write_workspace_config
+
+    write_workspace_config(WorkspaceConfig(simulator="jutuldarcy"), workspace=tmp_path)
+    gitignore = tmp_path / ".makker" / ".gitignore"
+    assert gitignore.read_text(encoding="utf-8") == "*\n"
+
+    # Someone who wants to commit part of the folder edits the file; it is theirs then.
+    gitignore.write_text("julia-env/\nsysimage/\n", encoding="utf-8")
+    ensure_workspace_dir(tmp_path)
+    assert gitignore.read_text(encoding="utf-8") == "julia-env/\nsysimage/\n"

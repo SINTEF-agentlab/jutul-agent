@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from makker import update_check
 from makker.interfaces.cli import upgrade as upgrade_cmd
 from makker.update_check import InstallInfo
 
@@ -75,7 +77,25 @@ def test_registry_runs_uv_tool_upgrade(monkeypatch, capsys) -> None:
     # The new install, not this process, updates the environment: only it has
     # the new simulator templates.
     assert calls[0] == ["uv", "tool", "upgrade", "makker"]
-    assert calls[1][1:3] == ["upgrade", "--env-only"]
+    # Not started through the `makker` launcher here, so this environment's own
+    # interpreter stands in for it.
+    assert calls[1][:5] == [sys.executable, "-m", "makker", "upgrade", "--env-only"]
+
+
+def test_upgrade_names_the_uv_tool_this_install_lives_in(monkeypatch, tmp_path) -> None:
+    # An application built on Makker carries it inside its own uv tool, and it is
+    # that tool `uv tool upgrade` has to be given.
+    tool = tmp_path / "tools" / "my-app"
+    tool.mkdir(parents=True)
+    (tool / "uv-receipt.toml").write_text(
+        '[tool]\nrequirements = [{ name = "my-app" }, { name = "makker" }]\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(update_check.sys, "prefix", str(tool))
+    assert update_check.uv_tool_name() == "my-app"
+    assert update_check.upgrade_command(InstallInfo("registry")) == "uv tool upgrade my-app"
+
+    monkeypatch.setattr(update_check.sys, "prefix", str(tmp_path / "not-a-tool"))
+    assert update_check.uv_tool_name() == "makker"
 
 
 def test_registry_windows_runs_detached(monkeypatch, capsys) -> None:

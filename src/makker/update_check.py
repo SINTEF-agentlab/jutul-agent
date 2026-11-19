@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
+import tomllib
 import urllib.request
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, distribution
@@ -101,6 +103,30 @@ def _url_to_path(url: str | None) -> Path | None:
     return Path(raw)
 
 
+def uv_tool_name() -> str:
+    """The uv tool this install lives in: what ``uv tool upgrade`` has to be given.
+
+    Usually that is Makker itself. An application built on Makker and installed
+    with ``uv tool install <app>`` carries Makker inside its own tool, though, and
+    there it is the application's tool that has to be upgraded for Makker to move.
+    uv names a tool's folder after it and lists it in the receipt it leaves there.
+    Falls back to ``makker`` when this is not a uv tool at all.
+    """
+
+    try:
+        with open(os.path.join(sys.prefix, "uv-receipt.toml"), "rb") as handle:
+            receipt = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return PACKAGE
+    requirements = receipt.get("tool", {}).get("requirements", [])
+    names = [r.get("name") for r in requirements if isinstance(r, dict)]
+    names = [name for name in names if isinstance(name, str) and name]
+    folder = os.path.basename(os.path.normpath(sys.prefix))
+    if folder in names:
+        return folder
+    return names[0] if names else PACKAGE
+
+
 def upgrade_command(info: InstallInfo | None = None) -> str:
     """The shell command that upgrades this install, as a user-facing string."""
 
@@ -108,7 +134,7 @@ def upgrade_command(info: InstallInfo | None = None) -> str:
     if info.method == "editable":
         return "git pull && uv sync"
     # Both git and registry tool installs upgrade the same way.
-    return f"uv tool upgrade {PACKAGE}"
+    return f"uv tool upgrade {uv_tool_name()}"
 
 
 # ---------------------------------------------------------------------------

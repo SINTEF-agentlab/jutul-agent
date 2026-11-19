@@ -36,6 +36,7 @@ from makker.workspace import (
     bootstrap_julia_env,
     dependency_source_is_current,
     ensure_env_template_stamp,
+    ensure_workspace_dir,
     env_declares_warm_packages,
     env_precompile_is_current,
     env_template_drifted,
@@ -50,7 +51,6 @@ from makker.workspace import (
     sync_julia_project_with_dependencies,
     user_owns_root_project,
     warm_source_is_current,
-    workspace_dir,
     workspace_is_simulator_source,
     write_env_template_stamp,
 )
@@ -513,8 +513,7 @@ def prepare_workspace_env(
 @contextmanager
 def _workspace_env_lock(workspace: Path):
     """Serialize env preparation across sessions and processes sharing a workspace."""
-    path = workspace_dir(workspace) / "env-prepare.lock"
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = ensure_workspace_dir(workspace) / "env-prepare.lock"
     with path.open("a+b") as lock:
         if os.name == "nt":
             import msvcrt
