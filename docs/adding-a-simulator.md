@@ -15,7 +15,7 @@ folder on its own and the agent code reads it generically.
 The folder goes in one of two places, depending on who it is for:
 
 - **In-tree**, under `src/makker/simulators/<name>/` in a checkout of this
-  repo, to contribute a simulator to makker itself. The rest of this page
+  repo, to contribute a simulator to Makker itself. The rest of this page
   follows this route.
 - **In your own package**, to add a simulator for your own use without forking.
   The folder is laid out the same way; you publish its adapter under an entry
@@ -160,14 +160,14 @@ package source itself.
 ## Trying a new simulator version
 
 The template's `[compat]` names the simulator versions the bundled skills were
-written for. A simulator developer can still run makker against a newer
+written for. A simulator developer can still run Makker against a newer
 version, to check that the agent copes and to update the skills before release:
 
 - **A local checkout ahead of the registry.** `init --source-path` dev-links it,
   and the checkout's own `[compat]` replaces the template's bounds on the
   simulator and on every package the checkout bounds itself. So an unreleased
   JutulDarcy that needs a newer Jutul resolves. While a package the template
-  bounds is dev-linked, makker leaves the versions to you: it doesn't
+  bounds is dev-linked, Makker leaves the versions to you: it doesn't
   check them, refuse them or update them.
 - **A release newer than the template.** Widen its bound in the workspace's
   `.makker/julia-env/Project.toml`, then update the env:
@@ -176,7 +176,7 @@ version, to check that the agent copes and to update the skills before release:
   julia --project=.makker/julia-env -e 'using Pkg; Pkg.update()'
   ```
 
-  makker starts with a note that the simulator is newer than it was made
+  Makker starts with a note that the simulator is newer than it was made
   for (`makker doctor` shows it as a warning), and neither `makker
   upgrade` nor the web UI's update moves it back.
 

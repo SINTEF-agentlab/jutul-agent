@@ -1,4 +1,4 @@
-"""Canaries over the private upstream surface makker deliberately touches.
+"""Canaries over the private upstream surface Makker deliberately touches.
 
 A failure here means an upstream bump moved something we compose with. Some
 contacts degrade gracefully at runtime; others can break request construction.

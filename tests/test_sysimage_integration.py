@@ -2,7 +2,7 @@
 
 Everything else about the feature is tested with Julia stubbed out, which is the
 right trade for tens of minutes of build time. What no stub can answer is
-whether the image makker produces actually does the thing it exists to do:
+whether the image Makker produces actually does the thing it exists to do:
 start a kernel with the packages already in memory. That is what these check.
 
 They need a workspace that has been built, so they are gated on

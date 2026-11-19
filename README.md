@@ -1,4 +1,4 @@
-# makker
+# Makker
 
 [![CI](https://github.com/SINTEF-agentlab/makker/actions/workflows/ci.yml/badge.svg)](https://github.com/SINTEF-agentlab/makker/actions/workflows/ci.yml)
 [![Simulators](https://github.com/SINTEF-agentlab/makker/actions/workflows/simulators.yml/badge.svg)](https://github.com/SINTEF-agentlab/makker/actions/workflows/simulators.yml)
@@ -19,11 +19,11 @@ plots the results, and iterates: fixing mistakes and refining the next run.
 </p>
 
 <p align="center">
-  <img src="docs/images/web-fimbul.png" alt="makker web UI: a Fimbul geothermal doublet with the 3D temperature field over time" width="47%">
+  <img src="docs/images/web-fimbul.png" alt="Makker web UI: a Fimbul geothermal doublet with the 3D temperature field over time" width="47%">
   &nbsp;&nbsp;&nbsp;
-  <img src="docs/images/web-battmo.png" alt="makker web UI: a BattMo discharge-rate investigation with plots and a report" width="47%">
+  <img src="docs/images/web-battmo.png" alt="Makker web UI: a BattMo discharge-rate investigation with plots and a report" width="47%">
 </p>
-<p align="center"><sub>The web UI (<code>makker</code>): chat on the left; interactive plots and reports pinned in a canvas on the right. On the left, a Fimbul geothermal doublet showing the 3D temperature field around the wells over time. On the right, a BattMo C-rate study with voltage curves, an attempts map, and a written report.</sub></p>
+<p align="center"><sub>The web UI (<code>Makker</code>): chat on the left; interactive plots and reports pinned in a canvas on the right. On the left, a Fimbul geothermal doublet showing the 3D temperature field around the wells over time. On the right, a BattMo C-rate study with voltage curves, an attempts map, and a written report.</sub></p>
 
 ## Quickstart
 
@@ -49,7 +49,7 @@ separate folder for each. `makker` with no command serves the web UI at
 <http://127.0.0.1:8742>, locally for a single trusted user; `makker tui`
 is the terminal alternative. The full [installation and usage
 guide](https://sintef-agentlab.github.io/makker/usage/) covers workspaces,
-interfaces, and models; to work on makker itself, clone the repo (see
+interfaces, and models; to work on Makker itself, clone the repo (see
 [Development](#development)).
 
 ## Supported simulators

@@ -1,4 +1,4 @@
-"""A minimal makker extension, end to end.
+"""A minimal Makker extension, end to end.
 
 This example wires a custom simulator and tools into the agent to show the
 extension seam in one place: a toy library (``DemoSim``) added as a simulator, and
@@ -154,7 +154,7 @@ def main() -> int:
     try:
         import uvicorn
     except ModuleNotFoundError:
-        print("The web stack is missing; reinstall makker (or `uv sync`).", file=sys.stderr)
+        print("The web stack is missing; reinstall Makker (or `uv sync`).", file=sys.stderr)
         return 1
     ensure_env()
     print("Demo app on http://127.0.0.1:8742")

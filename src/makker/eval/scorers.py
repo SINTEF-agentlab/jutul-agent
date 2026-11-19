@@ -1,6 +1,6 @@
 """Scorers that grade the session trace, not just the final answer.
 
-A makker sample can "pass" textually while having fabricated the work,
+A Makker sample can "pass" textually while having fabricated the work,
 so every task pairs an answer check with at least one trace check: the tools
 that should have run must appear as ``tool_call`` events in the session's
 ``trace.sqlite`` (recorded by the solver in the sample store).

@@ -23,7 +23,7 @@ flags are accepted by every command:
 version. A word that is not a command is an error, so a typo or a bare prompt
 never starts a server.
 
-### makker (web UI)
+### Makker (web UI)
 
 ```sh
 makker [--sim <name>] [--approval-mode <mode>] [--model <m>] [--host <addr>] [--port <n>]
@@ -135,7 +135,7 @@ with a fix.
 
 ## makker key
 
-View and set the provider API keys makker saves (in the global `.env`).
+View and set the provider API keys Makker saves (in the global `.env`).
 Run it from anywhere; it needs no workspace or Julia. This is the way to add a
 key on a pip-only install, or to replace a wrong or expired one.
 
@@ -152,7 +152,7 @@ overrides, since those take precedence over the saved one.
 
 Bring everything up to date, in two steps:
 
-1. **makker itself.** If a newer release exists, upgrade it the right way
+1. **Makker itself.** If a newer release exists, upgrade it the right way
    for how it was installed: a tool install runs `uv tool upgrade makker`;
    a dev checkout is pointed at `git pull && uv sync`.
 2. **This folder's Julia environment.** A workspace env keeps the simulator
@@ -179,10 +179,10 @@ from scratch. A launch in a workspace whose simulator is older than the
 installed version supports refuses to start, names both versions, and from a
 terminal offers to run the update.
 
-makker also checks for updates when the web UI and the terminal UI start,
+Makker also checks for updates when the web UI and the terminal UI start,
 and prints a one-line notice when a newer version exists (cached for a day;
 runs in the background so it never delays startup). The web UI shows the
-makker and simulator versions at the foot of the sidebar, with a quiet
+Makker and simulator versions at the foot of the sidebar, with a quiet
 "available" note when a newer release exists; clicking it runs the same update
 from the browser (see [Upgrading](usage.md#upgrading)). Disable the check with
 `MAKKER_NO_UPDATE_CHECK=1`.

@@ -194,7 +194,7 @@ else
 end"""
 
 _VSCALE_GUARDED = """\
-# Patched by makker before a system-image build: llvm.vscale is an SVE
+# Patched by Makker before a system-image build: llvm.vscale is an SVE
 # instruction, and LLVM aborts trying to emit it for CPUs without SVE. The
 # function is never called on those CPUs, but a system-image build compiles
 # even never-called methods (JuliaLang/PackageCompiler.jl#1070).

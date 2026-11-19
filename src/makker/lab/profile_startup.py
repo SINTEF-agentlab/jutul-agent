@@ -1,4 +1,4 @@
-"""Profile what makes makker slow to start, so an agent can speed it up.
+"""Profile what makes Makker slow to start, so an agent can speed it up.
 
 Cold start is dominated by Python imports (textual, langchain, langgraph,
 deepagents, pydantic) and then by building the agent graph. This measures both:

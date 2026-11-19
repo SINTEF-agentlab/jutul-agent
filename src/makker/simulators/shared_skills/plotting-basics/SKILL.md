@@ -87,7 +87,7 @@ Both act on whichever kind of view the interface gives you.
 - **Recapture** after the user rotates/zooms/steps a plot:
   `recapture_plot(slot="reservoir")` captures that plot at its current state and
   returns the image. Omit `slot` for the most recent. On the desktop it re-renders
-  the figure makker still holds, so it works even after the user closed the
+  the figure Makker still holds, so it works even after the user closed the
   window (you get its last state); only `close_plots` discards it. On the web the
   browser owns the camera, so a plot can only be snapshotted once its view has been
   drawn in the canvas; recapturing one that hasn't been says what to do about it.

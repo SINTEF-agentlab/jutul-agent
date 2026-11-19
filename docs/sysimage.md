@@ -32,7 +32,7 @@ problem below.
 
 ## Headless machines are fine, as long as they have xvfb
 
-Headless is the ordinary case on a server and it is unaffected: makker
+Headless is the ordinary case on a server and it is unaffected: Makker
 starts an Xvfb display for the Julia process, and a session runs from an image
 there exactly as it does with a monitor attached, plotting included.
 

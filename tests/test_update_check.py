@@ -179,7 +179,7 @@ def test_notify_prints_when_update_pending(monkeypatch, capsys) -> None:
     u._write_cache("9.9.9")
     u.notify_at_launch()
     err = capsys.readouterr().err
-    assert "newer makker is available" in err
+    assert "newer Makker is available" in err
     assert "9.9.9" in err
     assert "makker upgrade" in err
 

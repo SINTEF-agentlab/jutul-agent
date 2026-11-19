@@ -1,7 +1,7 @@
 """``makker eval`` subcommand: run bench suites through Inspect AI.
 
 A thin wrapper over ``inspect eval`` that loads provider keys the way the
-app does (the global makker ``.env`` plus the working directory's)
+app does (the global Makker ``.env`` plus the working directory's)
 *before* Inspect resolves the target model, points logs at a stable
 location, and defaults to one sample at a time; the agent under test uses
 process-global workspace state, so samples must not run concurrently.
@@ -97,7 +97,7 @@ def build_parser(prog: str = "makker eval") -> argparse.ArgumentParser:
         "--log-dir",
         type=Path,
         default=None,
-        help="Where Inspect writes eval logs (default: makker home /eval-logs).",
+        help="Where Inspect writes eval logs (default: Makker home /eval-logs).",
     )
     parser.add_argument(
         "--list",

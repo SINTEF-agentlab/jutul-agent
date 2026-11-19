@@ -1,12 +1,12 @@
 # Architecture
 
-makker is a Python harness around a persistent Julia process. The Python
+Makker is a Python harness around a persistent Julia process. The Python
 side runs the agent loop, the tools, and all bookkeeping, while the Julia
 side runs the simulator. One session means one workspace, one Julia process,
 one trace.
 
-![makker architecture](assets/architecture-light.svg#only-light)
-![makker architecture](assets/architecture-dark.svg#only-dark)
+![Makker architecture](assets/architecture-light.svg#only-light)
+![Makker architecture](assets/architecture-dark.svg#only-dark)
 
 <p class="ja-legend">
   <span class="ja-dot" style="background:#2563eb"></span> Python
@@ -50,7 +50,7 @@ titling), so front ends stay presentation-only.
 session: the system prompt, the custom tools, the filesystem, the model, and
 any capability layers (see "Composition and extension seams"). The agent loop
 itself (planning, tool dispatch, streaming) is
-deepagents/langgraph: makker deliberately does not own a loop. Generic
+deepagents/langgraph: Makker deliberately does not own a loop. Generic
 agent machinery is built and improved elsewhere at a pace not worth
 competing with. The value of this project is the scientific harness around
 the loop and the specialization for the simulators, so that is where the

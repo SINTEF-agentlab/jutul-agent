@@ -6,7 +6,7 @@ hide:
 
 <div class="ja-hero" markdown>
 <div class="ja-hero-text" markdown>
-<h1>makker</h1>
+<h1>Makker</h1>
 <p class="ja-tagline">A scientific AI agent for differentiable simulators built
 on the <a href="https://github.com/sintefmath/Jutul.jl">Jutul</a> framework.
 Ask for a simulation in plain language. The agent sets it up, runs it in a
@@ -18,20 +18,20 @@ fixing mistakes and refining the next run.</p>
 </div>
 <div class="ja-terminal">
 <div class="ja-terminal-bar"><span></span><span></span><span></span>
-<div class="ja-terminal-title">makker · my-battery-run</div></div>
+<div class="ja-terminal-title">Makker · my-battery-run</div></div>
 <pre><code><span class="ja-t-dim">$</span> uv tool install makker
 <span class="ja-t-dim">$</span> makker key openai
 <span class="ja-t-dim">$</span> mkdir my-battery-run &amp;&amp; cd my-battery-run
 <span class="ja-t-dim">$</span> makker init --sim battmo
 <span class="ja-t-dim">$</span> makker
-makker server on <span class="ja-t-ok">http://127.0.0.1:8742</span> (simulator: battmo)</code></pre>
+Makker server on <span class="ja-t-ok">http://127.0.0.1:8742</span> (simulator: battmo)</code></pre>
 </div>
 </div>
 
 <p align="center">
-  <img src="images/web-fimbul.png" alt="makker web UI: a Fimbul geothermal doublet with the 3D temperature field over time" width="47%">
+  <img src="images/web-fimbul.png" alt="Makker web UI: a Fimbul geothermal doublet with the 3D temperature field over time" width="47%">
   &nbsp;&nbsp;&nbsp;
-  <img src="images/web-battmo.png" alt="makker web UI: a BattMo discharge-rate investigation with plots and a report" width="47%">
+  <img src="images/web-battmo.png" alt="Makker web UI: a BattMo discharge-rate investigation with plots and a report" width="47%">
 </p>
 <p align="center" markdown><small>The web UI (`makker`): chat on the left; interactive plots and
 reports pinned in a canvas on the right.</small></p>

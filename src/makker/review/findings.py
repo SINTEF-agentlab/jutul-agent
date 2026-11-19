@@ -32,7 +32,7 @@ FIX_TARGETS = (
     "skill",  # clarify/extend a skill
     "prompt",  # adjust the system prompt
     "eval",  # add a regression case to the eval suite
-    "code",  # a makker code change
+    "code",  # a Makker code change
     "other",
 )
 
@@ -90,7 +90,7 @@ class Finding:
 class ReviewReport:
     """One critic pass over one session.
 
-    ``simulator`` and ``app_version`` (the makker version present when the
+    ``simulator`` and ``app_version`` (the Makker version present when the
     review ran) are recorded so findings can be aged out: an issue last seen on an
     old version, with no recurrence since, is probably already fixed.
     """

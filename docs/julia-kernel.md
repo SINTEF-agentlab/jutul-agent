@@ -3,7 +3,7 @@
 `src/makker/juliakernel/` supervises one Julia process per session and
 gives the agent a persistent REPL: state, loaded packages, and compiled
 methods survive across turns. It is a standalone package: the Python side
-imports nothing from the rest of makker, and the Julia server
+imports nothing from the rest of Makker, and the Julia server
 (`server.jl`) uses only the standard library, so the simulator envs need no
 agent-specific dependency.
 

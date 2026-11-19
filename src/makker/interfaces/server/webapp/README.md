@@ -1,4 +1,4 @@
-# makker web UI
+# Makker web UI
 
 The browser UI that `makker` serves: a React + TypeScript app built with Vite. It
 talks to the FastAPI server in `../` over REST and one WebSocket per session (the

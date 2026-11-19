@@ -51,11 +51,11 @@ def export_markdown(out_path: Path | None = None) -> Path:
     data = build_data()
     st = data["stats"]
     lines = [
-        "# makker session review",
+        "# Makker session review",
         "",
         f"{st['sessions_reviewed']} of {st['sessions_total']} sessions reviewed, "
         f"{st['issues_open']} open issues "
-        f"({st.get('current_version') and 'makker v' + st['current_version']}).",
+        f"({st.get('current_version') and 'Makker v' + st['current_version']}).",
         "",
     ]
     open_issues = [i for i in data["issues"] if i["status"] == "open"]

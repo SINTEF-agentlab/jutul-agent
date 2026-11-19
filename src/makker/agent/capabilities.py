@@ -37,7 +37,7 @@ SubagentFactory = Callable[["Session"], dict[str, Any]]
 class Branding:
     """How a front end introduces the session on its welcome screen.
 
-    An application built on makker is what the user thinks they opened; the
+    An application built on Makker is what the user thinks they opened; the
     simulator underneath is an implementation detail. Declaring branding on a
     capability lets that application name itself and offer starter prompts for
     its own workflow instead of the simulator's.

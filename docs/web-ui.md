@@ -38,7 +38,7 @@ Type `/` in the message box for commands (switch the model, set the approval
 policy, compact the conversation, download a transcript, and more). Past sessions
 are listed in the left sidebar and reopen where you left off.
 
-The foot of the sidebar names the makker and simulator versions. When a new
+The foot of the sidebar names the Makker and simulator versions. When a new
 release or an environment update is due, a link there opens the update dialog,
 which runs the update and reloads the page when it is done (see
 [Upgrading](usage.md#upgrading)).

@@ -44,7 +44,7 @@ _MARK = {PASS: "[ok]  ", WARN: "[warn]", FAIL: "[FAIL]"}
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="makker doctor",
-        description="Check that this workspace is ready to run makker.",
+        description="Check that this workspace is ready to run Makker.",
     )
     parser.add_argument(
         "--sim",
@@ -204,7 +204,7 @@ def _check_ollama(report: _Report, model_id: str) -> None:
         report.line(
             FAIL,
             "Ollama model",
-            f"{name} doesn't support tool calling, which makker requires",
+            f"{name} doesn't support tool calling, which Makker requires",
             f"Pick a tool-capable model, or update Ollama and re-pull if it should "
             f"support tools (`ollama show {name}` lists capabilities).",
         )
@@ -306,7 +306,7 @@ def _check_simulator_version(
         report.line(
             FAIL,
             "Simulator version",
-            f"the env has {found}; this makker requires {needed}",
+            f"the env has {found}; this Makker requires {needed}",
             "Update it with `makker upgrade` (or rebuild with "
             f"`makker init --sim {sim_name} --force`).",
         )
@@ -316,7 +316,7 @@ def _check_simulator_version(
         report.line(
             WARN,
             "Simulator version",
-            f"the env has {found}, newer than this makker was made for ({made_for})",
+            f"the env has {found}, newer than this Makker was made for ({made_for})",
             "It runs, but the bundled skills may not cover what changed.",
         )
     else:

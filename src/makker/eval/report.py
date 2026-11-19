@@ -445,7 +445,7 @@ def main() -> int:
     parser.add_argument(
         "--log-dir",
         type=Path,
-        help="directory to read .eval logs from (default: the makker home eval-logs/)",
+        help="directory to read .eval logs from (default: the Makker home eval-logs/)",
     )
     args = parser.parse_args()
     if not args.prefixes and not args.records:

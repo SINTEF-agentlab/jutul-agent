@@ -1,4 +1,4 @@
-"""Entry point for the makker CLI.
+"""Entry point for the Makker CLI.
 
 Delegates to ``interfaces.cli.main`` so the CLI plumbing has one home.
 """
@@ -9,7 +9,7 @@ import sys
 import warnings
 
 # The LangChain packages import pydantic.v1 so they can accept V1 models, and on
-# Python 3.14+ that import alone warns at the start of every command. makker
+# Python 3.14+ that import alone warns at the start of every command. Makker
 # never hands them a V1 model, so the warning says nothing about this program.
 warnings.filterwarnings(
     "ignore",

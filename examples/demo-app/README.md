@@ -1,4 +1,4 @@
-# makker demo app
+# Makker demo app
 
 A small, runnable example of extending the agent: a custom simulator and tools
 added through the extension seam, served with the bundled web UI. Copy it as a

@@ -248,7 +248,7 @@ def write_stamp(
         "julia": julia or julia_version(),
         "platform": platform_tag(),
         "cpu_target": cpu_target,
-        # Metadata, not a check. makker's version moves with every commit,
+        # Metadata, not a check. Makker's version moves with every commit,
         # while what actually has to agree with the image is the Julia it ships:
         # the shared Makker package, which is copied into the env and so is
         # already covered as a path package.
@@ -413,7 +413,7 @@ def _compare(stamp: dict, state: EnvState) -> tuple[list[tuple[str, list[str]]],
     divergences: list[tuple[str, list[str]]] = []
 
     if stamp.get("recipe") != RECIPE_VERSION:
-        divergences.append(("built by a different version of makker", []))
+        divergences.append(("built by a different version of Makker", []))
 
     current_julia = julia_version()
     if current_julia and stamp.get("julia") and stamp["julia"] != current_julia:

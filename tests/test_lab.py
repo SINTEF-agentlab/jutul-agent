@@ -94,7 +94,7 @@ def test_profile_turn_surfaces_our_functions():
     from makker.lab.profile_turn import profile_turn
 
     rows = profile_turn("answer", repeat=1)
-    assert rows, "the turn profiler should find some makker functions"
+    assert rows, "the turn profiler should find some Makker functions"
     assert all(r.tottime >= 0 and r.calls > 0 for r in rows)
     # It reports our code, not the lab itself.
     assert all(not r.function.startswith("lab/") for r in rows)

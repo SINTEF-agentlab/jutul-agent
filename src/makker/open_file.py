@@ -43,7 +43,7 @@ def _spawn(argv: list[str]) -> None:
     """Launch a detached viewer, discarding its stdout/stderr.
 
     The child's own diagnostics (e.g. a viewer failing to reach the display)
-    must not leak into makker's output.
+    must not leak into Makker's output.
     """
 
     subprocess.Popen(

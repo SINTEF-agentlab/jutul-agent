@@ -78,7 +78,7 @@ def plan(tmp_path):
             {
                 "argv": [*command("uv"), "tool", "upgrade", "makker"],
                 "shown": "uv tool upgrade makker",
-                "error": "makker could not be upgraded.",
+                "error": "Makker could not be upgraded.",
             },
             {
                 "argv": [*command("env"), "upgrade", "--env-only"],
@@ -137,7 +137,7 @@ def test_the_helper_updates_after_the_server_exits_then_restarts_it(tmp_path, pl
         "uv ran",
         "$ makker upgrade --env-only",
         "env ran",
-        "Starting makker again...",
+        "Starting Makker again...",
     ]
     assert [line for line in log if line in shown] == shown
 
@@ -150,20 +150,20 @@ def test_a_failed_upgrade_still_restarts_and_is_reported(tmp_path, plan) -> None
     entries = _entries(tmp_path / "record", until="server")
     # The environment is left alone, and the old version starts again.
     assert [entry["name"] for entry in entries] == ["uv", "server"]
-    assert "makker could not be upgraded." in _log(plan)
+    assert "Makker could not be upgraded." in _log(plan)
 
     # The restarted server reads what the helper left.
     restarted = Updater(tmp_path, local=True)
     restarted.report_last_update()
     job = restarted.status()["job"]
-    assert job["state"] == "failed" and job["error"] == "makker could not be upgraded."
+    assert job["state"] == "failed" and job["error"] == "Makker could not be upgraded."
     assert "uv ran" in job["lines"]
 
 
 def test_a_relaunch_that_cannot_start_is_said(plan) -> None:
     plan["relaunch"]["argv"] = [str(Path(plan["cwd"]) / "missing-program")]
     assert update_helper.finish_update(plan) is None
-    assert any(line.startswith("Could not start makker again") for line in _log(plan))
+    assert any(line.startswith("Could not start Makker again") for line in _log(plan))
 
 
 @pytest.mark.parametrize(

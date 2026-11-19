@@ -29,7 +29,7 @@ def test_write_empty_user_config_writes_empty_file() -> None:
 
 
 def test_user_config_path_under_state_home() -> None:
-    # config.toml sits at the root of the makker home, beside workspaces/.
+    # config.toml sits at the root of the Makker home, beside workspaces/.
     from makker.paths import state_home
 
     assert user_config_path() == state_home() / "config.toml"

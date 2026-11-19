@@ -169,7 +169,7 @@ optional free-form detail, and a fix target that says where the fix belongs:
 - `skill`: clarify or extend a skill so the agent avoids the mistake.
 - `prompt`: adjust the system prompt.
 - `eval`: add the session as a regression case to the eval suite.
-- `code`: a makker change.
+- `code`: a Makker change.
 
 The category and fix-target labels are a guide, not a fixed checklist; the reviewer
 uses "other" and explains in the detail field when a finding does not fit. The fix

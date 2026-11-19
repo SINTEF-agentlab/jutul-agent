@@ -292,7 +292,7 @@ def _local_source_compat(
 ) -> Iterator[None]:
     """Let a simulator checkout's own compat decide; roll back on failure.
 
-    The template bounds the simulator and the packages it shares with makker
+    The template bounds the simulator and the packages it shares with Makker
     (Jutul, say) to the released versions this install was made for. A checkout can
     be ahead of those: an unreleased JutulDarcy that needs a newer Jutul. So drop
     the template's bound on the simulator and on every package the checkout itself
@@ -576,7 +576,7 @@ def check_env_versions(
     """Refuse a managed env whose simulator is older than this install supports.
 
     The bundled skills are written for the template's simulator versions, so an env
-    resolved under an older makker would run with guidance its simulator does
+    resolved under an older Makker would run with guidance its simulator does
     not support. Its ``[compat]`` came from that older template, so nothing else
     would ever move it forward. An env the user owns (a root ``Project.toml``, or
     one passed with ``--julia-project``) is not checked.
@@ -592,7 +592,7 @@ def check_env_versions(
     sim = f" --sim {sim_name}" if sim_name else ""
     raise EnvOutdatedError(
         f"this workspace's Julia environment has {found}, but this version of "
-        f"makker requires {needed}. Update it, keeping packages added to it:\n"
+        f"Makker requires {needed}. Update it, keeping packages added to it:\n"
         f"    makker upgrade\n"
         f"or rebuild it from scratch:\n    makker init --force{sim}",
         outdated,
@@ -605,7 +605,7 @@ def newer_simulator_note(
     """A note when the env runs simulator packages newer than this install was made for.
 
     Not a refusal: a simulator developer trying an unreleased or just-released
-    version lands here, and so does a folder a newer makker set up.
+    version lands here, and so does a folder a newer Makker set up.
     """
 
     if user_owns_root_project(workspace):
@@ -617,7 +617,7 @@ def newer_simulator_note(
     made_for = ", ".join(f"{package} {spec}" for package, _, spec in newer)
     return (
         f"this folder's Julia environment has {found}, newer than this version of "
-        f"makker was made for ({made_for}). It runs, but the bundled skills may "
+        f"Makker was made for ({made_for}). It runs, but the bundled skills may "
         "not cover what changed."
     )
 
@@ -798,7 +798,7 @@ def _refresh_warm_sources(
     """Re-copy the in-env Makker runtime when the install's source has changed.
 
     The warm packages are dev-pathed copies, only laid down at bootstrap, so after
-    a makker update an existing managed env keeps the old Makker until a
+    a Makker update an existing managed env keeps the old Makker until a
     manual rebuild. We detect that by fingerprint, re-copy the packages, and
     re-resolve so a new in-package dependency installs; the bake re-runs in
     :func:`_ensure_env_warmed` because the re-copy dropped the precompile marker.
@@ -824,7 +824,7 @@ def _refresh_warm_sources(
         try:
             if not recopy_warm_sources(julia_project, template):
                 return  # user-owned env (no [sources]); nothing to refresh
-            _info("Updating the in-env Makker runtime (makker was updated)…")
+            _info("Updating the in-env Makker runtime (Makker was updated)…")
             resolve_and_instantiate(julia_project, precompile=False, capture=True)
         except (EnvSetupError, OSError) as exc:
             for target in targets:

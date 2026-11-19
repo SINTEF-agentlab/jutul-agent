@@ -1,4 +1,4 @@
-"""Tell users when a newer makker is available, and how to upgrade.
+"""Tell users when a newer Makker is available, and how to upgrade.
 
 The agent is actively developed, so a stale install is a common source of
 confusion. This module powers two things:
@@ -48,7 +48,7 @@ InstallMethod = Literal["registry", "git", "editable", "unknown"]
 
 @dataclass(frozen=True)
 class InstallInfo:
-    """How makker was installed, and where (for editable installs)."""
+    """How Makker was installed, and where (for editable installs)."""
 
     method: InstallMethod
     location: Path | None = None  # the source checkout, for editable installs
@@ -295,7 +295,7 @@ def notify_at_launch(stream=None) -> None:
     latest = pending_update()
     if latest is not None:
         print(
-            f"A newer makker is available: {__version__} -> {latest}. "
+            f"A newer Makker is available: {__version__} -> {latest}. "
             f"Upgrade with `makker upgrade` (or `{upgrade_command(info)}`).",
             file=stream,
         )

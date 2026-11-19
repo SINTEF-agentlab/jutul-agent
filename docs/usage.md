@@ -10,7 +10,7 @@ You need two tools on PATH:
 
 On headless Linux, plotting also needs `xvfb`.
 
-Install makker as a uv tool. This puts a `makker` command on your
+Install Makker as a uv tool. This puts a `makker` command on your
 PATH that runs from any folder:
 
 ```sh
@@ -26,7 +26,7 @@ key` to see what's set), and the web UI and TUI prompt for a missing key on
 their own. Local models through [Ollama](https://ollama.com) need no key.
 `makker doctor` verifies the whole setup and prints a fix per finding.
 
-Prefer a clone for working on makker itself? See
+Prefer a clone for working on Makker itself? See
 [development](development.md), where you run commands as `uv run makker`.
 
 ## Workspaces
@@ -76,7 +76,7 @@ next run.
 
 ## Upgrading
 
-makker is actively developed, so keep it current:
+Makker is actively developed, so keep it current:
 
 ```sh
 makker upgrade          # upgrade makker, then this folder's Julia environment
@@ -86,33 +86,33 @@ makker upgrade --check  # just report what's installed, what's latest, and the f
 `upgrade` does the right thing for how you installed: a tool install runs
 `uv tool upgrade makker`; a dev checkout is told to `git pull && uv sync`.
 Then, run in a workspace, it brings that folder's Julia environment up to the
-simulator versions the installed makker supports (`--env-only` does just
+simulator versions the installed Makker supports (`--env-only` does just
 this part).
 On Windows the running executable can't replace itself, so the upgrade runs in
-a new console window and makker exits to release the file; reopen it when
+a new console window and Makker exits to release the file; reopen it when
 that window finishes.
-At launch, makker also prints a one-line notice when a newer version is
+At launch, Makker also prints a one-line notice when a newer version is
 available (a background check, cached for a day; it never delays startup), and
-the web UI shows the makker and simulator versions at the foot of the
+the web UI shows the Makker and simulator versions at the foot of the
 sidebar. Turn the check off with `MAKKER_NO_UPDATE_CHECK=1`.
 
 The web UI can do the same update without a terminal. When a release is out,
-the foot of the sidebar says so; click it to update. makker upgrades
+the foot of the sidebar says so; click it to update. Makker upgrades
 itself, updates the folder's Julia environment, restarts, and the page reloads
 into the new version. Open chats are closed for it (their conversations are
 kept), and it waits while a session is starting or working. It only does this
-when makker runs on your own computer and was installed with `uv tool
+when Makker runs on your own computer and was installed with `uv tool
 install`. On Windows, where a running program can't replace its own files,
-makker closes and the update runs in a new console window. makker
+Makker closes and the update runs in a new console window. Makker
 then keeps running in that window (Ctrl+C there stops it), and the window's
 output is also saved in `~/.local/share/makker/update/update.log`. If an
 update fails, the page shows its output, also after it reloads into the
-restarted makker. An outdated Julia environment gets an "Update
+restarted Makker. An outdated Julia environment gets an "Update
 environment" link in the same place, on every system.
 
 An upgrade ships new simulator env templates, but existing workspace envs keep
 the packages they resolved. When a workspace's simulator is older than the
-installed makker supports, launch refuses to start and, from a terminal,
+installed Makker supports, launch refuses to start and, from a terminal,
 offers to update the env in place (the web UI offers it too). To do it yourself:
 
 ```sh
@@ -124,7 +124,7 @@ If the folder starts from a [system image](sysimage.md), the update also has to
 rebuild it (about 20 minutes); from a terminal you can choose to stop using an
 image instead.
 
-A simulator newer than the installed makker was made for is not refused: it
+A simulator newer than the installed Makker was made for is not refused: it
 runs with a note at launch, since the bundled skills may not cover what changed.
 That is what a simulator developer trying an unreleased version gets, and an
 update never moves it back.
@@ -278,7 +278,7 @@ uv tool upgrade makker --with 'langchain-<provider>'
 ```
 
 (From a dev checkout, use `uv add 'langchain-<provider>'` instead.) If the
-package is missing, makker names the exact one to install.
+package is missing, Makker names the exact one to install.
 OpenAI, Anthropic, Google, OpenRouter, and Ollama are already bundled.
 
 ## Troubleshooting

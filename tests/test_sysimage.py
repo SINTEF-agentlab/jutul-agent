@@ -323,7 +323,7 @@ def test_an_older_build_recipe_diverges(tmp_path: Path) -> None:
 def test_makker_version_alone_does_not_diverge(tmp_path: Path) -> None:
     """A commit that leaves the Julia side alone must not invalidate the image.
 
-    What has to agree with the image is the Julia makker ships, and that is
+    What has to agree with the image is the Julia Makker ships, and that is
     already covered as a path package once it is copied into the env.
     """
     ws, env = build_workspace(tmp_path)

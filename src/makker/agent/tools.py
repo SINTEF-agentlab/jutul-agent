@@ -1,4 +1,4 @@
-"""Deep Agents tools that wrap makker core operations.
+"""Deep Agents tools that wrap Makker core operations.
 
 Only tools that bridge something the stock deep-agents tools cannot do
 live here. Generic file/shell access is handled by deep-agents'

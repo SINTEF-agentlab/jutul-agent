@@ -80,7 +80,7 @@ def test_registry_runs_uv_tool_upgrade(monkeypatch, capsys) -> None:
 
 def test_registry_windows_runs_detached(monkeypatch, capsys) -> None:
     # On Windows the running launcher is locked, so uv must run in a separate
-    # process while makker exits — not inline (which would fail the copy).
+    # process while Makker exits — not inline (which would fail the copy).
     monkeypatch.setattr(upgrade_cmd, "install_info", lambda: InstallInfo("registry"))
     monkeypatch.setattr(upgrade_cmd, "refresh_cache", lambda force=False: "9.9.9")
     monkeypatch.setattr(upgrade_cmd.shutil, "which", lambda _name: "C:/uv.exe")
@@ -187,7 +187,7 @@ def test_a_newer_environment_is_left_alone(tmp_path, monkeypatch, capsys) -> Non
 
     assert upgrade_cmd.run(_args(env_only=True)) == 0
     out = capsys.readouterr().out
-    assert "has JutulDarcy 0.5.0, newer than this version of makker was made for" in out
+    assert "has JutulDarcy 0.5.0, newer than this version of Makker was made for" in out
     assert "Nothing to update." in out
 
 

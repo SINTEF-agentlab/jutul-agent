@@ -1,7 +1,7 @@
 """The in-env Makker runtime auto-refreshes when the install's source changes.
 
 Warm packages are dev-pathed copies laid down at bootstrap, so without this an
-existing managed env keeps a stale Makker after a makker update.
+existing managed env keeps a stale Makker after a Makker update.
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def test_fingerprint_tracks_shared_and_template_sources(tmp_path, template, shar
 
 def test_recopy_then_mark_is_the_refresh_cycle(tmp_path, template, shared_pkg):
     env = _make_env(tmp_path, template, shared_pkg)
-    # The install's shared source changes (a makker update).
+    # The install's shared source changes (a Makker update).
     (shared_pkg / "src" / "ensemble.jl").write_text("# v2 changed\n", encoding="utf-8")
     assert warm_source_is_current(env, template) is False
 

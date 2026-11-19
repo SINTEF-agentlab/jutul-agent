@@ -1,4 +1,4 @@
-"""Finish updating makker after the server that started the update has exited.
+"""Finish updating Makker after the server that started the update has exited.
 
 On Windows a running program's files are locked, so the server can't upgrade itself
 the way it does elsewhere. It writes a plan, starts this script in a new console
@@ -9,11 +9,11 @@ upgrade replaces), and exits. This script then:
 2. runs the plan's steps in order (``uv tool upgrade makker``, then the update
    of the folder's Julia environment), stopping at the first that fails;
 3. records the outcome, which the restarted server reports to the page;
-4. starts makker again with its original arguments, in this window, and stays
+4. starts Makker again with its original arguments, in this window, and stays
    to say so if it stops with an error.
 
 Everything it shows also goes to the plan's log file. It uses only the standard
-library, since it runs outside makker's environment, and nothing in it is
+library, since it runs outside Makker's environment, and nothing in it is
 specific to Windows except how it waits for a process.
 """
 
@@ -32,7 +32,7 @@ from typing import Any
 
 _POLL_SECONDS = 0.2
 # How a program ends when Ctrl+C stops it: Windows' STATUS_CONTROL_C_EXIT, or the
-# signal elsewhere. That is the user stopping makker, not an error to report.
+# signal elsewhere. That is the user stopping Makker, not an error to report.
 _CTRL_C_EXITS = (0xC000013A, -signal.SIGINT)
 
 
@@ -53,7 +53,7 @@ def main(argv: list[str]) -> int:
 
 
 def finish_update(plan: dict[str, Any]) -> subprocess.Popen | None:
-    """Do the plan, then start makker again. ``None`` if it could not start."""
+    """Do the plan, then start Makker again. ``None`` if it could not start."""
     with open(plan["log"], "w", encoding="utf-8") as log:
 
         def say(line: str) -> None:
@@ -62,32 +62,32 @@ def finish_update(plan: dict[str, Any]) -> subprocess.Popen | None:
             with contextlib.suppress(OSError, ValueError):  # no console to show it in
                 print(line, flush=True)
 
-        say("Updating makker. Keep this window open: makker starts here again after.")
+        say("Updating Makker. Keep this window open: Makker starts here again after.")
         try:
             deadline = time.monotonic() + plan["timeout"]
             if not wait_for_exit(plan["wait_for"], deadline):
-                say("makker hasn't exited; updating anyway.")
+                say("Makker hasn't exited; updating anyway.")
             for path in plan["free"]:
                 if not wait_until_free(path, deadline):
-                    say(f"{path} is in use, perhaps by another makker; updating anyway.")
+                    say(f"{path} is in use, perhaps by another Makker; updating anyway.")
             error = run_steps(plan["steps"], plan["cwd"], say)
         except Exception as exc:
             say(traceback.format_exc().rstrip())
             error = f"The update could not run: {exc}"
-        # Starting makker again matters more than reporting how this went.
+        # Starting Makker again matters more than reporting how this went.
         with contextlib.suppress(OSError):
             write_outcome(plan["outcome"], error)
         if error:
             say(error)
 
         relaunch = plan["relaunch"]
-        say("Starting makker again...")
+        say("Starting Makker again...")
         try:
             return subprocess.Popen(
                 relaunch["argv"], cwd=relaunch["cwd"], env={**os.environ, **relaunch["env"]}
             )
         except OSError as exc:
-            say(f"Could not start makker again ({exc}). Start it yourself.")
+            say(f"Could not start Makker again ({exc}). Start it yourself.")
             return None
 
 

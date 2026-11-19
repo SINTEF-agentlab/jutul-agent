@@ -22,7 +22,7 @@ from makker.paths import state_home
 
 
 def user_env_path() -> Path:
-    """Global secrets file at the root of the makker home."""
+    """Global secrets file at the root of the Makker home."""
     return state_home() / ".env"
 
 

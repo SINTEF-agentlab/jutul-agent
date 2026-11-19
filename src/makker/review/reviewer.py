@@ -87,7 +87,7 @@ async def review_transcript(
 
 
 def app_version() -> str:
-    """The makker version present when this review ran (for staleness)."""
+    """The Makker version present when this review ran (for staleness)."""
     try:
         from makker import __version__
 

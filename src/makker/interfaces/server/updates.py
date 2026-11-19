@@ -1,4 +1,4 @@
-"""Updating makker and this folder's Julia environment from the web UI.
+"""Updating Makker and this folder's Julia environment from the web UI.
 
 The browser can do what ``makker upgrade`` does in a terminal:
 
@@ -11,7 +11,7 @@ The browser can do what ``makker upgrade`` does in a terminal:
 
 Step 1 needs a uv tool install. On Windows a running program can't replace its own
 files, so there the server hands all three steps to ``update_helper.py`` in a new
-console window and exits; the helper starts makker again in that window. Either
+console window and exits; the helper starts Makker again in that window. Either
 way the restarted server reports how the update went (``report_last_update``), so the
 reloaded page can show a failure.
 
@@ -63,26 +63,26 @@ _RESTART_DELAY_SECONDS = 2.0
 # How long the helper waits for this server to exit before trying anyway.
 _HELPER_WAIT_SECONDS = 120
 
-_UPGRADE_FAILED = "makker could not be upgraded. See the output above."
+_UPGRADE_FAILED = "Makker could not be upgraded. See the output above."
 _ENV_FAILED = "The Julia environment could not be updated. See the output above."
 
 # Why this install can't upgrade itself from the browser, as shown in the dialog.
 _INSTALL_BLOCKERS = {
     "not-local": (
-        "Updating from the browser only works when makker runs on this computer. "
+        "Updating from the browser only works when Makker runs on this computer. "
         "Run `makker upgrade` where it runs, then start it again."
     ),
     "dev-checkout": (
         "This is a development checkout. Update it with `git pull && uv sync`, then "
-        "start makker again."
+        "start Makker again."
     ),
     "not-uv-tool": (
-        "makker wasn't installed with `uv tool install`, so it can't update "
+        "Makker wasn't installed with `uv tool install`, so it can't update "
         "itself. Upgrade it the way you installed it, then start it again."
     ),
     "no-uv": (
-        "uv isn't on the PATH makker was started with. Run `uv tool upgrade "
-        "makker` in a terminal, then start makker again."
+        "uv isn't on the PATH Makker was started with. Run `uv tool upgrade "
+        "makker` in a terminal, then start Makker again."
     ),
     "no-restart": (
         "This server can't restart itself. Run `makker upgrade` in a terminal, then start it again."
@@ -120,7 +120,7 @@ def _on_windows() -> bool:
 
 
 def _separate_window() -> bool:
-    """Whether upgrading makker is left to the helper in a separate window."""
+    """Whether upgrading Makker is left to the helper in a separate window."""
     return _on_windows() or os.environ.get(SEPARATE_WINDOW_ENV_VAR) == "1"
 
 
@@ -215,7 +215,7 @@ class Updater:
             "local": self.local,
             "can_install": blocker is None,
             "install_note": _INSTALL_BLOCKERS.get(blocker) if blocker else None,
-            # Upgrading makker continues in a separate window, which it then runs in.
+            # Upgrading Makker continues in a separate window, which it then runs in.
             "separate_window": _separate_window(),
             # Not read during an update: after `uv tool upgrade` this process runs
             # old code over new files, so it stays away from anything it hasn't loaded.
@@ -289,7 +289,7 @@ class Updater:
             job.error = f"The update could not start: {exc}"
             job.state = "failed"
             return
-        job.add("makker continues updating in a separate window, and runs there after.")
+        job.add("Makker continues updating in a separate window, and runs there after.")
         job.add(f"Its output is also saved in {plan['log']}.")
         job.state = "restarting"
         self.handed_off = True
@@ -429,7 +429,7 @@ def restart_server() -> NoReturn:
     keeps this one's terminal and arguments, so it serves the same folder on the
     same port.
     """
-    print("Restarting with the updated makker...", file=sys.stderr, flush=True)
+    print("Restarting with the updated Makker...", file=sys.stderr, flush=True)
     sys.stdout.flush()
     argv = [sys.executable, "-m", "makker", *sys.argv[1:]]
     os.execve(sys.executable, argv, {**os.environ, RESTARTED_ENV_VAR: "1"})

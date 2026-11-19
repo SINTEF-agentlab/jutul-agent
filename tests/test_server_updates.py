@@ -1,4 +1,4 @@
-"""Updating makker and the folder's Julia environment from the web UI."""
+"""Updating Makker and the folder's Julia environment from the web UI."""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ def _join_update_thread() -> None:
 def run_update(monkeypatch):
     """Start an update whose commands exit with ``codes``, and wait for it.
 
-    ``versions`` is the installed makker version before and after.
+    ``versions`` is the installed Makker version before and after.
     """
 
     def run(updater, manager, *, install, sysimage=None, codes=(), versions=("1.0", "1.0")):
@@ -561,7 +561,7 @@ def test_behind_a_proxy_origins_are_checked_but_not_hosts(web_run) -> None:
     web, calls = web_run
     assert web.run(_web_args(base_path="/restricted")) == 0
     assert _guard(calls.app)["local_only"] is False
-    assert not calls.updater.local  # nor is makker updated from a proxied page
+    assert not calls.updater.local  # nor is Makker updated from a proxied page
 
 
 def test_a_server_on_the_network_never_updates(web_run) -> None:

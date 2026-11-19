@@ -1,4 +1,4 @@
-"""The eval harness: run makker under Inspect AI and grade the trace.
+"""The eval harness: run Makker under Inspect AI and grade the trace.
 
 This package is the harness: the solver, the scorers, and RunConfig.
 makker-bench is the benchmark built on it; its public suites live in

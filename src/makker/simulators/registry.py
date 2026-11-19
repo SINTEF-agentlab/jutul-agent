@@ -8,7 +8,7 @@ file needs editing to add one:
   bundled simulator is just adding its folder.
 - **Installed**: any installed package that publishes a ``SimulatorAdapter``
   under the ``makker.simulators`` entry-point group. This is how a separate
-  project adds its own simulator without forking makker (see
+  project adds its own simulator without forking Makker (see
   docs/extending-for-your-application.md). An installed adapter overrides a
   bundled one of the same name.
 """

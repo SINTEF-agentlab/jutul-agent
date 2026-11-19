@@ -1,10 +1,10 @@
-# Building your application on makker
+# Building your application on Makker
 
-You can build a complete application on top of makker, with its own
-simulator, skills, tools, and web front end, **without forking makker or
+You can build a complete application on top of Makker, with its own
+simulator, skills, tools, and web front end, **without forking Makker or
 editing any of its code**. Your project is a normal Python package that depends
 on `makker` and registers what it adds through entry points. Upgrading
-makker then never costs you a merge.
+Makker then never costs you a merge.
 
 There are three things you can contribute, independently or together:
 
@@ -15,7 +15,7 @@ There are three things you can contribute, independently or together:
 | A web app for your users | a front end over the documented WebSocket/REST protocol |
 
 The rest of this page shows each one. The agent loop, the server, the Julia
-kernel, and the wire protocol all stay in makker; you only add data and
+kernel, and the wire protocol all stay in Makker; you only add data and
 small pieces of glue.
 
 ## Add your own simulator
@@ -40,11 +40,11 @@ mypackage/
 mysim = "mypackage.mysim.adapter:MYSIM"
 ```
 
-Install your package alongside makker and `mysim` appears everywhere the
+Install your package alongside Makker and `mysim` appears everywhere the
 built-in simulators do (the registry, `--sim mysim`, the server's
 `/simulators`). The adapter's `module_dir` is what anchors your `skills/` and
 `julia_env/`, so they are read from your package. The shared `Makker` Julia
-runtime is copied from the makker install automatically, so your
+runtime is copied from the Makker install automatically, so your
 `julia_env/Project.toml` only needs your simulator's packages plus the
 `[sources]` entries (copy them from a bundled simulator).
 
@@ -154,7 +154,7 @@ figures, so they work for any simulator.
 
 ## What you never touch
 
-You do not edit makker's registry, builder, prompts, server, or kernel.
+You do not edit Makker's registry, builder, prompts, server, or kernel.
 Adding a simulator is an entry point and a folder; adding behavior is an entry
 point and a `Capability`; adding a UI is code against the protocol. That is the
-seam, and it is the supported way to build a product on top of makker.
+seam, and it is the supported way to build a product on top of Makker.

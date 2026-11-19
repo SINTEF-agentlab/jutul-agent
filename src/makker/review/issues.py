@@ -28,7 +28,7 @@ _MAX_EXAMPLES = 5
 class Issue:
     """A distinct, recurring problem, accumulated across reviews.
 
-    ``last_version`` is the makker version of the most recent review that
+    ``last_version`` is the Makker version of the most recent review that
     touched this issue. Compared against the current version it gives a staleness
     hint: an open issue last seen on an older version, not re-flagged since, has
     likely already been fixed.

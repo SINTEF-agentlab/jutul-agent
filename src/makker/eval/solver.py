@@ -1,4 +1,4 @@
-"""Run one full makker session per Inspect sample.
+"""Run one full Makker session per Inspect sample.
 
 The solver builds the same stack a real session uses (workspace, Julia
 kernel, :class:`Session`, ``build_agent``, ``TurnRunner``) inside Inspect's
@@ -129,7 +129,7 @@ def _golden_env(adapter: Any, simulator: str) -> Path:
     """A prepared workspace env for this simulator, built once and kept aligned.
 
     Instantiating a simulator env from scratch takes minutes; one prepared
-    copy lives under the makker home (``eval-envs/<sim>``) and each
+    copy lives under the Makker home (``eval-envs/<sim>``) and each
     sample starts from a copy of it. Copying preserves mtimes, so the
     precompile marker stays current and the per-sample env prep is a cheap
     reconcile instead of a full instantiate.
@@ -263,7 +263,7 @@ async def _run_makker_session(
 
 @solver
 def makker_solver(simulator: str = "jutuldarcy") -> Solver:
-    """Solve each sample by handing it to a fresh makker session."""
+    """Solve each sample by handing it to a fresh Makker session."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         fixtures = state.metadata.get("fixtures", {})

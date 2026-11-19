@@ -1,9 +1,9 @@
 """``makker upgrade``: bring the install and this folder's Julia env up to date.
 
-Two things can fall behind. The install: a newer makker may be released. The
+Two things can fall behind. The install: a newer Makker may be released. The
 workspace: its Julia environment keeps the simulator versions it resolved, so after
 an upgrade it can be older than the bundled skills expect. One command handles both,
-in order: upgrade makker the right way for how it was installed, then update
+in order: upgrade Makker the right way for how it was installed, then update
 the current folder's Julia environment to what that version supports.
 
 ``--check`` reports both without changing anything; ``--env-only`` skips the first
@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="makker upgrade",
         description=(
-            "Upgrade makker to the latest release, then bring this folder's "
+            "Upgrade Makker to the latest release, then bring this folder's "
             "Julia environment up to the simulator versions it supports."
         ),
     )
@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--env-only",
         action="store_true",
-        help="Only update this folder's Julia environment; don't upgrade makker itself.",
+        help="Only update this folder's Julia environment; don't upgrade Makker itself.",
     )
     parser.add_argument(
         "--sysimage",
@@ -124,7 +124,7 @@ def workspace_env_status(ws: Path):
     """``(adapter, project, sim, outdated)`` for a managed workspace env, else ``None``.
 
     ``outdated`` lists ``(package, resolved, required)`` for each package the env
-    resolved outside what the installed makker supports. A folder that is not a
+    resolved outside what the installed Makker supports. A folder that is not a
     workspace, or whose Julia project the user owns, has nothing to update here.
     """
 
@@ -191,7 +191,7 @@ def update_workspace_env(ws: Path, *, sysimage: str | None = None) -> int:
 
     status = workspace_env_status(ws)
     if status is None:
-        print("No makker managed Julia environment in this folder, so nothing else to update.")
+        print("No Makker managed Julia environment in this folder, so nothing else to update.")
         return 0
     adapter, project, sim, outdated = status
     if not outdated:
@@ -270,7 +270,7 @@ def upgrade_workspace(adapter, ws: Path, project: Path, sim: str, *, sysimage: b
 
 
 def _env_step_with_new_install(ws: Path) -> int:
-    """Run the environment update with the newly installed makker."""
+    """Run the environment update with the newly installed Makker."""
 
     # The launcher this process started from: uv has just upgraded it in place.
     # Looking it up on PATH instead could find another install entirely.
@@ -315,7 +315,7 @@ def _upgrade_detached_windows(argv: list[str]) -> int:
 
     On Windows the running ``makker.exe`` launcher is locked, so ``uv tool
     upgrade`` can't overwrite it from within this process (it fails copying the
-    entrypoint). Launch uv in its own console and return so makker exits and
+    entrypoint). Launch uv in its own console and return so Makker exits and
     frees the executable; uv builds and updates the venv first, reaching the
     launcher copy only after we're gone. Falls back to manual instructions if the
     detached launch can't start.
@@ -327,13 +327,13 @@ def _upgrade_detached_windows(argv: list[str]) -> int:
     except OSError as exc:
         print(
             f"\nerror: couldn't start the upgrade ({exc}). Run it yourself from a "
-            "new terminal (not from inside makker):\n    uv tool upgrade makker",
+            "new terminal (not from inside Makker):\n    uv tool upgrade makker",
             file=sys.stderr,
         )
         return 1
     print(
-        "\nUpgrading in a new window. Windows can't replace makker's own "
+        "\nUpgrading in a new window. Windows can't replace Makker's own "
         "running executable, so this process will exit to release it — reopen "
-        f"makker once the other window finishes.\n{_NEXT_LAUNCH_HINT}"
+        f"Makker once the other window finishes.\n{_NEXT_LAUNCH_HINT}"
     )
     return 0

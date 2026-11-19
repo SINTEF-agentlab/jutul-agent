@@ -1,4 +1,4 @@
-"""Profile a representative agent turn to surface slow makker code.
+"""Profile a representative agent turn to surface slow Makker code.
 
 The import profiler (:mod:`makker.lab.profile_startup`) covers cold start.
 This covers the hot path: it runs a scenario through the full agent runtime and TUI
@@ -29,7 +29,7 @@ class Hotspot:
 
 
 def profile_turn(scenario_name: str = "tool_call", repeat: int = 3) -> list[Hotspot]:
-    """Profile rendering a scenario and return the makker functions by self-time."""
+    """Profile rendering a scenario and return the Makker functions by self-time."""
     from makker.lab.scenarios import get
     from makker.lab.tui import capture
 
@@ -59,7 +59,7 @@ def _cli(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     rows = profile_turn(args.scenario, args.repeat)
-    print(f"Hottest makker functions rendering `{args.scenario}` x{args.repeat}:\n")
+    print(f"Hottest Makker functions rendering `{args.scenario}` x{args.repeat}:\n")
     print(f"  {'self ms':>8} {'cum ms':>8} {'calls':>7}  function")
     for r in rows:
         print(f"  {r.tottime * 1000:8.1f} {r.cumtime * 1000:8.1f} {r.calls:7d}  {r.function}")

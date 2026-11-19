@@ -1,6 +1,6 @@
 # simulators/
 
-One folder per simulator that makker knows about. Each folder is
+One folder per simulator that Makker knows about. Each folder is
 self-contained:
 
 ```

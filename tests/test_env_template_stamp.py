@@ -18,7 +18,7 @@ from makker.workspace import (
 )
 
 # A template Project.toml that declares a warm package, so the env reads as a
-# managed makker env (env_declares_warm_packages → True).
+# managed Makker env (env_declares_warm_packages → True).
 _TEMPLATE_PROJECT = '[deps]\nFoo = "uuid"\nMakker = "ja-uuid"\n'
 
 
@@ -215,4 +215,4 @@ def test_doctor_warns_about_a_newer_simulator(tmp_path: Path, capsys) -> None:
     doctor._check_simulator_version(report, ws, env_dir, "jutuldarcy")
     assert report.worst == doctor.WARN
     out = capsys.readouterr().out
-    assert "JutulDarcy 9.0.0, newer than this makker was made for" in out
+    assert "JutulDarcy 9.0.0, newer than this Makker was made for" in out

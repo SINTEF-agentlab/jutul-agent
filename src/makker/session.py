@@ -1,4 +1,4 @@
-"""The Session object: unit of work for one makker invocation."""
+"""The Session object: unit of work for one Makker invocation."""
 
 from __future__ import annotations
 
@@ -237,7 +237,7 @@ def _ensure_makker_gitignore(output_dir: Path) -> None:
 
 @dataclass
 class Session:
-    """A live makker session. Construct via ``Session.create``.
+    """A live Makker session. Construct via ``Session.create``.
 
     Direct construction is supported for tests that want to wire a Session
     around a pre-built trace, but production code should always go through

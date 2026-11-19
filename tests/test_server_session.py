@@ -283,7 +283,7 @@ def test_simulators_endpoint_reports_no_branding_when_nothing_declares_it(
 
 def test_simulators_endpoint_carries_installed_branding(tmp_path: Path, monkeypatch) -> None:
     # An installed capability names the welcome screen and supplies its starter
-    # prompts, so a demo built on makker introduces itself, not the simulator.
+    # prompts, so a demo built on Makker introduces itself, not the simulator.
     from makker.agent import capabilities as capabilities_mod
 
     branded = Capability(

@@ -177,7 +177,7 @@ def workspace_memory_dir(workspace: Path | None = None) -> Path:
 
     Lives alongside ``sessions/`` under the workspace's state dir so memory
     is automatically scoped to the workspace path the user invokes
-    makker from. The agent maintains the contents via ``edit_file`` /
+    Makker from. The agent maintains the contents via ``edit_file`` /
     ``write_file`` tools mounted at ``/memory/`` in the agent backend.
     """
     return workspace_state_dir(workspace) / "memory"

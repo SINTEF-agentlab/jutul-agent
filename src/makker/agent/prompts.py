@@ -1,6 +1,6 @@
 """Build the per-session system prompt.
 
-Everything makker adds to the model's system prompt is assembled here,
+Everything Makker adds to the model's system prompt is assembled here,
 deterministically from the ``SimulatorAdapter`` and the session's display
 capability; Deep Agents appends its built-in BASE prompt after it. Each
 behavioral rule is stated exactly once; the per-provider ``HarnessProfile``

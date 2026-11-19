@@ -35,7 +35,7 @@ def build_parser(prog: str = "makker web") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description=(
-            "Run the makker web UI (HTTP + WebSocket server + browser app). "
+            "Run the Makker web UI (HTTP + WebSocket server + browser app). "
             "`makker` and `makker web` are the same command and take the same "
             "options."
         ),
@@ -214,7 +214,7 @@ def run(args: argparse.Namespace) -> int:
         # environment; reinstalling restores the web stack.
         print(
             "error: the web stack (uvicorn/fastapi) is missing from this install. "
-            "Reinstall makker, or run `uv sync` from a checkout.",
+            "Reinstall Makker, or run `uv sync` from a checkout.",
             file=sys.stderr,
         )
         return 1
@@ -308,7 +308,7 @@ def run(args: argparse.Namespace) -> int:
         restart_server()
     if updater.handed_off:
         print(
-            "makker is updating in a separate window, and runs there after.",
+            "Makker is updating in a separate window, and runs there after.",
             file=sys.stderr,
         )
     return 0

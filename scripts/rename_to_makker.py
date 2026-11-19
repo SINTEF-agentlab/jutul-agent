@@ -7,9 +7,14 @@ working tree::
 
 It moves ``src/jutul_agent`` to ``src/makker``, renames the Julia packages
 (``JutulAgent`` to ``Makker``, with new UUIDs), and rewrites the old names in
-every tracked text file. Running it twice changes nothing the second time, so a
-branch that predates the rename can be brought across by running it there and
-then merging ``main``.
+every tracked text file. In prose (Markdown, and the comments and strings of
+Python files) the product is then spelled "Makker", while commands, paths and
+identifiers stay ``makker``. Running it twice changes nothing the second time,
+so a branch that predates the rename can be brought across by running it there
+and then merging ``main``.
+
+Run it with the project's Python (3.12 or newer): ``uv run python
+scripts/rename_to_makker.py``. Older versions split f-strings differently.
 
 Left alone on purpose:
 
@@ -18,14 +23,18 @@ Left alone on purpose:
 - this file.
 
 Afterwards, refresh what is generated: ``uv sync``, ``uv run ruff format .``,
-``uv run ruff check --fix .`` (the new name sorts differently in imports), and
-``npm ci && npm run build`` in the webapp folder.
+``uv run ruff check --fix .`` (the new name sorts differently in imports),
+``MAKKER_LAB_UPDATE=1 uv run pytest tests/test_lab.py`` for the TUI snapshots,
+and ``npm ci && npm run build`` in the webapp folder.
 """
 
 from __future__ import annotations
 
+import io
+import re
 import subprocess
 import sys
+import tokenize
 from pathlib import Path
 
 OLD_PACKAGE_DIR = "src/jutul_agent"
@@ -72,6 +81,54 @@ NEW_JULIA_NAME = "Makker"
 
 SKIPPED_DIRS = (f"{NEW_PACKAGE_DIR}/interfaces/server/web_dist/", "bridge/")
 SKIPPED_FILES = ("scripts/rename_to_makker.py",)
+
+# Where the product name is prose. Elsewhere it is a command, a path or an
+# identifier, and stays lower-case.
+WORD = re.compile(r"(?<![A-Za-z0-9_])makker(?![A-Za-z0-9_])")
+CODE_SPAN = re.compile(r"(`+)[^`]+\1")
+LEADING_WORD = re.compile(r"[A-Za-z]+")
+WEB_AS_PROSE = re.compile(r"\s+web\s+(UI|interface|app|server|page|client)\b")
+FENCE = re.compile(r"^\s*(```|~~~)")
+BEFORE_PROSE = frozenset(" \t\n(\"'>[*|")
+COMMAND_BEFORE = re.compile(
+    r"(?:(?:uv\s+tool|uv\s+pip|pipx?|uv)\s+(?:install|upgrade|uninstall|run)(?:\s+--?\S+)*"
+    r"|uvx|-m|\$(?:</\w+>)?|import)\s*[\"'`(]*$"
+)
+SUBCOMMANDS = frozenset(
+    {
+        "web",
+        "tui",
+        "run",
+        "init",
+        "setup",
+        "key",
+        "keys",
+        "auth",
+        "doctor",
+        "sysimage",
+        "upgrade",
+        "transcript",
+        "sessions",
+        "review",
+        "eval",
+    }
+)
+COMMAND_NOUNS = frozenset(
+    {
+        "command",
+        "commands",
+        "package",
+        "module",
+        "executable",
+        "launcher",
+        "binary",
+        "wheel",
+        "distribution",
+        "repo",
+        "repository",
+        "script",
+    }
+)
 
 # Workspaces set up before the rename keep their folder until they are next
 # opened, so a checkout that has one must go on ignoring it.
@@ -127,6 +184,108 @@ def rewrite(text: str) -> str:
     return text
 
 
+def is_product_name(text: str, start: int, end: int) -> bool:
+    """Whether the ``makker`` at ``text[start:end]`` reads as the product in a sentence."""
+
+    before = text[start - 1] if start else "\n"
+    after = text[end] if end < len(text) else "\n"
+    if before not in BEFORE_PROSE:
+        return False
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    line = text[line_start : len(text) if line_end < 0 else line_end]
+    col = start - line_start
+    if any(span.start() < col < span.end() for span in CODE_SPAN.finditer(line)):
+        return False
+    if line.strip(" \t\"'$>") == "makker":
+        return False  # a line that is just the command
+    if COMMAND_BEFORE.search(line[:col]):
+        return False
+
+    rest = line[col + len("makker") :]
+    if after in " \t":
+        if rest.startswith("  "):
+            return False  # a usage table, aligned in columns
+        following = rest.split(None, 1)[0] if rest.strip() else ""
+        if not following:
+            return True
+        if following[0] in "[<{":
+            return False  # `makker [options]`, `makker <command>`, `makker {version}`
+        if (
+            following[0] == "-"
+            and len(following) > 1
+            and (following[1] == "-" or following[1].isalpha())
+        ):
+            return False  # an option
+        word = LEADING_WORD.match(following)
+        token = word.group(0) if word else ""
+        if token == "import":
+            return False  # `from makker import ...` in an example
+        if token == "web" and WEB_AS_PROSE.match(rest):
+            return True  # "the makker web UI" is the product, `makker web` the command
+        return token not in SUBCOMMANDS and token.lower() not in COMMAND_NOUNS
+    if after == ".":
+        dotted = text[end + 1 : end + 2]
+        return not (dotted.isalnum() or dotted == "_")
+    if after in ",;!)]*|<\n":
+        return True
+    if after == "?":
+        return text[end + 1 : end + 2] in ("", " ", "\n", '"', "'")
+    if after in "\"'":
+        return before != after  # a quoted bare name is the literal, not prose
+    return False
+
+
+def prose_ranges_markdown(text: str) -> list[tuple[int, int]]:
+    ranges, offset, fenced = [], 0, False
+    for line in text.splitlines(keepends=True):
+        if FENCE.match(line):
+            fenced = not fenced
+        elif not fenced:
+            ranges.append((offset, offset + len(line)))
+        offset += len(line)
+    return ranges
+
+
+def prose_ranges_python(text: str) -> list[tuple[int, int]]:
+    line_offsets = [0]
+    for line in text.splitlines(keepends=True):
+        line_offsets.append(line_offsets[-1] + len(line))
+    prose = {tokenize.COMMENT, tokenize.STRING}
+    prose.update(
+        getattr(tokenize, name)
+        for name in ("FSTRING_MIDDLE", "TSTRING_MIDDLE")
+        if hasattr(tokenize, name)
+    )
+    ranges = []
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(text).readline):
+            if token.type in prose:
+                (row, col), (end_row, end_col) = token.start, token.end
+                ranges.append((line_offsets[row - 1] + col, line_offsets[end_row - 1] + end_col))
+    except (tokenize.TokenError, SyntaxError, IndexError):
+        return []
+    return ranges
+
+
+def capitalise_prose(name: str, text: str) -> str:
+    if name.endswith(".md"):
+        ranges = prose_ranges_markdown(text)
+    elif name.endswith(".py"):
+        ranges = prose_ranges_python(text)
+    else:
+        return text
+    pieces, last = [], 0
+    for start, end in ranges:
+        for match in WORD.finditer(text, start, end):
+            if is_product_name(text, match.start(), match.end()):
+                pieces.append(text[last : match.start()])
+                pieces.append("Makker")
+                last = match.end()
+    pieces.append(text[last:])
+    return "".join(pieces)
+
+
 def rewrite_gitignore(text: str) -> str:
     lines = text.split("\n")
     if GITIGNORE_NEW_LINE in lines:
@@ -154,6 +313,7 @@ def rewrite_files() -> list[str]:
         except UnicodeDecodeError:
             continue
         new = rewrite_gitignore(text) if name == ".gitignore" else rewrite(text)
+        new = capitalise_prose(name, new)
         if new != text:
             path.write_bytes(new.encode("utf-8"))
             changed.append(name)
@@ -163,6 +323,9 @@ def rewrite_files() -> list[str]:
 def main() -> int:
     if not Path(".git").exists():
         sys.exit("Run this from the repository root.")
+    # The system python3 is often older than the project's, and would split f-strings differently.
+    if sys.version_info < (3, 12):  # noqa: UP036
+        sys.exit("Run this with Python 3.12 or newer: uv run python scripts/rename_to_makker.py")
     moved = move_package()
     julia_files = move_julia_packages()
     changed = rewrite_files()

@@ -1,6 +1,6 @@
 """Workspace detection, configuration, and Julia-env bootstrap.
 
-A *workspace* is the user's CWD when they invoke makker (or an
+A *workspace* is the user's CWD when they invoke Makker (or an
 explicit ``--workspace`` override). It owns:
 
 - ``.makker/config.toml`` — workspace-local config (active simulator,
@@ -33,7 +33,7 @@ WORKSPACE_DIRNAME = ".makker"
 WORKSPACE_CONFIG_FILENAME = "config.toml"
 WORKSPACE_JULIA_ENV_DIRNAME = "julia-env"
 
-# Records which env template (and makker version) a workspace env was built
+# Records which env template (and Makker version) a workspace env was built
 # from, so an upgrade that changes the template can be flagged as "rebuild me".
 # See ``env_template_drifted`` and the launch/doctor checks that use it.
 TEMPLATE_STAMP_FILENAME = ".makker-template"
@@ -55,7 +55,7 @@ def shared_julia_package_path() -> Path:
 
 
 def env_declares_warm_packages(env_dir: Path) -> bool:
-    """Whether ``env_dir``'s Project.toml declares makker warm-up packages.
+    """Whether ``env_dir``'s Project.toml declares Makker warm-up packages.
 
     The warm packages (the shared ``Makker`` and a per-simulator
     ``Makker<Sim>``) all share the ``Makker`` name prefix.
@@ -148,7 +148,7 @@ def mark_dependency_source(env_dir: Path, dependencies: Sequence[Path] | None) -
         )
 
 
-# Records the warm-package source the env was last built from, so a makker
+# Records the warm-package source the env was last built from, so a Makker
 # update (which changes the bundled Makker runtime) is detected on launch and
 # re-copied into existing managed envs. Otherwise they keep a stale copy forever,
 # since the warm packages are dev-pathed and only copied at bootstrap.
@@ -206,7 +206,7 @@ def warm_source_is_current(env_dir: Path, template_path: Path) -> bool:
     """Whether ``env_dir``'s warm packages match the install's current source.
 
     False for a never-fingerprinted env (one built before this check existed) or one
-    whose copy predates a makker update, so launch knows to re-copy.
+    whose copy predates a Makker update, so launch knows to re-copy.
     """
 
     marker = env_dir / WARM_SOURCE_MARKER
@@ -277,7 +277,7 @@ def template_fingerprint(template_path: Path) -> str:
 
 
 def write_env_template_stamp(env_dir: Path, template_path: Path) -> None:
-    """Record the template fingerprint (and makker version) that built ``env_dir``."""
+    """Record the template fingerprint (and Makker version) that built ``env_dir``."""
 
     from makker import __version__
 
@@ -434,7 +434,7 @@ def newer_env_packages(env_dir: Path, template_path: Path) -> list[tuple[str, st
     """Packages ``env_dir`` resolved newer than the installed template was made for.
 
     A simulator developer trying an unreleased or just-released version gets here,
-    as does a folder a newer makker set up. It runs, with a note: nothing
+    as does a folder a newer Makker set up. It runs, with a note: nothing
     refuses it, and nothing moves it back.
     """
 
@@ -462,7 +462,7 @@ def user_owns_root_project(workspace: Path) -> bool:
     """Whether the workspace carries its own root ``Project.toml``.
 
     The one hands-off rule of the env model: a user-owned root env is used
-    as-is; makker never rewrites, re-resolves, or precompiles it. Every
+    as-is; Makker never rewrites, re-resolves, or precompiles it. Every
     site that honors the rule asks this predicate.
     """
     return (workspace / "Project.toml").exists()
@@ -702,7 +702,7 @@ def sync_julia_env_with_template(
     if not missing:
         return []
 
-    # A dep the template declares via a relative `[sources]` path (makker's
+    # A dep the template declares via a relative `[sources]` path (Makker's
     # in-env runtime packages, Makker + Makker<Sim>) is not registered, so
     # `Pkg.resolve` fails with "expected package ... to be registered" unless its
     # source entry and the package directory come over too. Bring both alongside

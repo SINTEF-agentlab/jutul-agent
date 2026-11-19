@@ -1,6 +1,6 @@
 # Models
 
-makker treats models as opaque `provider:model` strings resolved by
+Makker treats models as opaque `provider:model` strings resolved by
 LangChain's `init_chat_model`. Adding a new model is configuration, not a
 code change.
 
@@ -15,7 +15,7 @@ use another model ID. Switching mid-session keeps the conversation (see
 [context handling](context.md)).
 
 Providers beyond the bundled five work once their LangChain package is
-installed, and makker names the exact package when it is missing.
+installed, and Makker names the exact package when it is missing.
 API keys are prompted for on first use and stored in the user-global `.env`
 ([configuration](configuration.md)).
 

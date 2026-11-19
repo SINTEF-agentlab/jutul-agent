@@ -1,4 +1,4 @@
-"""A lab for testing, profiling, and improving makker without a live session.
+"""A lab for testing, profiling, and improving Makker without a live session.
 
 The agent runtime (LangGraph + deepagents + the Textual TUI) is normally driven by a
 real model and a real Julia process. This package supplies the doubles and tooling to

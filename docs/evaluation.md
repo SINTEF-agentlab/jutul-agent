@@ -14,7 +14,7 @@ The harness is built on [Inspect AI](https://inspect.aisi.org.uk). Inspect
 provides the runner: model providers (OpenAI, Anthropic, Google, local
 Ollama), repeated epochs, per-sample token and time limits, logs, and a
 viewer. Ours is the part Inspect cannot know: a solver that runs one full
-makker session per sample, and scorers that read the session trace.
+Makker session per sample, and scorers that read the session trace.
 
 ## Running
 
@@ -30,7 +30,7 @@ uv run makker eval canary --epochs 5 --epochs-reducer mean,pass_at_2
 
 `makker eval` loads provider keys the way the app does (the user-global
 `.env` plus the working directory's) before Inspect resolves the model, and
-runs samples one at a time. Logs land in the makker home under
+runs samples one at a time. Logs land in the Makker home under
 `eval-logs/`. Inspect them with `uv run inspect view --log-dir <dir>`.
 
 `--model` takes Inspect's `provider/model` ids and defaults to the agent's
@@ -103,7 +103,7 @@ procedure, never by re-running the agent until it agrees.
 
 Each sample stores a RunConfig (`eval/runconfig.py`): hashes of the
 assembled system prompt, every active skill file, and the instantiated Julia
-manifest, plus the makker commit (and whether the tree was dirty) and
+manifest, plus the Makker commit (and whether the tree was dirty) and
 dependency versions. Two runs that differ in exactly one hash answer "did
 that change help" mechanically. Treat dirty-tree runs as exploratory, never
 as baselines.
@@ -127,7 +127,7 @@ The suites then hold the behavior in place. See
 | `calibration` | nothing | iterative two-parameter fit, graded on the recorded attempt tree |
 
 The first `needs_env` run per simulator builds a golden environment under
-the makker home (`eval-envs/<sim>`). Later samples start from a copy
+the Makker home (`eval-envs/<sim>`). Later samples start from a copy
 of it, so env preparation takes seconds instead of minutes. A cached env
 would otherwise freeze whatever upstream served when it was built, so each
 run re-resolves it against the registry on first use: a new upstream
@@ -219,7 +219,7 @@ docker compose run --rm eval battmo --model <provider/model>
 
 Provider keys come from `./.env`, and `network_mode: host` lets
 `ollama/<model>` reach the host's Ollama. Two named volumes do the heavy
-lifting: the Julia depot and the makker state home (golden envs, eval
+lifting: the Julia depot and the Makker state home (golden envs, eval
 logs). Only the first run per simulator pays the instantiate-and-precompile
 cost. Everything after reuses the caches. Logs land on the `makker-state`
 volume. Copy them out, or point `--log-dir` at a bind mount to keep them on

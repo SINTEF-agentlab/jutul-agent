@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 SYSTEM = """\
-You are a meticulous reviewer auditing one session of makker — an AI agent \
+You are a meticulous reviewer auditing one session of Makker — an AI agent \
 that drives Julia scientific simulators on a user's behalf from a persistent Julia \
 REPL. You work for the agent's *developer*, not the user. Your job is to find what \
 went wrong or was missed in this session, and turn it into concrete improvements. \
@@ -60,7 +60,7 @@ tooling-gap, or other
 papered over)
 - fix_target (guide): where a fix would most naturally go — case-validation (extend the \
 active simulator's input/case validation, if it has one), skill (clarify agent guidance), \
-prompt (system prompt), eval (add a regression case), code (makker change), or other
+prompt (system prompt), eval (add a regression case), code (Makker change), or other
 - detail: optional free-form context that doesn't fit evidence/suggestion
 
 Reply with STRICT JSON and nothing else:
@@ -118,7 +118,7 @@ def build_user_message(
             "high-severity finding."
         )
     return (
-        f"Review the following makker session and report findings as JSON.{sim}{truth}"
+        f"Review the following Makker session and report findings as JSON.{sim}{truth}"
         f"{sim_block}\n\n"
         "=== SESSION TRANSCRIPT ===\n"
         f"{transcript}\n"
@@ -154,7 +154,7 @@ _FIX_TARGET_HINTS = {
         "Add a regression case under `src/makker/eval/tasks/`. Prefer a golden-backed "
         "check over brittle trace matching; capture the golden from a trusted run."
     ),
-    "code": "A makker code change under `src/makker/`. Add or update a test.",
+    "code": "A Makker code change under `src/makker/`. Add or update a test.",
 }
 
 
@@ -173,7 +173,7 @@ def fix_prompt(issue: Any, *, transcript_paths: list[str] | None = None) -> str:
         joined = "\n".join(f"  - {p}" for p in transcript_paths)
         transcripts = f"\nRendered transcripts you can read for full context:\n{joined}\n"
     return (
-        "You are fixing one recurring issue found by the makker session reviewer. "
+        "You are fixing one recurring issue found by the Makker session reviewer. "
         "Work in the makker repo. Make the smallest correct change, add or update a "
         "test, and keep it general (don't hard-code for one session).\n\n"
         f"# Issue: {issue.title}\n"

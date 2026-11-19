@@ -1,4 +1,4 @@
-"""Multi-line prompt input for the makker TUI."""
+"""Multi-line prompt input for the Makker TUI."""
 
 from __future__ import annotations
 

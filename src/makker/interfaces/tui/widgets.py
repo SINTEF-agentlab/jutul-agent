@@ -1,4 +1,4 @@
-"""Local Textual widgets for the makker TUI."""
+"""Local Textual widgets for the Makker TUI."""
 
 from __future__ import annotations
 
@@ -328,7 +328,7 @@ def _render_welcome_message(*, simulator_label: str) -> str:
     # bar, the prompt placeholder already invites a question, and the footer lists
     # the keys. The card only adds the two non-obvious controls and points at /help.
     return (
-        f"**makker** is ready for **{simulator_label}**.\n"
+        f"**Makker** is ready for **{simulator_label}**.\n"
         "**Ctrl+C** interrupts a turn (twice to exit) · `/help` for commands."
     )
 

@@ -69,7 +69,7 @@ def request_is_local(headers: Mapping[str, str]) -> bool:
     """Whether a request comes from this server's own page on this computer.
 
     Stricter than the middleware, for the few requests only someone at this
-    computer should make (updating makker): the page must be the server's
+    computer should make (updating Makker): the page must be the server's
     own, and served under a loopback name.
     """
     host = headers.get("host", "")
@@ -124,7 +124,7 @@ class OriginGuard:
         self._report(
             origin,
             f"Refused a request from {origin}, which isn't this server's own page. If it "
-            f"should use this server, start makker with --allowed-origin {origin}",
+            f"should use this server, start Makker with --allowed-origin {origin}",
         )
         return "requests from other sites are refused"
 

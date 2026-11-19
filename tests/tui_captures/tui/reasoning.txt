@@ -9,7 +9,7 @@ makker
 
 
 ┌─ Welcome ──────────────────────────────────────────────────────────────────────────────────────────────┐
-│makker is ready for FakeSim. Ctrl+C interrupts a turn (twice to exit) · /help for commands.│
+│Makker is ready for FakeSim. Ctrl+C interrupts a turn (twice to exit) · /help for commands.│
 ││
 └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 

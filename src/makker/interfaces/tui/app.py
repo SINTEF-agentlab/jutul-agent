@@ -1,4 +1,4 @@
-"""Interactive TUI for makker built on Textual.
+"""Interactive TUI for Makker built on Textual.
 
 The interface keeps the runtime seam in ``TurnRunner`` and focuses on local
 presentation: a scrollable conversation log, grouped tool cards, inline
@@ -938,7 +938,7 @@ class TUIApp(App[None]):
             return
         await self._note(
             f"approval mode set to `{self._approval_mode.value}` for this session. "
-            "Restart makker to change which tools interrupt at build time."
+            "Restart Makker to change which tools interrupt at build time."
         )
         await self._auto_approve_pending_if_allowed()
         self._refresh_prompt_guide()

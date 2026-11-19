@@ -1,7 +1,7 @@
 """``makker key`` subcommand: view and set provider API keys.
 
 A pip-installed user has no checkout to edit, so this is the supported way to
-add, change, or inspect the keys makker saves in the global ``.env``. It
+add, change, or inspect the keys Makker saves in the global ``.env``. It
 needs no workspace and no Julia. The model selector (TUI and web) prompts for a
 missing key on its own; this command is the explicit, scriptable path and the
 only way to *replace* a key that is already set.
@@ -24,7 +24,7 @@ from makker.credentials import (
 def build_parser(prog: str = "makker key") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="View, add, or replace the provider API keys makker saves.",
+        description="View, add, or replace the provider API keys Makker saves.",
     )
     parser.add_argument(
         "provider",

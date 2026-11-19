@@ -1,6 +1,6 @@
 """``makker sysimage`` subcommand: build, inspect and remove a system image.
 
-Building one is the slowest thing makker does, and the folder that has one
+Building one is the slowest thing Makker does, and the folder that has one
 is expected to keep it. So the two commands that change what is on disk also
 change the folder's setting to match: a successful build turns the image on, and
 clearing it turns it off. Leaving those apart is how a workspace ends up either

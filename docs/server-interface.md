@@ -1,6 +1,6 @@
 # The server interface
 
-makker runs the same agent behind a command line and a terminal UI. The
+Makker runs the same agent behind a command line and a terminal UI. The
 server interface adds a third way to reach it: a network service that lets a
 webapp, or any other graphical application, drive a session over HTTP and
 WebSocket. It is how a non-expert works with the agent through a graphical app,
@@ -33,7 +33,7 @@ flowchart LR
 ## The web UI
 
 `makker`, run with no command, starts the server with a built-in web app:
-the chat interface makker is normally used through (`makker web` is the
+the chat interface Makker is normally used through (`makker web` is the
 same command). The web stack ships in the core install, so nothing extra is
 needed. Point it at a simulator and open the browser:
 
@@ -112,7 +112,7 @@ turn.
 | `GET` | `/credentials` | Which providers have keys, and whether a shell variable shadows a saved one |
 | `POST` | `/credentials` | Save a provider API key (used by the missing-key prompt) |
 | `GET` | `/simulators` | List installed simulators (the server is bound to one, returned as `default`), each with its display name and starter prompts, plus the `branding` an installed capability puts in their place |
-| `GET` | `/version` | The makker version, a newer release if the update check knows of one, the simulator version the folder's Julia environment resolved (each `null` when unknown), whether that environment needs updating (`env_update`), and a `boot` id that changes when the server restarts |
+| `GET` | `/version` | The Makker version, a newer release if the update check knows of one, the simulator version the folder's Julia environment resolved (each `null` when unknown), whether that environment needs updating (`env_update`), and a `boot` id that changes when the server restarts |
 | `GET` | `/update` | What an update would do here (newer release, whether this install can upgrade itself and how to otherwise, whether it does so in a separate window, outdated simulator packages), and the output of a running update (`?since=` skips lines already read). A server restarted by an update reports that update's output and outcome as its `job` |
 | `POST` | `/update` | Start an update: `{"install": bool, "sysimage": "rebuild" \| "off" \| null}`. Accepted only from this computer's own page; refused (409) while a session is starting or working. With `install`, the server restarts into the new version when done. On Windows it exits instead, and a helper in a new console window runs the update and starts the server again there |
 

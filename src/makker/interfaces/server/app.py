@@ -185,7 +185,7 @@ _POPOUT_WRAPPER_HTML = """<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>makker plot</title>
+<title>Makker plot</title>
 <style>
   /* `color-scheme` is what stops the white flash on a window resize, and no
      background declaration can substitute for it: while the window grows, the
@@ -308,7 +308,7 @@ class CredentialRequest(BaseModel):
 
 
 class UpdateRequest(BaseModel):
-    # Upgrade makker itself first, or only update the Julia environment.
+    # Upgrade Makker itself first, or only update the Julia environment.
     install: bool = False
     # What to do with this folder's system image, if it has one.
     sysimage: Literal["rebuild", "off"] | None = None
@@ -442,7 +442,7 @@ def create_app(
 
     app = FastAPI(
         title="makker",
-        summary="Drive a makker session over HTTP and WebSocket.",
+        summary="Drive a Makker session over HTTP and WebSocket.",
         lifespan=lifespan,
     )
     app.state.manager = manager
@@ -550,7 +550,7 @@ def create_app(
     def version_info() -> dict[str, Any]:
         """What this server runs, for the quiet version line in the UI.
 
-        The makker version, a newer release when the update check knows of
+        The Makker version, a newer release when the update check knows of
         one, and the simulator version this folder's Julia environment resolved.
         Each part is best-effort: an unknown one is ``None``, never an error.
         """
@@ -590,7 +590,7 @@ def create_app(
 
     @app.post("/update", status_code=202)
     async def start_update(req: UpdateRequest, request: Request) -> dict[str, Any]:
-        """Start updating makker and this folder's Julia environment.
+        """Start updating Makker and this folder's Julia environment.
 
         Only this computer's own page may ask: the update runs commands and restarts
         the server. See ``interfaces/server/updates.py``.
@@ -770,7 +770,7 @@ def create_app(
         if updater.running:
             raise HTTPException(
                 status_code=409,
-                detail="makker is updating. Start a session when it has finished.",
+                detail="Makker is updating. Start a session when it has finished.",
             )
 
     def _env_conflict(exc: EnvSetupError | SysimageUnavailable) -> HTTPException:
@@ -782,7 +782,7 @@ def create_app(
                 status_code=409,
                 detail=(
                     f"this folder's Julia environment has {found}, but this version of "
-                    f"makker requires {needed}. Update it with “Update environment” "
+                    f"Makker requires {needed}. Update it with “Update environment” "
                     "at the foot of the sidebar."
                 ),
             )
@@ -811,7 +811,7 @@ def create_app(
         except (SysimageUnavailable, EnvSetupError) as exc:
             # The CLI checked the prepared environment before starting the server,
             # so reaching here normally means it moved while the server was up (a
-            # package was installed or edited, or makker itself was upgraded).
+            # package was installed or edited, or Makker itself was upgraded).
             # The message explains itself.
             raise _env_conflict(exc) from exc
         # The agent already carries the selection (it was built with the layer

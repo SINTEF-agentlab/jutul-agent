@@ -104,7 +104,7 @@ python -m makker.lab.profile_turn --scenario long_output --repeat 5
 ```
 
 It cProfiles rendering a scenario through the full agent runtime and TUI with the
-fakes, and reports the makker functions by self-time. Use it to find a slow
+fakes, and reports the Makker functions by self-time. Use it to find a slow
 render or middleware path, and to catch a regression that makes turns sluggish.
 
 Run any of these before and after a change to measure the effect.

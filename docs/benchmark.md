@@ -1,6 +1,6 @@
 # Benchmark results
 
-Snapshot generated 2026-06-24 from runs 2026-06-23T23-07-15 … 2026-06-24T01-40-50 (makker 06251868c). Every sample runs the real agent end to end in a fresh workspace and is graded on the session trace as well as the answer. See [how evaluation works](evaluation.md). Each model ran the suite **3 times**, and cells aggregate across runs, so a fraction like 2/3 means the sample passed two of three runs.
+Snapshot generated 2026-06-24 from runs 2026-06-23T23-07-15 … 2026-06-24T01-40-50 (Makker 06251868c). Every sample runs the real agent end to end in a fresh workspace and is graded on the session trace as well as the answer. See [how evaluation works](evaluation.md). Each model ran the suite **3 times**, and cells aggregate across runs, so a fraction like 2/3 means the sample passed two of three runs.
 
 ## Overview
 
