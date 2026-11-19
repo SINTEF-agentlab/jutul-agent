@@ -8,7 +8,7 @@
 # pain) cannot occur. Workers inherit the master's project and system image, so they
 # boot warm.
 
-module JutulAgentEnsemble
+module MakkerEnsemble
 
 using Distributed
 using ProgressMeter: Progress, next!

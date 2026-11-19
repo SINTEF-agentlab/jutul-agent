@@ -1,15 +1,15 @@
-module JutulAgentMocca
+module MakkerMocca
 
 # Per-simulator warm-up package for Mocca, which ships no PrecompileTools workload.
 # Bakes the agent's simulate_process + plot_outlet paths (the shipped DCB quick-start;
-# one workload because plot_outlet needs the solve's states). See JutulAgentJutulDarcy
+# one workload because plot_outlet needs the solve's states). See MakkerJutulDarcy
 # for the @recompile_invalidations rationale.
 
 using Mocca, Jutul
 using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workload
 
 @recompile_invalidations begin
-    import JutulAgent
+    import Makker
     import CairoMakie
     import WGLMakie
     using GLMakie

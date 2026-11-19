@@ -27,10 +27,10 @@ src/makker/_version.py
 # Julia lockfiles
 src/makker/**/Manifest.toml
 
-# The shared JutulAgent package synced into a sim env template for in-place
+# The shared Makker package synced into a sim env template for in-place
 # instantiate (CI/tests). The canonical source lives in julia_runtime/ and the
-# per-sim JutulAgent<Sim> packages are tracked; only these synced copies are not.
-src/makker/simulators/*/julia_env/JutulAgent/
+# per-sim Makker<Sim> packages are tracked; only these synced copies are not.
+src/makker/simulators/*/julia_env/Makker/
 
 # IDE
 .vscode/
@@ -42,7 +42,7 @@ src/makker/simulators/*/julia_env/JutulAgent/
 .claude/settings.local.json
 
 # Scratch findings the `/review-mine` command writes before ingesting.
-.jutul-review/
+.makker-review/
 
 # OS
 .DS_Store
@@ -50,6 +50,6 @@ Thumbs.db
 site/
 
 # Local scratch / lab output
-.jutul-review/
+.makker-review/
 lab-out/
 testbed/

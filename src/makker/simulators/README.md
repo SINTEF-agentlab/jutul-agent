@@ -6,7 +6,7 @@ self-contained:
 ```
 simulators/<name>/
   adapter.py          # the SimulatorAdapter instance, exported from __init__.py
-  julia_env/          # Project.toml + JutulAgent<Sim>/ warm package
+  julia_env/          # Project.toml + Makker<Sim>/ warm package
   skills/             # one sub-folder per skill, each with a SKILL.md
 ```
 
@@ -21,11 +21,11 @@ of the active simulator.
    `julia_env_template_path` and `skills_dir` from that.
 3. Add `julia_env/Project.toml` with the deps the agent should be able to
    `using`. The kernel needs no special dep (its server is stdlib-only).
-   Declare the shared `JutulAgent` package as a relative `[sources]` path dep
+   Declare the shared `Makker` package as a relative `[sources]` path dep
    (copy the entry from an existing env) — its single source lives in
    `src/makker/julia_runtime/` and is copied into the env at bootstrap.
    Do not commit a `Manifest.toml`; it is generated on instantiate.
-4. Add a `julia_env/JutulAgent<Sim>/` warm package (start from an existing
+4. Add a `julia_env/Makker<Sim>/` warm package (start from an existing
    simulator's) and set the adapter's `warm_package`. Its
    `@recompile_invalidations` + `@compile_workload` bake the simulator's
    GLMakie-aware solve/plot into the precompile cache, so the agent's first

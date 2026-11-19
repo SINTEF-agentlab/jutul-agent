@@ -1,7 +1,7 @@
 """The eval harness: run makker under Inspect AI and grade the trace.
 
 This package is the harness: the solver, the scorers, and RunConfig.
-jutul-bench is the benchmark built on it; its public suites live in
+makker-bench is the benchmark built on it; its public suites live in
 :mod:`makker.eval.tasks` and run via ``makker eval``::
 
     uv run makker eval canary

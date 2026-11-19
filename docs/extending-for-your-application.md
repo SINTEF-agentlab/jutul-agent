@@ -43,7 +43,7 @@ mysim = "mypackage.mysim.adapter:MYSIM"
 Install your package alongside makker and `mysim` appears everywhere the
 built-in simulators do (the registry, `--sim mysim`, the server's
 `/simulators`). The adapter's `module_dir` is what anchors your `skills/` and
-`julia_env/`, so they are read from your package. The shared `JutulAgent` Julia
+`julia_env/`, so they are read from your package. The shared `Makker` Julia
 runtime is copied from the makker install automatically, so your
 `julia_env/Project.toml` only needs your simulator's packages plus the
 `[sources]` entries (copy them from a bundled simulator).

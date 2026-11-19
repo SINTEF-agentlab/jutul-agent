@@ -22,14 +22,14 @@ def test_load_statement_names_the_warm_package_first() -> None:
     # The warm package depends on the shared one, so naming it first loads both in
     # the order they were baked in. Naming the shared one first would put the session
     # in a different world than the bake, and the difference is rebuilt at first use.
-    assert load_statement("JutulAgentBattMo") == "using JutulAgentBattMo, JutulAgent"
+    assert load_statement("MakkerBattMo") == "using MakkerBattMo, Makker"
 
 
 def test_load_statement_binds_the_shared_package_into_main() -> None:
     # Loading the warm package does not bring the shared package's own name into
-    # scope, and the generated plot code calls it as `JutulAgent.JutulAgentPlots`.
-    for warm_package in ("JutulAgentBattMo", ""):
-        assert load_statement(warm_package).endswith("JutulAgent")
+    # scope, and the generated plot code calls it as `Makker.MakkerPlots`.
+    for warm_package in ("MakkerBattMo", ""):
+        assert load_statement(warm_package).endswith("Makker")
 
 
 def test_load_statement_names_capability_packages_after_the_simulator() -> None:
@@ -37,31 +37,31 @@ def test_load_statement_names_capability_packages_after_the_simulator() -> None:
     # order is settled by which bake survives rather than by depth. Measured on the
     # measured capability package: first costs 6.08s of recompilation at load,
     # second 1.56s.
-    assert load_statement("JutulAgentJutulDarcy", ("CapabilityPackage",)) == (
-        "using JutulAgentJutulDarcy, CapabilityPackage, JutulAgent"
+    assert load_statement("MakkerJutulDarcy", ("CapabilityPackage",)) == (
+        "using MakkerJutulDarcy, CapabilityPackage, Makker"
     )
 
 
 def test_load_statement_keeps_capability_packages_without_a_warm_package() -> None:
     # A simulator with no warm package still has to load the capability's, or the
     # first tool call that needs it pays the load at the user's expense.
-    assert load_statement("", ("Geo", "Flow")) == "using Geo, Flow, JutulAgent"
+    assert load_statement("", ("Geo", "Flow")) == "using Geo, Flow, Makker"
 
 
 async def test_start_warmup_loads_capability_packages_too() -> None:
     julia = FakeJulia()
-    task = start_warmup(julia, "JutulAgentJutulDarcy", ["CapabilityPackage"])
+    task = start_warmup(julia, "MakkerJutulDarcy", ["CapabilityPackage"])
     assert task is not None
     await task
-    assert load_statement("JutulAgentJutulDarcy", ["CapabilityPackage"]) in julia.calls[0]
+    assert load_statement("MakkerJutulDarcy", ["CapabilityPackage"]) in julia.calls[0]
 
 
 async def test_start_warmup_loads_the_packages_in_baked_order() -> None:
     julia = FakeJulia()
-    task = start_warmup(julia, "JutulAgentBattMo")
+    task = start_warmup(julia, "MakkerBattMo")
     assert task is not None
     await task
-    assert load_statement("JutulAgentBattMo") in julia.calls[0]
+    assert load_statement("MakkerBattMo") in julia.calls[0]
     assert julia.calls[-1] == GL_CONTEXT_WARMUP
 
 
@@ -72,7 +72,7 @@ async def test_start_warmup_without_warm_package_still_loads_shared() -> None:
     await task
     # A placeholder sim with no warm package still loads the shared runtime, which is
     # where the capture helpers live, and warms the GL context.
-    assert "using JutulAgent;" in julia.calls[0]
+    assert "using Makker;" in julia.calls[0]
     assert julia.calls[-1] == GL_CONTEXT_WARMUP
 
 
@@ -81,12 +81,12 @@ async def test_web_warmup_preserves_package_loading_without_creating_a_gl_contex
     abandonable = asyncio.Event()
     task = start_warmup(
         julia,
-        "JutulAgentJutulDarcy",
+        "MakkerJutulDarcy",
         abandonable=abandonable,
         native_plotting=False,
     )
     await task
-    assert load_statement("JutulAgentJutulDarcy") in julia.calls[0]
+    assert load_statement("MakkerJutulDarcy") in julia.calls[0]
     assert HYPRE_THREADS_SETUP in julia.calls
     assert julia.calls[-1] == WEB_BACKEND_SETUP
     assert GL_CONTEXT_WARMUP not in julia.calls
@@ -98,7 +98,7 @@ async def test_start_warmup_swallows_errors_so_startup_does_not_break() -> None:
         raise RuntimeError("simulated env-load failure")
 
     julia = FakeJulia(eval_handler=boom)
-    task = start_warmup(julia, "JutulAgentBattMo")
+    task = start_warmup(julia, "MakkerBattMo")
     assert task is not None
     # The task should finish without re-raising; startup must not block on
     # a broken simulator env.
@@ -114,7 +114,7 @@ async def test_start_warmup_can_be_cancelled_during_shutdown() -> None:
         return EvalResult(output="never")
 
     julia = FakeJulia(eval_handler=slow)
-    task = start_warmup(julia, "JutulAgentJutulDarcy")
+    task = start_warmup(julia, "MakkerJutulDarcy")
     assert task is not None
     await started.wait()
     task.cancel()
@@ -138,9 +138,9 @@ def test_all_real_adapters_name_a_warm_package() -> None:
 
     for name in registry.names():
         adapter = registry.get(name)
-        assert adapter.warm_package == "JutulAgent" + adapter.display_name, (
+        assert adapter.warm_package == "Makker" + adapter.display_name, (
             f"adapter {name!r} warm_package {adapter.warm_package!r} should be "
-            f"'JutulAgent{adapter.display_name}'"
+            f"'Makker{adapter.display_name}'"
         )
 
 
@@ -179,7 +179,7 @@ class _SlowJulia:
 async def test_real_work_cancels_a_running_warmup() -> None:
     inner = _SlowJulia()
     julia = YieldsToWork(inner)
-    task = start_warmup(inner, "JutulAgentJutulDarcy")
+    task = start_warmup(inner, "MakkerJutulDarcy")
     assert task is not None
     julia.set_warmup(task)
     await asyncio.sleep(0)  # let the warm-up reach its first eval
@@ -200,7 +200,7 @@ async def test_warmup_evals_do_not_cancel_themselves() -> None:
     inner = _SlowJulia()
     inner.gate.set()
     julia = YieldsToWork(inner)
-    task = start_warmup(inner, "JutulAgentJutulDarcy")
+    task = start_warmup(inner, "MakkerJutulDarcy")
     assert task is not None
     julia.set_warmup(task)
     await task
@@ -237,7 +237,7 @@ async def test_a_cancelled_warmup_leaves_the_session_usable() -> None:
     # session survives; here we assert the wrapper does not get in the way of that.
     inner = _SlowJulia()
     julia = YieldsToWork(inner)
-    task = start_warmup(inner, "JutulAgentJutulDarcy")
+    task = start_warmup(inner, "MakkerJutulDarcy")
     assert task is not None
     julia.set_warmup(task)
     await asyncio.sleep(0)
@@ -258,7 +258,7 @@ async def test_warmup_is_left_alone_while_it_is_still_loading() -> None:
     inner = _SlowJulia()
     julia = YieldsToWork(inner)
     abandonable = asyncio.Event()
-    task = start_warmup(inner, "JutulAgentJutulDarcy", abandonable=abandonable)
+    task = start_warmup(inner, "MakkerJutulDarcy", abandonable=abandonable)
     assert task is not None
     julia.set_warmup(task, abandonable)
     await asyncio.sleep(0)
@@ -280,9 +280,7 @@ async def test_warmup_is_dropped_once_the_loading_is_done() -> None:
     inner.gate.set()
     julia = YieldsToWork(inner)
     abandonable = asyncio.Event()
-    task = start_warmup(
-        inner, "JutulAgentJutulDarcy", warm_code=["heavy()"], abandonable=abandonable
-    )
+    task = start_warmup(inner, "MakkerJutulDarcy", warm_code=["heavy()"], abandonable=abandonable)
     assert task is not None
     julia.set_warmup(task, abandonable)
 
@@ -312,7 +310,7 @@ async def test_a_shielded_eval_that_dies_after_a_cancel_stays_quiet() -> None:
     # kernel then goes away, an unretrieved failure is printed as a traceback by
     # asyncio, and closing a session logs a KernelDied that means nothing.
     inner = _DyingJulia()
-    task = start_warmup(inner, "JutulAgentJutulDarcy")
+    task = start_warmup(inner, "MakkerJutulDarcy")
     assert task is not None
     await asyncio.sleep(0)  # let the warm-up reach its first eval
 

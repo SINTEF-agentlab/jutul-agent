@@ -1,4 +1,4 @@
-module JutulAgentJutulDarcy
+module MakkerJutulDarcy
 
 # Per-simulator warm-up package for JutulDarcy. Loads the solver, then the Makie
 # backends under @recompile_invalidations (which caches the solver code they would
@@ -28,7 +28,7 @@ using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workl
 # the parts of the bake that were inferred through a method the other package brings.
 # Depending on it here makes the session's order the baked order by construction.
 @recompile_invalidations begin
-    import JutulAgent
+    import Makker
     import CairoMakie
     import WGLMakie
     using GLMakie
@@ -83,7 +83,7 @@ end
 # Web plots are constructed with WGLMakie active. Warming a GL figure does not
 # compile this path: Jutul chooses different buffers and rendering attributes.
 function _warm_web_figure(build)
-    plots = JutulAgent.JutulAgentPlots
+    plots = Makker.MakkerPlots
     capture = plots.start_web_capture()
     fig = try
         plots.web_figure(capture, build())

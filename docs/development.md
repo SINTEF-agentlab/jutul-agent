@@ -31,10 +31,10 @@ src/makker/
   simulators/      adapter base + registry, one data folder per simulator
   julia/           JuliaSession protocol, Julia toolchain checks
   juliakernel/     the supervised Julia runtime (kernel.py + server.jl)
-  julia_runtime/   the shared JutulAgent Julia package, synced into envs
+  julia_runtime/   the shared Makker Julia package, synced into envs
   trace/           append-only SQLite event log + recorder middleware
   transcript/      HTML / markdown / report renderers
-  eval/            jutul-bench: solver, scorers, runconfig, task suites
+  eval/            makker-bench: solver, scorers, runconfig, task suites
   interfaces/      cli/ and tui/
 tests/             unit suite (integration/ and live/ are opt-in)
 docs/              this documentation

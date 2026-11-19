@@ -7,7 +7,7 @@ page's old session about 30 s later, so a reloaded plot froze. The web UI keeps 
 frame per live figure, so a new view closes the earlier ones now and drops the cached
 render data, then renders from the figure's current values.
 """
-module JutulAgentWebViews
+module MakkerWebViews
 
 import WGLMakie
 const Makie = WGLMakie.Makie

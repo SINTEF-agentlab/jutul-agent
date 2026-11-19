@@ -5,16 +5,16 @@ working tree::
 
     python scripts/rename_to_makker.py
 
-It moves ``src/jutul_agent`` to ``src/makker`` and rewrites the three spellings
-of the old name in every tracked text file. Running it twice changes nothing
-the second time, so a branch that predates the rename can be brought across by
-running it there and then merging ``main``.
+It moves ``src/jutul_agent`` to ``src/makker``, renames the Julia packages
+(``JutulAgent`` to ``Makker``, with new UUIDs), and rewrites the old names in
+every tracked text file. Running it twice changes nothing the second time, so a
+branch that predates the rename can be brought across by running it there and
+then merging ``main``.
 
 Left alone on purpose:
 
-- the Julia packages (``JutulAgent``, ``JutulAgent<Sim>``), which are renamed
-  separately;
 - the built web UI under ``web_dist``, which is rebuilt from source;
+- ``bridge/``, the last jutul-agent release, which is meant to carry the old name;
 - this file.
 
 Afterwards, refresh what is generated: ``uv sync``, ``uv run ruff format .``,
@@ -31,14 +31,46 @@ from pathlib import Path
 OLD_PACKAGE_DIR = "src/jutul_agent"
 NEW_PACKAGE_DIR = "src/makker"
 
-# Longest-first is not needed: the three spellings never overlap.
+# Applied in order. No entry's output contains a later entry's input.
 REPLACEMENTS = (
+    # The three spellings of the product name.
     ("JUTUL_AGENT", "MAKKER"),
     ("jutul_agent", "makker"),
     ("jutul-agent", "makker"),
+    # The Julia packages: a new name is a new package, so each gets a new UUID.
+    ("79b12aa6-73c9-4fa8-9c54-e97745f42687", "0d1d1ec9-c0b9-4de0-a260-d13dbbd400b2"),  # shared
+    ("f9f14f6a-5be2-4b55-b75d-847ac964f0ff", "93c9a128-c61c-47ba-a3ed-ee8197bf8a0b"),  # BattMo
+    ("46917057-ee61-4ce0-8807-c8cab0e0431f", "6ae4a4f4-c201-4215-9553-998d03f1d36a"),  # Fimbul
+    ("69df87d8-8b4b-4157-81d2-8b93ff139141", "4b91d94b-bab6-4ec5-a649-083be1735a47"),  # JutulDarcy
+    ("118bae70-9d54-4e00-8665-eefd5efc28fa", "2c594c4c-ba15-48a6-abd4-ceee9b009a5c"),  # Mocca
+    ("JutulAgent", "Makker"),
+    ("jutulagent", "makker"),
+    # Internal names that carried the old prefix. Names that belong to the Jutul
+    # framework itself (``Jutul``, ``JutulDarcy``, ``jutul_output``) are not here.
+    ("__JUTUL_", "__MAKKER_"),
+    ("JUTUL_MAKIE_MATCH", "MAKKER_MAKIE_MATCH"),
+    ("JUTUL_LAB_UPDATE", "MAKKER_LAB_UPDATE"),
+    ("JUTUL_MEMORY_SYSTEM_PROMPT", "MAKKER_MEMORY_SYSTEM_PROMPT"),
+    ("JutulDebug", "MakkerDebug"),
+    ("jutulDebug", "makkerDebug"),
+    ("onJutulUi", "onMakkerUi"),
+    ("_run_jutul_session", "_run_makker_session"),
+    ("_jutul_tolerant_b64", "_makker_tolerant_b64"),
+    ("jutul-base-path", "makker-base-path"),
+    ("jutul-review", "makker-review"),
+    ("jutul-bench", "makker-bench"),
+    ("jutul-state", "makker-state"),
+    ("jutul-live-", "makker-live-"),
+    ("jutul-profile-", "makker-profile-"),
+    ("jutul-profturn-", "makker-profturn-"),
+    ("jutul-lab-", "makker-lab-"),
 )
 
-SKIPPED_DIRS = (f"{NEW_PACKAGE_DIR}/interfaces/server/web_dist/",)
+# Tracked paths are renamed by the same rule as the Julia package names.
+OLD_JULIA_NAME = "JutulAgent"
+NEW_JULIA_NAME = "Makker"
+
+SKIPPED_DIRS = (f"{NEW_PACKAGE_DIR}/interfaces/server/web_dist/", "bridge/")
 SKIPPED_FILES = ("scripts/rename_to_makker.py",)
 
 # Workspaces set up before the rename keep their folder until they are next
@@ -64,6 +96,29 @@ def move_package() -> bool:
         sys.exit(f"{NEW_PACKAGE_DIR} already exists next to {OLD_PACKAGE_DIR}; resolve that first.")
     git("mv", OLD_PACKAGE_DIR, NEW_PACKAGE_DIR)
     return True
+
+
+def move_julia_packages() -> int:
+    moved = 0
+    for name in tracked_files():
+        if OLD_JULIA_NAME not in name or name.startswith(SKIPPED_DIRS):
+            continue
+        target = Path(name.replace(OLD_JULIA_NAME, NEW_JULIA_NAME))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        git("mv", name, str(target))
+        moved += 1
+        _remove_if_empty(Path(name).parent)
+    return moved
+
+
+def _remove_if_empty(folder: Path) -> None:
+    """Drop the folders a moved package leaves behind, as far up as they are empty."""
+    while OLD_JULIA_NAME in folder.as_posix():
+        try:
+            folder.rmdir()
+        except OSError:
+            return
+        folder = folder.parent
 
 
 def rewrite(text: str) -> str:
@@ -109,9 +164,12 @@ def main() -> int:
     if not Path(".git").exists():
         sys.exit("Run this from the repository root.")
     moved = move_package()
+    julia_files = move_julia_packages()
     changed = rewrite_files()
     if moved:
         print(f"Moved {OLD_PACKAGE_DIR} to {NEW_PACKAGE_DIR}.")
+    if julia_files:
+        print(f"Moved {julia_files} Julia package files.")
     print(f"Rewrote {len(changed)} files.")
     return 0
 

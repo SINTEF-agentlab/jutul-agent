@@ -129,9 +129,9 @@ def test_bootstrap_julia_env_copies_template(tmp_path: Path) -> None:
     project = bootstrap_julia_env(template, workspace=ws)
     assert project.name == "julia-env"
     assert (project / "Project.toml").exists()
-    # The shared JutulAgent package is synced in from julia_runtime/ alongside the
+    # The shared Makker package is synced in from julia_runtime/ alongside the
     # template (the env's relative [sources] entry resolves only after this copy).
-    assert (project / "JutulAgent" / "Project.toml").exists()
+    assert (project / "Makker" / "Project.toml").exists()
 
 
 def test_bootstrap_julia_env_copies_template_sources(tmp_path: Path) -> None:
@@ -667,7 +667,7 @@ def test_sync_brings_path_sourced_dep_with_its_source_entry_and_dir(
     assert (env / "FooWarm" / "Project.toml").exists()  # the package dir copied in
 
 
-def test_env_declares_warm_packages_detects_the_jutulagent_prefix(tmp_path: Path) -> None:
+def test_env_declares_warm_packages_detects_the_makker_prefix(tmp_path: Path) -> None:
     env = tmp_path / "env"
     env.mkdir()
     proj = env / "Project.toml"
@@ -676,7 +676,7 @@ def test_env_declares_warm_packages_detects_the_jutulagent_prefix(tmp_path: Path
     assert not env_declares_warm_packages(env)
 
     proj.write_text(
-        '[deps]\nJutulAgentJutulDarcy = "69df87d8-8b4b-4157-81d2-8b93ff139141"\n',
+        '[deps]\nMakkerJutulDarcy = "4b91d94b-bab6-4ec5-a649-083be1735a47"\n',
         encoding="utf-8",
     )
     assert env_declares_warm_packages(env)

@@ -25,7 +25,7 @@ def test_sysimage_preflight_prepares_env_before_final_decision(
             sysimage.Decision(status=sysimage.CURRENT, path=image),
             sysimage.Decision(
                 status=sysimage.DIVERGENT,
-                reason="  edited since the image was built:\n    JutulAgentJutulDarcy",
+                reason="  edited since the image was built:\n    MakkerJutulDarcy",
             ),
         ]
     )
@@ -60,7 +60,7 @@ def test_sysimage_preflight_prepares_env_before_final_decision(
     assert ready is False
     assert prepared == [(adapter, tmp_path, project, "jutuldarcy", [])]
     stderr = capsys.readouterr().err
-    assert "JutulAgentJutulDarcy" in stderr
+    assert "MakkerJutulDarcy" in stderr
     assert "makker sysimage build" in stderr
 
 

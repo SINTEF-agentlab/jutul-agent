@@ -532,7 +532,7 @@ class SessionHost:
             )
 
         # After the env is prepared, never before: preparation is what re-copies the
-        # in-env JutulAgent runtime after an upgrade and installs anything a
+        # in-env Makker runtime after an upgrade and installs anything a
         # capability added, so asking earlier would compare the image against an
         # environment that is about to change.
         sysimage_decision = sysimage_mod.decide(

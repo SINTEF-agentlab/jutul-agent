@@ -13,8 +13,8 @@ BATTMO = SimulatorAdapter(
     package_imports=("Jutul", "BattMo"),
     primary_package="BattMo",
     # Warms the chen_2020 cell + cc_discharge solve, baked at init. See the
-    # package's src/JutulAgentBattMo.jl for the single source of the solve.
-    warm_package="JutulAgentBattMo",
+    # package's src/MakkerBattMo.jl for the single source of the solve.
+    warm_package="MakkerBattMo",
     domain_hints=(
         "BattMo is a Jutul-framework battery simulator (lithium-ion and other "
         "chemistries, coupled electrochemistry / transport / optionally thermal). "

@@ -59,7 +59,7 @@ def apply() -> None:
     )
     shim.b64decode = tolerant_b64decode
     for module in (provider, util_images):
-        if getattr(module, "_jutul_tolerant_b64", False):
+        if getattr(module, "_makker_tolerant_b64", False):
             continue
         module.base64 = shim
-        module._jutul_tolerant_b64 = True
+        module._makker_tolerant_b64 = True

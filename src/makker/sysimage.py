@@ -104,8 +104,8 @@ class EnvState:
     """The part of a Julia environment a system image can go stale against.
 
     ``versions`` are the registry packages and the version the manifest resolved.
-    ``path_packages`` are the ones tracked by a path (the shared ``JutulAgent``,
-    each ``JutulAgent<Sim>``, every capability package, and any ``--source-path``
+    ``path_packages`` are the ones tracked by a path (the shared ``Makker``,
+    each ``Makker<Sim>``, every capability package, and any ``--source-path``
     checkout), mapped to a hash of their sources. Those need hashing rather than
     versioning because their whole point is that they change without a release.
 
@@ -126,7 +126,7 @@ def read_env_state(julia_project: Path) -> EnvState:
 
     Deliberately no Julia subprocess: this runs on every launch, and everything
     needed is in the manifest. Path entries are resolved relative to the manifest,
-    which is how Julia reads them, so an env-local ``path = "JutulAgent"`` and an
+    which is how Julia reads them, so an env-local ``path = "Makker"`` and an
     absolute capability path both land on the right directory.
 
     An unreadable or unresolved manifest yields a state with no packages in it,
@@ -250,7 +250,7 @@ def write_stamp(
         "cpu_target": cpu_target,
         # Metadata, not a check. makker's version moves with every commit,
         # while what actually has to agree with the image is the Julia it ships:
-        # the shared JutulAgent package, which is copied into the env and so is
+        # the shared Makker package, which is copied into the env and so is
         # already covered as a path package.
         "makker_version": _installed_version(),
         "versions": dict(sorted(state.versions.items())),

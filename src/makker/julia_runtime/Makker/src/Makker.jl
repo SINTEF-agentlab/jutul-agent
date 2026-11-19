@@ -1,8 +1,8 @@
-module JutulAgent
+module Makker
 
 # makker's simulator-agnostic Julia runtime: figure capture (plots.jl),
 # ensemble helpers (ensemble.jl), and a generic-Makie warm-up. The per-simulator
-# solve/plot warm-up lives in the JutulAgent<Sim> packages. See
+# solve/plot warm-up lives in the Makker<Sim> packages. See
 # docs/architecture.md ("Simulators are data").
 
 using PrecompileTools: @compile_workload, @setup_workload
@@ -15,11 +15,11 @@ import CairoMakie
 import WGLMakie
 import GLMakie
 
-include("ensemble.jl")   # submodule JutulAgentEnsemble (Distributed addprocs + pmap)
-include("plots.jl")      # submodule JutulAgentPlots (native and web figure capture)
-include("web_views.jl")  # submodule JutulAgentWebViews (live browser views)
+include("ensemble.jl")   # submodule MakkerEnsemble (Distributed addprocs + pmap)
+include("plots.jl")      # submodule MakkerPlots (native and web figure capture)
+include("web_views.jl")  # submodule MakkerWebViews (live browser views)
 
-using .JutulAgentEnsemble: run_ensemble, warm_addprocs
+using .MakkerEnsemble: run_ensemble, warm_addprocs
 export run_ensemble, warm_addprocs
 
 # A tiny 2D figure exercising the lines!/scatter! + save path both Makie backends
@@ -55,7 +55,7 @@ end
 # over and rebuilds WGLMakie's render data. An offline page serializes at once, with no
 # browser round trip. Best-effort: a failure here only costs first-view compile time.
 function _warm_web()
-    JutulAgentWebViews.supported() || return nothing
+    MakkerWebViews.supported() || return nothing
     Bonito = WGLMakie.Bonito
     WGLMakie.activate!()
     fig = _warm_poster(WGLMakie)
@@ -63,7 +63,7 @@ function _warm_web()
     pages = [Bonito.Session(Bonito.NoConnection(); asset_server = Bonito.NoServer()) for _ in 1:2]
     try
         for page in pages
-            app = Bonito.App(s -> Bonito.DOM.div(JutulAgentWebViews.view(s, fig)))
+            app = Bonito.App(s -> Bonito.DOM.div(MakkerWebViews.view(s, fig)))
             show(IOBuffer(), Bonito.session_dom(page, app))
         end
     catch
@@ -87,7 +87,7 @@ end
                 fig = _warm_draw(GLMakie)
                 GLMakie.save(joinpath(dir, "warm-gl.png"), fig)
                 # Warm the capture path the plot tool actually drives (offscreen).
-                JutulAgentPlots.capture(fig; path = joinpath(dir, "warm-capture.png"))
+                MakkerPlots.capture(fig; path = joinpath(dir, "warm-capture.png"))
             end
         catch
             # No GL context at precompile time (headless without xvfb): CairoMakie

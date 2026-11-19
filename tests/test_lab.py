@@ -45,7 +45,7 @@ def test_scenario_renders_and_matches_snapshot(scenario, tmp_path):
     """Every scenario renders without crashing and matches its committed snapshot.
 
     A UI change shows up here as a diff. Intentional? Regenerate the snapshots with
-    ``JUTUL_LAB_UPDATE=1 pytest tests/test_lab.py``.
+    ``MAKKER_LAB_UPDATE=1 pytest tests/test_lab.py``.
     """
     paths = capture(scenario, tmp_path)
     assert paths["svg"].stat().st_size > 0
@@ -53,16 +53,16 @@ def test_scenario_renders_and_matches_snapshot(scenario, tmp_path):
     assert "makker" in screen
 
     golden = _SNAPSHOTS / f"{scenario.name}.txt"
-    if os.environ.get("JUTUL_LAB_UPDATE"):
+    if os.environ.get("MAKKER_LAB_UPDATE"):
         golden.parent.mkdir(parents=True, exist_ok=True)
         golden.write_text(screen, encoding="utf-8")
         return
     assert golden.exists(), (
-        f"no snapshot for {scenario.name}; create it with JUTUL_LAB_UPDATE=1 pytest"
+        f"no snapshot for {scenario.name}; create it with MAKKER_LAB_UPDATE=1 pytest"
     )
     assert screen == golden.read_text(encoding="utf-8"), (
         f"{scenario.name} render changed; review the diff or regenerate with "
-        "JUTUL_LAB_UPDATE=1 pytest"
+        "MAKKER_LAB_UPDATE=1 pytest"
     )
 
 

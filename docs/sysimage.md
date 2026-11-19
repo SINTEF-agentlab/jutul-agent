@@ -77,8 +77,8 @@ successful `sysimage build` turns the folder on the same way, and `clear` turns
 it off, so the setting and the file on disk cannot drift apart.
 
 Everything in the environment is baked, path-tracked packages included. Those are
-usually the ones that matter: the shared `JutulAgent` runtime, each
-`JutulAgent<Sim>` warm package, and any Julia package an
+usually the ones that matter: the shared `Makker` runtime, each
+`Makker<Sim>` warm package, and any Julia package an
 [extension](extending-for-your-application.md) contributes. Capabilities are
 composed before the build for exactly this reason, so an extended workspace gets
 an image of the environment it actually runs.
@@ -142,7 +142,7 @@ lost but a few seconds, once, on the sessions that use them.
 
 It also sets `[CairoMakie] precompile_workload = false` in the environment's
 `LocalPreferences.toml`, because that one workload costs 163 MiB — more than the
-limit leaves spare. The poster shapes we actually save are baked by `JutulAgent`'s
+limit leaves spare. The poster shapes we actually save are baked by `Makker`'s
 own workload instead, so what this costs is a first Cairo render of a plot that
 goes off those paths. It is written on Windows only, and only into the generated
 environment, so it never follows a checkout elsewhere.

@@ -10,7 +10,7 @@ in another application.
 
 It serves the bundled web UI, so the interactive plot lands in the canvas and the
 UI action shows as a note (a host app can consume it instead through
-``window.onJutulUi``). Run it with ``python examples/demo-app/demo.py`` (the web
+``window.onMakkerUi``). Run it with ``python examples/demo-app/demo.py`` (the web
 stack ships in the core install). The first run instantiates the Julia env, then
 the app is served at http://127.0.0.1:8742.
 """

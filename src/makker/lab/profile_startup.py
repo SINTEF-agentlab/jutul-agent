@@ -90,7 +90,7 @@ def measure_phases(repeat: int = 3) -> dict[str, float]:
     create_times: list[float] = []
     build_times: list[float] = []
     for _ in range(repeat):
-        tmp = Path(tempfile.mkdtemp(prefix="jutul-profile-"))
+        tmp = Path(tempfile.mkdtemp(prefix="makker-profile-"))
         set_workspace_root(tmp)
         t0 = time.perf_counter()
         session = Session.create(

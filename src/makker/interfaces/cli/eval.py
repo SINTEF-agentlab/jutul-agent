@@ -52,7 +52,7 @@ def _available_suites() -> dict[str, str]:
 def build_parser(prog: str = "makker eval") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Run jutul-bench suites through Inspect AI.",
+        description="Run makker-bench suites through Inspect AI.",
         epilog=(
             "Examples: `makker eval canary`; "
             "`makker eval canary guardrails --model <provider/model>,<provider/model>`. "

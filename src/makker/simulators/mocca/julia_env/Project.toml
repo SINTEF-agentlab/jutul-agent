@@ -8,8 +8,8 @@ Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LayeredLayouts = "f4a74d36-062a-4d48-97cd-1356bad1de4e"
 NetworkLayout = "46757867-2c16-5918-afeb-47bfcb05e46a"
 Jutul = "2b460a1a-8a2b-45b2-b125-b5c536396eb9"
-JutulAgent = "79b12aa6-73c9-4fa8-9c54-e97745f42687"
-JutulAgentMocca = "118bae70-9d54-4e00-8665-eefd5efc28fa"
+Makker = "0d1d1ec9-c0b9-4de0-a260-d13dbbd400b2"
+MakkerMocca = "2c594c4c-ba15-48a6-abd4-ceee9b009a5c"
 Mocca = "eb14e3ba-90c8-11ed-0ecf-1dd2ea0d109c"
 
 # The web interface's interactive plotting backend. Keep it here rather than in a
@@ -25,11 +25,11 @@ WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 Mocca = "0.1.0"
 
 # Both deps are makker's in-env Julia runtime, declared as relative `[sources]`
-# paths so they survive the copy into a workspace. JutulAgent is the shared,
+# paths so they survive the copy into a workspace. Makker is the shared,
 # sim-agnostic core (figure capture, ensemble helpers, generic-Makie warm-up) — it
-# has a single source in the repo (src/makker/julia_runtime/JutulAgent) that
-# env_setup copies in at bootstrap. JutulAgentMocca is this env's per-simulator
+# has a single source in the repo (src/makker/julia_runtime/Makker) that
+# env_setup copies in at bootstrap. MakkerMocca is this env's per-simulator
 # warm-up package (the solve/plot bake + @recompile_invalidations).
 [sources]
-JutulAgent = {path = "JutulAgent"}
-JutulAgentMocca = {path = "JutulAgentMocca"}
+Makker = {path = "Makker"}
+MakkerMocca = {path = "MakkerMocca"}

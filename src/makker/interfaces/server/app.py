@@ -746,7 +746,7 @@ def create_app(
         restarted Julia, so its recorded live URLs are dead and the embeds fall
         back to their saved posters. A page that still holds a figure's frame (an
         in-page switch back) keeps it; one that doesn't (after a reload) opens a
-        new view, which takes the figure over (see ``JutulAgentWebViews``).
+        new view, which takes the figure over (see ``MakkerWebViews``).
         """
         host = manager.get(session_id)
         state_dir = host.session.state_dir if host else _session_state_dir(session_id)
@@ -1306,9 +1306,9 @@ def create_app(
             index_html,
         )
         # Inject the public base path so the SPA prefixes API/WebSocket URLs.
-        inject = f"<script>window.__JUTUL_BASE_PATH__={json.dumps(base)};</script>"
-        if "<!--jutul-base-path-->" in index_html:
-            index_html = index_html.replace("<!--jutul-base-path-->", inject)
+        inject = f"<script>window.__MAKKER_BASE_PATH__={json.dumps(base)};</script>"
+        if "<!--makker-base-path-->" in index_html:
+            index_html = index_html.replace("<!--makker-base-path-->", inject)
         elif "</head>" in index_html:
             index_html = index_html.replace("</head>", f"{inject}</head>", 1)
         else:

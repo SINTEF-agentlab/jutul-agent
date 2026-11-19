@@ -34,12 +34,12 @@ async def test_web_surface_serves_plot_live(tmp_path: Path) -> None:
     async def fake_eval(code: str) -> EvalResult:
         seen.append(code)
         if "CairoMakie.Makie === WGLMakie.Makie" in code:
-            return EvalResult(output="JUTUL_MAKIE_MATCH")
+            return EvalResult(output="MAKKER_MAKIE_MATCH")
         if "Bonito.Server" in code:
             # The server prints its bound port on a tagged line; a later log line
             # carries other digits (an address) that a "last run of digits" parse
             # would wrongly pick, so this guards the tagged-line parse.
-            return EvalResult(output="__JUTUL_WEB_PORT__=51000\n[ Info: listening on :9999")
+            return EvalResult(output="__MAKKER_WEB_PORT__=51000\n[ Info: listening on :9999")
         if "Bonito.route!" in code:  # the live render: Cairo saves the poster PNG
             (session.output_dir / "artifacts" / "pres.png").write_bytes(b"PNG")
         return EvalResult(output="")  # render "succeeds"
@@ -94,7 +94,7 @@ async def test_plot_setup_heals_after_a_kernel_reset(tmp_path: Path) -> None:
             state = "false,false" if kernel_reset else "true,true"
             return EvalResult(output=f"{jl_src.PLOT_STATE_MARKER}={state}")
         if "Bonito.Server" in code:
-            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+            return EvalResult(output="__MAKKER_WEB_PORT__=51000")
         return EvalResult(output="")
 
     session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
@@ -127,7 +127,7 @@ async def test_web_plot_without_size_fits_the_panel_hint(tmp_path: Path) -> None
     async def fake_eval(code: str) -> EvalResult:
         seen.append(code)
         if "Bonito.Server" in code:
-            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+            return EvalResult(output="__MAKKER_WEB_PORT__=51000")
         return EvalResult(output="")
 
     session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
@@ -156,7 +156,7 @@ async def test_unslotted_plot_replays_onto_its_original_route(tmp_path: Path) ->
 
     async def fake_eval(code: str) -> EvalResult:
         if "Bonito.Server" in code:
-            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+            return EvalResult(output="__MAKKER_WEB_PORT__=51000")
         return EvalResult(output="")
 
     session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
@@ -179,7 +179,7 @@ async def test_unslotted_plot_replays_onto_its_original_route(tmp_path: Path) ->
 async def test_web_plot_ignores_a_degenerate_panel_hint(tmp_path: Path) -> None:
     async def fake_eval(code: str) -> EvalResult:
         if "Bonito.Server" in code:
-            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+            return EvalResult(output="__MAKKER_WEB_PORT__=51000")
         return EvalResult(output="")
 
     session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
@@ -196,9 +196,9 @@ async def test_web_surface_live_gl_only_records_html_export(tmp_path: Path) -> N
     # would 404 on resume. The live URL is still attached (the live view worked).
     async def fake_eval(code: str) -> EvalResult:
         if "CairoMakie.Makie === WGLMakie.Makie" in code:
-            return EvalResult(output="JUTUL_MAKIE_MATCH")
+            return EvalResult(output="MAKKER_MAKIE_MATCH")
         if "Bonito.Server" in code:
-            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+            return EvalResult(output="__MAKKER_WEB_PORT__=51000")
         return EvalResult(output="")  # render "succeeds" but writes no poster PNG
 
     session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
@@ -224,7 +224,7 @@ async def test_web_surface_static_fallback_when_server_down(tmp_path: Path) -> N
     async def fake_eval(code: str) -> EvalResult:
         seen.append(code)
         if "CairoMakie.Makie === WGLMakie.Makie" in code:
-            return EvalResult(output="JUTUL_MAKIE_MATCH")
+            return EvalResult(output="MAKKER_MAKIE_MATCH")
         if "Bonito.Server" in code:
             return EvalResult(output="", error="could not bind port")
         return EvalResult(output="")
@@ -256,9 +256,9 @@ async def test_web_render_restores_display_capture_before_serving(tmp_path: Path
     async def fake_eval(code: str) -> EvalResult:
         seen.append(code)
         if "CairoMakie.Makie === WGLMakie.Makie" in code:
-            return EvalResult(output="JUTUL_MAKIE_MATCH")
+            return EvalResult(output="MAKKER_MAKIE_MATCH")
         if "Bonito.Server" in code:
-            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+            return EvalResult(output="__MAKKER_WEB_PORT__=51000")
         return EvalResult(output="")
 
     session = _session(tmp_path, FakeJulia(eval_handler=fake_eval))
@@ -333,7 +333,7 @@ async def test_recapture_on_web_snapshots_the_live_view(tmp_path: Path) -> None:
     assert "current_screens" in call  # captured from the figure's connected screen
     assert "PNGFiles.save" in call
     # The GLMakie registry lookup is what produced the bogus "no window" error.
-    assert "JutulAgentPlots.recapture" not in call
+    assert "MakkerPlots.recapture" not in call
 
     log = TraceLog(session.state_dir / "trace.sqlite")
     try:
@@ -366,14 +366,14 @@ async def test_live_plot_records_its_route_as_most_recent(tmp_path: Path) -> Non
     async def fake_eval(code: str) -> EvalResult:
         seen.append(code)
         if "CairoMakie.Makie === WGLMakie.Makie" in code:
-            return EvalResult(output="JUTUL_MAKIE_MATCH")
+            return EvalResult(output="MAKKER_MAKIE_MATCH")
         if "Bonito.Server" in code:
-            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+            return EvalResult(output="__MAKKER_WEB_PORT__=51000")
         if "Bonito.route!" in code:
             (session.output_dir / "artifacts" / "pres.png").write_bytes(b"PNG")
         return EvalResult(output="")
 
-    adapter = make_fake_adapter(tmp_path, warm_package="JutulAgentFakeSim")
+    adapter = make_fake_adapter(tmp_path, warm_package="MakkerFakeSim")
     session = Session.create(
         julia=FakeJulia(eval_handler=fake_eval), state_root=tmp_path, simulator=adapter
     )
@@ -382,7 +382,7 @@ async def test_live_plot_records_its_route_as_most_recent(tmp_path: Path) -> Non
     await _call(tool, {"code": "lines(1:3, 1:3)", "slot": "pres"})
 
     start = next(c for c in seen if "Bonito.Server" in c)
-    assert "__JUTUL_WEB_ORDER__ = String[]" in start
+    assert "__MAKKER_WEB_ORDER__ = String[]" in start
     render = next(c for c in seen if "Bonito.route!" in c)
     # Re-plotting a slot reuses its route, so the earlier entry is dropped rather
     # than leaving the same route listed twice.
@@ -447,12 +447,12 @@ async def test_close_plots_on_web_releases_the_live_route(tmp_path: Path) -> Non
     )
     call = seen[-1]
     assert "delete_route!" in call and "/viz/pres" in call
-    assert "__JUTUL_WEB_FIGS__" in call  # dropped from the registry, not just unrouted
-    assert "JutulAgentPlots.close_windows" not in call
+    assert "__MAKKER_WEB_FIGS__" in call  # dropped from the registry, not just unrouted
+    assert "MakkerPlots.close_windows" not in call
 
     # Closing everything sweeps the registry rather than naming one route.
     await tool.ainvoke({"type": "tool_call", "name": "close_plots", "id": "c2", "args": {}})
-    assert "keys(Main.__JUTUL_WEB_FIGS__)" in seen[-1]
+    assert "keys(Main.__MAKKER_WEB_FIGS__)" in seen[-1]
 
 
 async def test_close_plots_on_tui_still_closes_native_windows(tmp_path: Path) -> None:
@@ -460,7 +460,7 @@ async def test_close_plots_on_tui_still_closes_native_windows(tmp_path: Path) ->
     tool = make_close_plots_tool(session)  # default surface = tui
 
     await tool.ainvoke({"type": "tool_call", "name": "close_plots", "id": "c1", "args": {}})
-    assert "JutulAgentPlots.close_windows" in seen[-1]
+    assert "MakkerPlots.close_windows" in seen[-1]
 
 
 async def test_recapture_on_tui_still_uses_the_native_window(tmp_path: Path) -> None:
@@ -470,7 +470,7 @@ async def test_recapture_on_tui_still_uses_the_native_window(tmp_path: Path) -> 
     tool = make_recapture_tool(session)  # default surface = tui
 
     await _recapture(tool, {"slot": "pres", "view": False})
-    assert any("JutulAgentPlots.recapture" in c for c in seen)
+    assert any("MakkerPlots.recapture" in c for c in seen)
     assert not any("colorbuffer" in c for c in seen)
 
 
@@ -483,12 +483,12 @@ async def test_web_surface_loads_the_warm_package_before_it_serves(tmp_path: Pat
     async def fake_eval(code: str) -> EvalResult:
         seen.append(code)
         if "CairoMakie.Makie === WGLMakie.Makie" in code:
-            return EvalResult(output="JUTUL_MAKIE_MATCH")
+            return EvalResult(output="MAKKER_MAKIE_MATCH")
         if "Bonito.Server" in code:
-            return EvalResult(output="__JUTUL_WEB_PORT__=51000")
+            return EvalResult(output="__MAKKER_WEB_PORT__=51000")
         return EvalResult(output="")
 
-    adapter = make_fake_adapter(tmp_path, warm_package="JutulAgentFakeSim")
+    adapter = make_fake_adapter(tmp_path, warm_package="MakkerFakeSim")
     session = Session.create(
         julia=FakeJulia(eval_handler=fake_eval), state_root=tmp_path, simulator=adapter
     )
@@ -496,7 +496,7 @@ async def test_web_surface_loads_the_warm_package_before_it_serves(tmp_path: Pat
 
     await _call(tool, {"code": "lines(1:3, 1:3)", "slot": "pres"})
 
-    expected = load_statement("JutulAgentFakeSim")
+    expected = load_statement("MakkerFakeSim")
     load = next(i for i, c in enumerate(seen) if c.strip() == expected)
     serve = next(i for i, c in enumerate(seen) if "Bonito.route!" in c)
     assert load < serve

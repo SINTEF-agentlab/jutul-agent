@@ -19,7 +19,7 @@ describe("normalizeBasePath", () => {
 
 describe("withBase", () => {
   afterEach(() => {
-    delete window.__JUTUL_BASE_PATH__;
+    delete window.__MAKKER_BASE_PATH__;
   });
 
   it("leaves paths alone when no base is set", () => {
@@ -27,24 +27,24 @@ describe("withBase", () => {
   });
 
   it("prefixes site-relative paths", () => {
-    window.__JUTUL_BASE_PATH__ = "/restricted";
+    window.__MAKKER_BASE_PATH__ = "/restricted";
     expect(withBase("/sessions")).toBe("/restricted/sessions");
     expect(withBase("/live/s1/viz/x")).toBe("/restricted/live/s1/viz/x");
   });
 
   it("leaves absolute URLs alone", () => {
-    window.__JUTUL_BASE_PATH__ = "/restricted";
+    window.__MAKKER_BASE_PATH__ = "/restricted";
     expect(withBase("http://127.0.0.1:9/viz")).toBe("http://127.0.0.1:9/viz");
   });
 });
 
 describe("basePath", () => {
   afterEach(() => {
-    delete window.__JUTUL_BASE_PATH__;
+    delete window.__MAKKER_BASE_PATH__;
   });
 
   it("reads the injected window value", () => {
-    window.__JUTUL_BASE_PATH__ = "/restricted/";
+    window.__MAKKER_BASE_PATH__ = "/restricted/";
     expect(basePath()).toBe("/restricted");
   });
 });

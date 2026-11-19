@@ -167,12 +167,12 @@ Everything simulator-specific lives in one folder per simulator under
 - `julia_env/Project.toml` is the environment template copied into a
   workspace at `init`. No `Manifest.toml` is committed, so envs resolve at
   instantiate time.
-- `julia_env/JutulAgent<Sim>/` is the warm package. Its precompile workload
+- `julia_env/Makker<Sim>/` is the warm package. Its precompile workload
   bakes the simulator's solve and plot paths into Julia's cache, which is why
   a first solve takes seconds rather than minutes.
 - `skills/` holds the simulator's skill markdown.
 
-The shared `JutulAgent` Julia package (`julia_runtime/`) is synced into every
+The shared `Makker` Julia package (`julia_runtime/`) is synced into every
 env at bootstrap and carries cross-simulator runtime helpers, including the
 ensemble runner.
 
@@ -227,6 +227,6 @@ over.
 
 ## Evaluation
 
-jutul-bench drives this whole stack, unchanged, through Inspect AI: a solver
+makker-bench drives this whole stack, unchanged, through Inspect AI: a solver
 builds a real session per sample and scorers read the resulting trace. See
 [evaluation](evaluation.md).

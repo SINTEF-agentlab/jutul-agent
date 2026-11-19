@@ -76,7 +76,7 @@ jobs:
       - name: Install headless OpenGL (xvfb + Mesa)
         run: sudo apt-get update && sudo apt-get install -y xvfb xorg-dev mesa-utils libgl1 libgl1-mesa-dri
 
-      # Sync the shared JutulAgent package into the template (it lives once in
+      # Sync the shared Makker package into the template (it lives once in
       # julia_runtime/ and is copied in at bootstrap; an in-place instantiate must
       # do the same so the env's relative [sources] resolves). Then refresh the
       # registry so every resolve sees the latest releases and instantiate

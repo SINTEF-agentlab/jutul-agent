@@ -8,7 +8,7 @@ folder on its own and the agent code reads it generically.
 <name>/
   __init__.py         # exports the adapter
   adapter.py          # SimulatorAdapter instance
-  julia_env/          # Project.toml + JutulAgent<Sim>/ warm package
+  julia_env/          # Project.toml + Makker<Sim>/ warm package
   skills/             # one folder per skill, each with a SKILL.md
 ```
 
@@ -40,7 +40,7 @@ MYSIM = SimulatorAdapter(
     package_imports=("Jutul", "MySim"),
     primary_package="MySim",
     domain_hints="What the simulator is for, in one or two sentences.",
-    warm_package="JutulAgentMySim",
+    warm_package="MakkerMySim",
     example_prompts=("Run a small case and show me the result.", ...),
 )
 ```
@@ -60,7 +60,7 @@ the registry to find it.
 
 `julia_env/Project.toml` lists the packages a workspace gets. Keep compat
 loose and do not commit a `Manifest.toml`, so that the env resolves when
-the workspace is instantiated. Declare the shared `JutulAgent` package as a
+the workspace is instantiated. Declare the shared `Makker` package as a
 relative `[sources]` path dependency (copy the entry from an existing
 simulator). Its single source lives in `src/makker/julia_runtime/` and
 is synced into the env at bootstrap.
@@ -70,14 +70,14 @@ standard-library only.
 
 ## 3. The warm package
 
-`julia_env/JutulAgentMySim/` is a small Julia package whose only job is
+`julia_env/MakkerMySim/` is a small Julia package whose only job is
 precompilation. Start from an existing simulator's and adapt the workload:
 
 - `@recompile_invalidations` around the imports, so the simulator and the
   plotting stack are compiled together.
 - Every Makie backend a session can hold at once (`WGLMakie` as well as
   `GLMakie`), imported inside that block.
-- The shared `JutulAgent` package, imported inside that block too, and declared
+- The shared `Makker` package, imported inside that block too, and declared
   in the warm package's own `[deps]`. That makes it a dependency rather than a
   sibling, which is what lets a session load it by loading this one.
 - A `_warm()` function running the smallest representative solve and the
@@ -106,7 +106,7 @@ Three things are easy to get wrong here, and all of them fail silently:
   included, so the warm package has to load them all up front.
 - **Load the warm package first, not alongside.** A pkgimage is only valid for
   the world it was baked in, so the order the session loads packages in has to
-  match the order they were built in, and the shared `JutulAgent` package is
+  match the order they were built in, and the shared `Makker` package is
   built after the simulator's imports. Loading it ahead of the warm package
   instead invalidates whatever the bake inferred through a method it brings,
   which is then rebuilt at first use. Depending on it, so that one `using` pulls

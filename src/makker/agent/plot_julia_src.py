@@ -39,7 +39,7 @@ IMPORT_GLMAKIE = "try; @eval import GLMakie; catch; end"
 # measured to take the live view down. So this prefers rather than prunes, and falls back
 # to the newest match when nothing is open. A browser reload can briefly leave
 # two open screens, so the newest open one is the current interaction target.
-SCREEN_PREFERENCE_MARKER = "__JUTUL_SCREEN_PREF__"
+SCREEN_PREFERENCE_MARKER = "__MAKKER_SCREEN_PREF__"
 
 PREFER_OPEN_SCREEN_GUARD = (
     "try\n"
@@ -79,7 +79,7 @@ PREFER_OPEN_SCREEN_GUARD = (
 # ``Makie.pick`` already answers ``(nothing, 0)`` when a scene has no screen at all; this
 # restores that answer when it has one whose buffer is empty. Evaluated *inside* WGLMakie
 # so it replaces that package's own method rather than pirating it from here.
-PICK_GUARD_MARKER = "__JUTUL_PICK_GUARD__"
+PICK_GUARD_MARKER = "__MAKKER_PICK_GUARD__"
 
 PICK_EMPTY_BUFFER_GUARD = (
     "try\n"
@@ -110,14 +110,14 @@ WEB_LIVE_ROUTE_CAP = 24
 # size. The browser sizes the view's stage from it: the served page renders at
 # exactly this size and is scaled to fit, which is what keeps a wide dashboard's
 # layout intact in a narrow panel.
-FIG_SIZE_MARKER = "__JUTUL_FIG_SIZE__"
+FIG_SIZE_MARKER = "__MAKKER_FIG_SIZE__"
 
 # What ``plot_state_probe`` prints: whether the plotting backend and (web) the
 # live figure registry still exist in this kernel. The plot tool memoizes both
 # setups, but a kernel reset silently clears them while the Python session
 # keeps the memos, so without a probe every later plot in that session would
 # serve into a kernel that no longer has a backend or a Bonito server.
-PLOT_STATE_MARKER = "__JUTUL_PLOT_STATE__"
+PLOT_STATE_MARKER = "__MAKKER_PLOT_STATE__"
 
 
 def plot_state_probe(web: bool) -> str:
@@ -125,7 +125,7 @@ def plot_state_probe(web: bool) -> str:
     if web:
         return (
             f'println("{PLOT_STATE_MARKER}=", isdefined(Main, :Bonito),'
-            ' ",", isdefined(Main, :__JUTUL_WEB_FIGS__))'
+            ' ",", isdefined(Main, :__MAKKER_WEB_FIGS__))'
         )
     return f'println("{PLOT_STATE_MARKER}=", isdefined(Main, :GLMakie), ",true")'
 
@@ -133,14 +133,14 @@ def plot_state_probe(web: bool) -> str:
 # Printed after the live figure registry changes: the routes the kernel still
 # serves, space-separated. The session keeps this list so a replay offers a live
 # view only of a figure that still exists; the rest show their posters.
-LIVE_ROUTES_MARKER = "__JUTUL_LIVE_ROUTES__"
-_PRINT_LIVE_ROUTES = f'    println("{LIVE_ROUTES_MARKER}=", join(Main.__JUTUL_WEB_ORDER__, " "))\n'
+LIVE_ROUTES_MARKER = "__MAKKER_LIVE_ROUTES__"
+_PRINT_LIVE_ROUTES = f'    println("{LIVE_ROUTES_MARKER}=", join(Main.__MAKKER_WEB_ORDER__, " "))\n'
 
 
 # Printed before any fit or resize touches the figure: the size its code built
 # it at. A later re-fit (the panel changed shape under a live view) anchors its
 # squash floor to this, so refitting is idempotent and floors never ratchet.
-FIG_AUTHORED_MARKER = "__JUTUL_FIG_AUTHORED__"
+FIG_AUTHORED_MARKER = "__MAKKER_FIG_AUTHORED__"
 
 
 # The fit rule, shared verbatim with its Python twin (``app._fit_target``).
@@ -325,11 +325,11 @@ def render_call(
     return (
         "begin\n"
         f"    GLMakie.activate!(visible = {visible})\n"
-        "    local _jap_prev = JutulAgent.JutulAgentPlots._current_fig()\n"
+        "    local _jap_prev = Makker.MakkerPlots._current_fig()\n"
         "    local _jap_value = begin\n"
         f"{user_code}\n"
         "    end\n"
-        "    JutulAgent.JutulAgentPlots.capture(_jap_value;\n"
+        "    Makker.MakkerPlots.capture(_jap_value;\n"
         f'        path = raw"{abs_path.as_posix()}",\n'
         f"        size = {_size_tuple(size)},\n"
         f"        dpi = {_optional_int(dpi)},\n"
@@ -354,14 +354,14 @@ def _web_figure_block(user_code: str) -> str:
         "    import CairoMakie, WGLMakie, Bonito\n"
         f"    {IMPORT_GLMAKIE}\n"
         "    local _M = WGLMakie.Makie\n"
-        "    local _jap_display = JutulAgent.JutulAgentPlots.start_web_capture()\n"
+        "    local _jap_display = Makker.MakkerPlots.start_web_capture()\n"
         "    local _fig = try\n"
         "        local _val = Core.eval(Main, Meta.parseall("
         + json.dumps(user_code, ensure_ascii=False).replace("$", "\\$")
         + "))\n"
-        "        JutulAgent.JutulAgentPlots.web_figure(_jap_display, _val)\n"
+        "        Makker.MakkerPlots.web_figure(_jap_display, _val)\n"
         "    finally\n"
-        "        JutulAgent.JutulAgentPlots.stop_web_capture(_jap_display)\n"
+        "        Makker.MakkerPlots.stop_web_capture(_jap_display)\n"
         "    end\n"
     )
 
@@ -509,8 +509,8 @@ def web_server_start(port: int, session_id: str, *, base_path: str = "") -> str:
 
     # ``global`` (not ``Main.X = ``) so the assignment defines the Main global even
     # under Julia 1.12's stricter check, which rejects assigning to a qualified
-    # global that doesn't exist yet. ``__JUTUL_WEB_PORT__`` reads back
-    # ``__JUTUL_WEB_SERVER__.port`` rather than echoing the requested port: if the
+    # global that doesn't exist yet. ``__MAKKER_WEB_PORT__`` reads back
+    # ``__MAKKER_WEB_SERVER__.port`` rather than echoing the requested port: if the
     # requested port lost the free/rebind race (grabbed by someone else between
     # Python releasing it and Julia binding), Bonito's `start` silently retries on
     # port+1, port+2, ... and updates `.port` to whatever it actually bound;
@@ -520,22 +520,22 @@ def web_server_start(port: int, session_id: str, *, base_path: str = "") -> str:
     return (
         "begin\n"
         "    import WGLMakie, Bonito\n"
-        "    if !isdefined(Main, :__JUTUL_WEB_SERVER__)\n"
-        f'        global __JUTUL_WEB_SERVER__ = Bonito.Server("127.0.0.1", {int(port)};\n'
+        "    if !isdefined(Main, :__MAKKER_WEB_SERVER__)\n"
+        f'        global __MAKKER_WEB_SERVER__ = Bonito.Server("127.0.0.1", {int(port)};\n'
         f'            proxy_url = raw"{proxy}")\n'
-        "        global __JUTUL_WEB_FIGS__ = Dict{String,Any}()\n"
+        "        global __MAKKER_WEB_FIGS__ = Dict{String,Any}()\n"
         # Routes in least-to-most recently served order. A recapture with no slot
         # has to name a figure, and the dict above is unordered, so recency is
         # tracked here rather than recovered from it.
-        "        global __JUTUL_WEB_ORDER__ = String[]\n"
-        "        global __JUTUL_WEB_PORT__ = __JUTUL_WEB_SERVER__.port\n"
+        "        global __MAKKER_WEB_ORDER__ = String[]\n"
+        "        global __MAKKER_WEB_PORT__ = __MAKKER_WEB_SERVER__.port\n"
         "    end\n"
         # Print the bound port on a uniquely-tagged line so the Python side reads it
         # back unambiguously; taking "the last run of digits" from the output would
         # pick up a wrong number if Bonito/HTTP.jl logged its address (also digits)
         # on startup.
-        '    println("__JUTUL_WEB_PORT__=", __JUTUL_WEB_PORT__)\n'
-        "    __JUTUL_WEB_PORT__\n"
+        '    println("__MAKKER_WEB_PORT__=", __MAKKER_WEB_PORT__)\n'
+        "    __MAKKER_WEB_PORT__\n"
         "end"
     )
 
@@ -557,7 +557,7 @@ def web_live_call(
     its Observables alive) and routed on the session's Bonito server, so the
     browser gets a *live* view whose in-figure widgets run their Julia callbacks.
     A reload or a second tab takes the figure over from the previous view
-    (``JutulAgentWebViews``). A PNG is saved best-effort as the
+    (``MakkerWebViews``). A PNG is saved best-effort as the
     poster/record/``view``; if no rasteriser can render the scene, a
     self-contained WebGL HTML is exported instead, so the figure still has a
     durable record that resumes to a viewable plot rather than a dead PNG.
@@ -576,11 +576,11 @@ def web_live_call(
         # Lay the figure out once; each browser view then keeps the user's zoom.
         + "    WGLMakie.Makie.update_state_before_display!(_fig)\n"
         # A same-slot re-plot replaces the route's figure; close the old one's page.
-        + f'    JutulAgent.JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, raw"{route}")\n'
-        + f'    Main.__JUTUL_WEB_FIGS__[raw"{route}"] = _fig\n'
+        + f'    Makker.MakkerWebViews.drop!(Main.__MAKKER_WEB_FIGS__, raw"{route}")\n'
+        + f'    Main.__MAKKER_WEB_FIGS__[raw"{route}"] = _fig\n'
         # Move the route to the end of the recency list (a re-plot on the same slot
         # reuses its route, so drop any earlier entry rather than double-listing it).
-        "    let _order = Main.__JUTUL_WEB_ORDER__\n"
+        "    let _order = Main.__MAKKER_WEB_ORDER__\n"
         f'        filter!(!=(raw"{route}"), _order)\n'
         f'        push!(_order, raw"{route}")\n'
         # The safety-net cap: release the oldest figures beyond it so a session
@@ -589,19 +589,19 @@ def web_live_call(
         # downgrades views, so under normal use this never fires.
         f"        while length(_order) > {WEB_LIVE_ROUTE_CAP}\n"
         "            local _victim = popfirst!(_order)\n"
-        "            JutulAgent.JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, _victim)\n"
+        "            Makker.MakkerWebViews.drop!(Main.__MAKKER_WEB_FIGS__, _victim)\n"
         "            try\n"
-        "                Main.Bonito.delete_route!(Main.__JUTUL_WEB_SERVER__, _victim)\n"
+        "                Main.Bonito.delete_route!(Main.__MAKKER_WEB_SERVER__, _victim)\n"
         "            catch\n"
         "            end\n"
         "        end\n"
         "    end\n"
-        f'    Bonito.route!(Main.__JUTUL_WEB_SERVER__, raw"{route}" => Bonito.App(_session ->\n'
+        f'    Bonito.route!(Main.__MAKKER_WEB_SERVER__, raw"{route}" => Bonito.App(_session ->\n'
         # A reload or a second tab takes the figure over from the previous view. A
         # later plot can change the global screen config before this route is opened
         # or reloaded, so bind resizing to the view itself.
-        "        Bonito.DOM.div(JutulAgent.JutulAgentWebViews.view(_session,\n"
-        f'            Main.__JUTUL_WEB_FIGS__[raw"{route}"]; resize_to = :parent);\n'
+        "        Bonito.DOM.div(Makker.MakkerWebViews.view(_session,\n"
+        f'            Main.__MAKKER_WEB_FIGS__[raw"{route}"]; resize_to = :parent);\n'
         f'            style = "{_WRAP_STYLE}")))\n'
         + _PRINT_LIVE_ROUTES
         + (_poster_block(png_path, html_fallback=html_path) if poster else "")
@@ -622,7 +622,7 @@ def recapture_call(*, key: str, png_path: Path) -> str:
     return (
         "begin\n"
         "    try; GLMakie.activate!(visible = false); catch; end\n"
-        "    JutulAgent.JutulAgentPlots.recapture(;\n"
+        "    Makker.MakkerPlots.recapture(;\n"
         f'        key = raw"{key}",\n'
         f'        path = raw"{png_path.as_posix()}",\n'
         "    )\n"
@@ -634,7 +634,7 @@ def recapture_call(*, key: str, png_path: Path) -> str:
 # handshakes in this file signal a result. A refusal is an ordinary situation with
 # an instruction attached, so it is reported as that instruction rather than raised,
 # which would trail a Julia backtrace the model has to read past.
-WEB_RECAPTURE_REFUSED = "__JUTUL_RECAPTURE_REFUSED__"
+WEB_RECAPTURE_REFUSED = "__MAKKER_RECAPTURE_REFUSED__"
 
 # A view the browser has never painted has no pixels to send back, so it answers
 # the request with nothing. That is what happens to every plot but one when several
@@ -688,8 +688,8 @@ def web_recapture_call(*, slot: str, png_path: Path) -> str:
         )
     else:
         resolve = (
-            "        local _order = isdefined(Main, :__JUTUL_WEB_ORDER__) ?"
-            " Main.__JUTUL_WEB_ORDER__ : String[]\n"
+            "        local _order = isdefined(Main, :__MAKKER_WEB_ORDER__) ?"
+            " Main.__MAKKER_WEB_ORDER__ : String[]\n"
             "        if isempty(_order)\n"
             f"            {refuse}\n"
             '                "no live plots in this session to recapture; " *\n'
@@ -700,8 +700,8 @@ def web_recapture_call(*, slot: str, png_path: Path) -> str:
     return (
         # A function so the checks can return early; a `begin` block cannot.
         "(function ()\n"
-        "        local _figs = isdefined(Main, :__JUTUL_WEB_FIGS__) ?"
-        " Main.__JUTUL_WEB_FIGS__ : Dict{String,Any}()\n"
+        "        local _figs = isdefined(Main, :__MAKKER_WEB_FIGS__) ?"
+        " Main.__MAKKER_WEB_FIGS__ : Dict{String,Any}()\n"
         f"{resolve}"
         "        local _fig = _figs[_route]\n"
         "        local _screen = nothing\n"
@@ -732,7 +732,7 @@ def web_recapture_call(*, slot: str, png_path: Path) -> str:
 
 def close_windows_call(key: str) -> str:
     """Julia to close one window by key, or all windows when ``key`` is empty."""
-    return f'JutulAgent.JutulAgentPlots.close_windows(raw"{key}")'
+    return f'Makker.MakkerPlots.close_windows(raw"{key}")'
 
 
 def resize_web_fig_call(
@@ -751,8 +751,8 @@ def resize_web_fig_call(
 
     return (
         "begin\n"
-        "    local _fig = isdefined(Main, :__JUTUL_WEB_FIGS__) ?\n"
-        f'        get(Main.__JUTUL_WEB_FIGS__, raw"{route}", nothing) : nothing\n'
+        "    local _fig = isdefined(Main, :__MAKKER_WEB_FIGS__) ?\n"
+        f'        get(Main.__MAKKER_WEB_FIGS__, raw"{route}", nothing) : nothing\n'
         "    if _fig === nothing\n"
         '        "missing"\n'
         "    else\n"
@@ -786,17 +786,17 @@ def close_web_plots_call(slot: str) -> str:
     showing its last frame.
     """
 
-    routes = f'[raw"{viz_route(slot)}"]' if slot else "collect(keys(Main.__JUTUL_WEB_FIGS__))"
+    routes = f'[raw"{viz_route(slot)}"]' if slot else "collect(keys(Main.__MAKKER_WEB_FIGS__))"
     return (
         "begin\n"
         # Guarded rather than imported, so closing costs nothing in a session that
         # never plotted; a server that exists is also what proves Bonito is loaded.
-        "    if isdefined(Main, :__JUTUL_WEB_SERVER__)\n"
+        "    if isdefined(Main, :__MAKKER_WEB_SERVER__)\n"
         f"        for r in {routes}\n"
-        "            Main.JutulAgent.JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, r)\n"
-        "            filter!(!=(r), Main.__JUTUL_WEB_ORDER__)\n"
+        "            Main.Makker.MakkerWebViews.drop!(Main.__MAKKER_WEB_FIGS__, r)\n"
+        "            filter!(!=(r), Main.__MAKKER_WEB_ORDER__)\n"
         "            try\n"
-        "                Main.Bonito.delete_route!(Main.__JUTUL_WEB_SERVER__, r)\n"
+        "                Main.Bonito.delete_route!(Main.__MAKKER_WEB_SERVER__, r)\n"
         "            catch\n"
         "            end\n"
         "        end\n"

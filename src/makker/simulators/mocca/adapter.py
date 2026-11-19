@@ -13,8 +13,8 @@ MOCCA = SimulatorAdapter(
     package_imports=("Jutul", "Mocca"),
     primary_package="Mocca",
     # Warms the DCB quick-start simulate_process + plot_outlet, baked at init. See
-    # the package's src/JutulAgentMocca.jl for the single source of the solve.
-    warm_package="JutulAgentMocca",
+    # the package's src/MakkerMocca.jl for the single source of the solve.
+    warm_package="MakkerMocca",
     domain_hints=(
         "Mocca (MOdelling for Carbon Capture) simulates adsorption-based "
         "CO2 capture processes (pressure / temperature / vacuum swing "

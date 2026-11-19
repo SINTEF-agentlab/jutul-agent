@@ -5,7 +5,7 @@ const WebCaptureMakie = WGLMakie.Makie
 
 @testset "web figure capture" begin
     M = WebCaptureMakie
-    helpers = JutulAgent.JutulAgentPlots
+    helpers = Makker.MakkerPlots
     original_displays = copy(Base.Multimedia.displays)
     original_inline = M.ALWAYS_INLINE_PLOTS[]
     original_gl_screens = copy(GLMakie.ALL_SCREENS)

@@ -390,7 +390,7 @@ def test_precompile_runs_instantiate_and_precompile(
     env_setup.bootstrap_workspace(_adapter(module_dir), workspace=workspace, precompile=True)
 
     # Resolve/download then precompile; the plotting bake is the env's
-    # JutulAgent @compile_workload (run by Pkg.precompile), not a separate
+    # Makker @compile_workload (run by Pkg.precompile), not a separate
     # GLMakie eval here.
     assert any("Pkg.instantiate()" in cmd for cmd in captured)
     assert any("Pkg.precompile()" in cmd for cmd in captured)

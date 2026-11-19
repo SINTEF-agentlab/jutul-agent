@@ -95,7 +95,7 @@ async def _load_plot_backend(session: Session, adapter: SimulatorAdapter) -> str
 
 
 async def _load_agent_runtime(session: Session) -> str | None:
-    """Load the capture helpers (``JutulAgent.JutulAgentPlots``), through the same
+    """Load the capture helpers (``Makker.MakkerPlots``), through the same
     statement the session's warm-up uses.
 
     They ship precompiled, so this only pays load latency, but the order the packages
@@ -108,7 +108,7 @@ async def _load_agent_runtime(session: Session) -> str | None:
 
     loaded = await session.julia.eval(warmup.load_statement(session.simulator.warm_package))
     if loaded.error:
-        return f"ERROR: failed to load JutulAgent plot helpers: {loaded.error}"
+        return f"ERROR: failed to load Makker plot helpers: {loaded.error}"
     return None
 
 
@@ -121,7 +121,7 @@ async def _load_web_plot_backend(session: Session, adapter: SimulatorAdapter) ->
     poster.
     """
 
-    # The live figures are held by JutulAgent.JutulAgentPlots, so this surface needs the
+    # The live figures are held by Makker.MakkerPlots, so this surface needs the
     # helpers just as the native one does, and before the backends so that the order
     # the packages load in is the one they were baked in.
     helper = await _load_agent_runtime(session)
@@ -425,7 +425,7 @@ async def replot_web(
     started = await session.julia.eval(
         jl.web_server_start(_free_port(), session.session_id, base_path=session.base_path)
     )
-    match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
+    match = re.search(r"__MAKKER_WEB_PORT__=(\d+)", started.output or "")
     if started.error or match is None:
         reason = _truncate(started.error or "the server did not report a port", 200)
         return f"the session's live plot server is unavailable ({reason})", None, None
@@ -512,7 +512,7 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
             )
             # The server prints its bound port on a uniquely-tagged line; read that
             # rather than scanning for digits (a startup log line could carry others).
-            match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
+            match = re.search(r"__MAKKER_WEB_PORT__=(\d+)", started.output or "")
             if started.error or match is None:
                 if not warned_no_live:
                     warned_no_live = True

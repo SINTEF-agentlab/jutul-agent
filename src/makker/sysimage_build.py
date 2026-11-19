@@ -115,7 +115,7 @@ WINDOWS_UNBAKED = frozenset({"CSV", "DataFrames", "GraphMakie", "LayeredLayouts"
 
 # Cut from a Windows image for the same reason as the packages above; a preference
 # is how a package's own precompile workload is turned off. CairoMakie's costs
-# 163 MiB, more than the limit leaves spare. JutulAgent's workload bakes the poster
+# 163 MiB, more than the limit leaves spare. Makker's workload bakes the poster
 # shapes instead, so what this costs is a first Cairo render off that path.
 WINDOWS_ENV_PREFERENCES: dict[str, dict[str, bool]] = {"CairoMakie": {"precompile_workload": False}}
 

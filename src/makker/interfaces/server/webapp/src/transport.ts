@@ -117,8 +117,8 @@ export class Transport {
     }
     this.flush(); // keep deltas ahead of the message that follows them
     // A host app embedding the UI can consume a `ui` action (wire it to its own
-    // controls) by returning true from window.onJutulUi; then we don't surface it.
-    if (msg.type === "ui" && window.onJutulUi?.(msg) === true) return;
+    // controls) by returning true from window.onMakkerUi; then we don't surface it.
+    if (msg.type === "ui" && window.onMakkerUi?.(msg) === true) return;
     this.store.getState().handle(msg);
     this.effects(msg);
   }

@@ -13,8 +13,8 @@ JUTULDARCY = SimulatorAdapter(
     package_imports=("Jutul", "JutulDarcy"),
     primary_package="JutulDarcy",
     # Warms simulate_reservoir + plot_cell_data, baked GLMakie-aware at init. See
-    # the package's src/JutulAgentJutulDarcy.jl for the single source of the solve.
-    warm_package="JutulAgentJutulDarcy",
+    # the package's src/MakkerJutulDarcy.jl for the single source of the solve.
+    warm_package="MakkerJutulDarcy",
     domain_hints=(
         "JutulDarcy is a fully-differentiable porous-media reservoir simulator "
         "built on the Jutul framework. Core concepts: `CartesianMesh` or unstructured "

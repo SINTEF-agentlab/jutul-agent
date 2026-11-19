@@ -16,8 +16,8 @@ fall back to a serial loop. If the parallel path fails, fix it or say so.
 
 ## How
 
-The session loads the `JutulAgent` package, which exports `run_ensemble` (if it's
-not yet defined, run `using JutulAgent` first). Call it from `run_julia`
+The session loads the `Makker` package, which exports `run_ensemble` (if it's
+not yet defined, run `using Makker` first). Call it from `run_julia`
 (`MySim` below stands for whatever packages the case function needs):
 
 ```julia

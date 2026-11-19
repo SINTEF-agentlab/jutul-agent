@@ -1,7 +1,7 @@
 """Native and web figure capture for makker's plotting tools.
 
-A submodule of the JutulAgent package (precompiled with it); the plot tool drives
-it as `JutulAgent.JutulAgentPlots.capture(...)` after `using JutulAgent`. Before
+A submodule of the Makker package (precompiled with it); the plot tool drives
+it as `Makker.MakkerPlots.capture(...)` after `using Makker`. Before
 each native plot it activates GLMakie (visible for an interactive window, offscreen
 otherwise), evaluates the user's expression, and hands the result to capture.
 
@@ -14,7 +14,7 @@ ordinary display(fig) calls while WGLMakie is active, without drawing a GL windo
 or changing the plotter's transparency attributes.
 """
 
-module JutulAgentPlots
+module MakkerPlots
 
 import GLMakie
 import WGLMakie

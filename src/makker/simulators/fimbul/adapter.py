@@ -13,8 +13,8 @@ FIMBUL = SimulatorAdapter(
     package_imports=("Jutul", "JutulDarcy", "Fimbul"),
     primary_package="Fimbul",
     # Warms the analytical_1d geothermal solve + plot_cell_data, baked at init. See
-    # the package's src/JutulAgentFimbul.jl for the single source of the solve.
-    warm_package="JutulAgentFimbul",
+    # the package's src/MakkerFimbul.jl for the single source of the solve.
+    warm_package="MakkerFimbul",
     domain_hints=(
         "Fimbul is a geothermal reservoir simulator built on top of JutulDarcy. "
         "It augments Darcy flow with an energy-conservation equation, "

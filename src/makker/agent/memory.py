@@ -45,7 +45,7 @@ The agent maintains this file and the linked notes via the `read_file`,
 (Empty for now; add entries as durable facts come up.)
 """
 
-JUTUL_MEMORY_SYSTEM_PROMPT = """<agent_memory>
+MAKKER_MEMORY_SYSTEM_PROMPT = """<agent_memory>
 {agent_memory}
 
 </agent_memory>
@@ -137,7 +137,7 @@ def build_memory_middleware(backend, memory_dir: Path) -> MemoryMiddleware:
     the real directory.
     """
     index_path = str(memory_dir / MEMORY_INDEX_FILENAME)
-    system_prompt = JUTUL_MEMORY_SYSTEM_PROMPT.replace("{memory_dir}", str(memory_dir))
+    system_prompt = MAKKER_MEMORY_SYSTEM_PROMPT.replace("{memory_dir}", str(memory_dir))
     return MemoryMiddleware(
         backend=backend,
         sources=[index_path],

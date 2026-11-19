@@ -5,7 +5,7 @@
 
 declare global {
   interface Window {
-    __JUTUL_BASE_PATH__?: string;
+    __MAKKER_BASE_PATH__?: string;
   }
 }
 
@@ -21,7 +21,7 @@ export function normalizeBasePath(raw: string | null | undefined): string {
 /** The base path the server injected, or "" when absent / in tests. */
 export function basePath(): string {
   if (typeof window === "undefined") return "";
-  return normalizeBasePath(window.__JUTUL_BASE_PATH__);
+  return normalizeBasePath(window.__MAKKER_BASE_PATH__);
 }
 
 /** Prefix a site-relative path with the public base path. */

@@ -18,7 +18,7 @@ What it demonstrates:
   is the fiddly part to get right, so it is the main thing to copy.
 - **A UI action.** The `set_param` tool emits a `ui` action. The bundled UI shows
   it as a note; a host app embedding the agent can instead apply it to its own
-  controls by setting `window.onJutulUi`.
+  controls by setting `window.onMakkerUi`.
 
 ## Run it
 

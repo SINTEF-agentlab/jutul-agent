@@ -5,7 +5,7 @@ harness, a prompt, a skill, or the model help or hurt? It runs the real
 agent, end to end, and grades what actually happened.
 
 The code in `src/makker/eval` is the harness: the solver, the scorers,
-RunConfig, and the `makker eval` command. jutul-bench is the benchmark
+RunConfig, and the `makker eval` command. makker-bench is the benchmark
 built on that harness. Its public suites live in this repository under
 `eval/tasks/`. A private holdout suite lives in a separate repository so
 its answers stay out of training data.
@@ -221,7 +221,7 @@ Provider keys come from `./.env`, and `network_mode: host` lets
 `ollama/<model>` reach the host's Ollama. Two named volumes do the heavy
 lifting: the Julia depot and the makker state home (golden envs, eval
 logs). Only the first run per simulator pays the instantiate-and-precompile
-cost. Everything after reuses the caches. Logs land on the `jutul-state`
+cost. Everything after reuses the caches. Logs land on the `makker-state`
 volume. Copy them out, or point `--log-dir` at a bind mount to keep them on
 the host.
 

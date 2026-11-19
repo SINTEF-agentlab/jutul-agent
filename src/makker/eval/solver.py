@@ -141,7 +141,7 @@ def _golden_env(adapter: Any, simulator: str) -> Path:
     fails rather than grade a misaligned environment.
 
     The golden is then brought fully current once with ``prepare_workspace_env``
-    (the normal launch reconcile): the in-env JutulAgent runtime is refreshed and
+    (the normal launch reconcile): the in-env Makker runtime is refreshed and
     marked, and the env precompiled. Without this, a golden whose warm-source
     marker is stale (e.g. cached before the runtime changed) makes *every*
     per-sample copy re-copy the runtime and re-bake the env — turning a one-time
@@ -170,7 +170,7 @@ def _golden_env(adapter: Any, simulator: str) -> Path:
     return env
 
 
-async def _run_jutul_session(
+async def _run_makker_session(
     *,
     simulator: str,
     prompt: str,
@@ -275,7 +275,7 @@ def makker_solver(simulator: str = "jutuldarcy") -> Solver:
 
         agent_state = AgentState(messages=list(state.messages))
         async with _SESSION_LOCK, agent_bridge(agent_state):
-            final = await _run_jutul_session(
+            final = await _run_makker_session(
                 simulator=sim,
                 prompt=state.input_text,
                 fixtures=fixtures,

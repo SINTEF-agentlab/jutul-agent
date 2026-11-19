@@ -19,7 +19,7 @@ from makker.workspace import (
 
 # A template Project.toml that declares a warm package, so the env reads as a
 # managed makker env (env_declares_warm_packages → True).
-_TEMPLATE_PROJECT = '[deps]\nFoo = "uuid"\nJutulAgent = "ja-uuid"\n'
+_TEMPLATE_PROJECT = '[deps]\nFoo = "uuid"\nMakker = "ja-uuid"\n'
 
 
 def _adapter(module_dir: Path) -> SimulatorAdapter:
@@ -148,7 +148,7 @@ def _managed_env(tmp_path: Path) -> tuple[Path, Path]:
     ws = tmp_path / "ws"
     env_dir = ws / ".makker" / "julia-env"
     env_dir.mkdir(parents=True)
-    (env_dir / "Project.toml").write_text('[deps]\nJutulAgent = "x"\n', encoding="utf-8")
+    (env_dir / "Project.toml").write_text('[deps]\nMakker = "x"\n', encoding="utf-8")
     return ws, env_dir
 
 

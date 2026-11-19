@@ -234,7 +234,7 @@ def bootstrap_workspace(
       2. If ``source_path`` is set, ``Pkg.develop(path=source_path)`` in
          the workspace env, overriding managed simulator compat (safe to re-run).
       3. If ``precompile``, ``Pkg.instantiate()`` then ``Pkg.precompile()``. The
-         plotting stack is warmed by the env's ``JutulAgent`` package,
+         plotting stack is warmed by the env's ``Makker`` package,
          whose ``@compile_workload`` bakes the Makie save path into the
          precompile cache (run under xvfb here so the GL bake has a context).
 
@@ -443,7 +443,7 @@ def _run_pkg(project: Path, cmds: list[str], *, capture: bool = False, echo: boo
     ]
     # On headless Linux, wrap in xvfb so the GL-dependent precompile has an
     # OpenGL context: the @compile_workload bakes save a real GLMakie figure
-    # (the shared JutulAgent package, and each JutulAgent<Sim> package's
+    # (the shared Makker package, and each Makker<Sim> package's
     # _warm_plot). This is the same wrap the runtime uses. A real display, or
     # any non-Linux OS, skips it.
     from makker.display import should_wrap_xvfb
@@ -710,7 +710,7 @@ def _sync_workspace_env(
     """Bring the workspace env up to date with its simulator template, then install.
 
     Self-healing: when an upstream change adds packages to the template (e.g. the
-    JutulAgent warm-up packages), ``sync_julia_env_with_template`` brings the deps,
+    Makker warm-up packages), ``sync_julia_env_with_template`` brings the deps,
     plus the ``[sources]`` paths and package directories they need, into the env,
     so a plain ``git pull`` + launch keeps working without a manual rebuild. We only
     resolve and instantiate here so the install is quick; the warm-up bake runs
@@ -795,10 +795,10 @@ def _refresh_warm_sources(
     julia_project: Path,
     sim_name: str | None,
 ) -> None:
-    """Re-copy the in-env JutulAgent runtime when the install's source has changed.
+    """Re-copy the in-env Makker runtime when the install's source has changed.
 
     The warm packages are dev-pathed copies, only laid down at bootstrap, so after
-    a makker update an existing managed env keeps the old JutulAgent until a
+    a makker update an existing managed env keeps the old Makker until a
     manual rebuild. We detect that by fingerprint, re-copy the packages, and
     re-resolve so a new in-package dependency installs; the bake re-runs in
     :func:`_ensure_env_warmed` because the re-copy dropped the precompile marker.
@@ -824,7 +824,7 @@ def _refresh_warm_sources(
         try:
             if not recopy_warm_sources(julia_project, template):
                 return  # user-owned env (no [sources]); nothing to refresh
-            _info("Updating the in-env JutulAgent runtime (makker was updated)…")
+            _info("Updating the in-env Makker runtime (makker was updated)…")
             resolve_and_instantiate(julia_project, precompile=False, capture=True)
         except (EnvSetupError, OSError) as exc:
             for target in targets:
@@ -842,7 +842,7 @@ def _refresh_warm_sources(
             if sim_name:
                 rebuild += f" --sim {sim_name}"
             print(
-                f"warning: could not refresh the JutulAgent runtime ({exc}). The agent "
+                f"warning: could not refresh the Makker runtime ({exc}). The agent "
                 f"will start on the previous copy; rebuild cleanly with: {rebuild}",
                 file=sys.stderr,
             )
@@ -938,7 +938,7 @@ def _ensure_env_warmed(
 ) -> None:
     """Precompile the managed env before launch, but only when something changed.
 
-    The per-simulator ``JutulAgent<Sim>`` package's precompile runs the
+    The per-simulator ``Makker<Sim>`` package's precompile runs the
     ``@recompile_invalidations`` solve that makes the first real solve fast
     (seconds instead of ~30 s). When the env changed (a fresh install, or new deps
     pulled in) we bake it here; blocking launch until it's ready, and streaming

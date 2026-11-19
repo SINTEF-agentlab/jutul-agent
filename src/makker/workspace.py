@@ -38,11 +38,11 @@ WORKSPACE_JULIA_ENV_DIRNAME = "julia-env"
 # See ``env_template_drifted`` and the launch/doctor checks that use it.
 TEMPLATE_STAMP_FILENAME = ".makker-template"
 
-# The shared, simulator-agnostic JutulAgent package: one source copy in the repo,
+# The shared, simulator-agnostic Makker package: one source copy in the repo,
 # copied into every workspace env at bootstrap (next to that env's per-simulator
-# JutulAgent<Sim> package) so the env's relative `[sources]` entry resolves. Env
+# Makker<Sim> package) so the env's relative `[sources]` entry resolves. Env
 # templates declare it but ship no copy.
-SHARED_JULIA_PACKAGE_DIRNAME = "JutulAgent"
+SHARED_JULIA_PACKAGE_DIRNAME = "Makker"
 
 # Touched after a successful precompile so launch can skip the (multi-second) bake
 # when nothing has changed. See ``env_precompile_is_current``.
@@ -50,15 +50,15 @@ PRECOMPILE_MARKER = ".makker-precompiled"
 
 
 def shared_julia_package_path() -> Path:
-    """Source dir of the shared JutulAgent package bundled with the install."""
+    """Source dir of the shared Makker package bundled with the install."""
     return Path(__file__).resolve().parent / "julia_runtime" / SHARED_JULIA_PACKAGE_DIRNAME
 
 
 def env_declares_warm_packages(env_dir: Path) -> bool:
     """Whether ``env_dir``'s Project.toml declares makker warm-up packages.
 
-    The warm packages (the shared ``JutulAgent`` and a per-simulator
-    ``JutulAgent<Sim>``) all share the ``JutulAgent`` name prefix.
+    The warm packages (the shared ``Makker`` and a per-simulator
+    ``Makker<Sim>``) all share the ``Makker`` name prefix.
     """
     proj = env_dir / "Project.toml"
     if not proj.exists():
@@ -149,7 +149,7 @@ def mark_dependency_source(env_dir: Path, dependencies: Sequence[Path] | None) -
 
 
 # Records the warm-package source the env was last built from, so a makker
-# update (which changes the bundled JutulAgent runtime) is detected on launch and
+# update (which changes the bundled Makker runtime) is detected on launch and
 # re-copied into existing managed envs. Otherwise they keep a stale copy forever,
 # since the warm packages are dev-pathed and only copied at bootstrap.
 WARM_SOURCE_MARKER = ".makker-warm-source"
@@ -188,17 +188,15 @@ def package_source_digest(root: Path) -> str:
 def warm_source_fingerprint(template_path: Path) -> str:
     """Content hash of the warm-package sources backing a managed env.
 
-    Covers the shared ``JutulAgent`` (from the install's ``julia_runtime/``) and the
-    template's per-simulator ``JutulAgent<Sim>`` packages — every ``.jl`` and
+    Covers the shared ``Makker`` (from the install's ``julia_runtime/``) and the
+    template's per-simulator ``Makker<Sim>`` packages — every ``.jl`` and
     ``.toml`` under each. A change to any of them changes the hash, so launch can
     tell a stale env's copy from the current install's source.
     """
 
     digest = hashlib.sha256()
     roots = [shared_julia_package_path()]
-    roots.extend(
-        sorted(p for p in template_path.glob("JutulAgent*") if (p / "Project.toml").exists())
-    )
+    roots.extend(sorted(p for p in template_path.glob("Makker*") if (p / "Project.toml").exists()))
     for root in roots:
         _update_with_package_source(digest, root)
     return digest.hexdigest()
@@ -705,7 +703,7 @@ def sync_julia_env_with_template(
         return []
 
     # A dep the template declares via a relative `[sources]` path (makker's
-    # in-env runtime packages, JutulAgent + JutulAgent<Sim>) is not registered, so
+    # in-env runtime packages, Makker + Makker<Sim>) is not registered, so
     # `Pkg.resolve` fails with "expected package ... to be registered" unless its
     # source entry and the package directory come over too. Bring both alongside
     # the dep so the env stays installable after an upstream change.
@@ -959,7 +957,7 @@ def _append_sources(project_toml_text: str, sources: dict[str, object]) -> str:
 
 
 def _format_source_value(spec: object) -> str:
-    """Render a ``[sources]`` value back to TOML (e.g. ``{path = "JutulAgent"}``)."""
+    """Render a ``[sources]`` value back to TOML (e.g. ``{path = "Makker"}``)."""
 
     if isinstance(spec, dict):
         return "{" + ", ".join(f'{k} = "{v}"' for k, v in spec.items()) + "}"
@@ -1009,7 +1007,7 @@ def _append_table_entries(project_toml_text: str, table: str, entries: list[str]
 def _copy_source_packages(template_path: Path, env_dir: Path, sources: dict[str, object]) -> None:
     """Copy the package directory backing each path ``[sources]`` entry into the env.
 
-    The shared ``JutulAgent`` package lives in the repo (not the template), so it
+    The shared ``Makker`` package lives in the repo (not the template), so it
     is synced from there; per-simulator packages are subdirectories of the template.
     """
 
@@ -1078,14 +1076,14 @@ def bootstrap_julia_env(
     _copy_source_packages(template_path, target, template.get("sources", {}))
     # Stamp the template Project.toml (drives the rebuild-staleness warning) and
     # fingerprint the warm-package source (drives the auto re-copy when the bundled
-    # JutulAgent runtime itself changes); see env_template_drifted / warm_source_is_current.
+    # Makker runtime itself changes); see env_template_drifted / warm_source_is_current.
     write_env_template_stamp(target, template_path)
     mark_warm_source(target, template_path)
     return target
 
 
 def sync_shared_julia_package(env_dir: Path) -> None:
-    """Copy the shared JutulAgent package (``julia_runtime/``) into ``env_dir``.
+    """Copy the shared Makker package (``julia_runtime/``) into ``env_dir``.
 
     Overwrites any existing copy. Called at bootstrap and before instantiating a
     template in place (CI/tests). See ``SHARED_JULIA_PACKAGE_DIRNAME``.
@@ -1093,7 +1091,7 @@ def sync_shared_julia_package(env_dir: Path) -> None:
 
     src = shared_julia_package_path()
     if not src.is_dir():
-        raise WorkspaceBootstrapError(f"shared JutulAgent package missing at {src}")
+        raise WorkspaceBootstrapError(f"shared Makker package missing at {src}")
     dst = env_dir / SHARED_JULIA_PACKAGE_DIRNAME
     if dst.exists():
         shutil.rmtree(dst)

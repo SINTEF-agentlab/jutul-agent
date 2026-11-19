@@ -1,11 +1,11 @@
-"""The split JutulAgent Julia runtime must stay consistent across envs.
+"""The split Makker Julia runtime must stay consistent across envs.
 
 The runtime is two kinds of package:
 
-* One shared, simulator-agnostic ``JutulAgent`` package with a *single* source in
+* One shared, simulator-agnostic ``Makker`` package with a *single* source in
   the repo (``julia_runtime/``); env_setup copies it into each workspace env at
   bootstrap. There is no per-env copy to drift.
-* One per-simulator ``JutulAgent<Sim>`` warm package per env (named by the
+* One per-simulator ``Makker<Sim>`` warm package per env (named by the
   adapter's ``warm_package``), carrying that simulator's backend-aware solve/plot
   bake.
 
@@ -24,8 +24,8 @@ from makker.agent import plot_julia_src
 from makker.simulators import registry
 from makker.workspace import SHARED_JULIA_PACKAGE_DIRNAME, shared_julia_package_path
 
-_SHARED = "JutulAgent"
-_SHARED_CORE_FILES = ("src/JutulAgent.jl", "src/plots.jl", "src/ensemble.jl")
+_SHARED = "Makker"
+_SHARED_CORE_FILES = ("src/Makker.jl", "src/plots.jl", "src/ensemble.jl")
 
 
 def _plot_path_backends() -> set[str]:

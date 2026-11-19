@@ -94,7 +94,7 @@ async def _render(scenario: Scenario) -> tuple[str, str]:
     from makker.session import Session
     from makker.transcript import render_markdown
 
-    tmp = Path(tempfile.mkdtemp(prefix="jutul-lab-"))
+    tmp = Path(tempfile.mkdtemp(prefix="makker-lab-"))
     # Keep session output (artifacts, gitignore) inside the scratch dir.
     set_workspace_root(tmp)
     session = Session.create(julia=FakeJulia(), state_root=tmp, simulator=make_fake_adapter(tmp))

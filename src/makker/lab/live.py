@@ -87,7 +87,7 @@ async def _live_render(
     adapter = registry.get(simulator)
     set_workspace_root(workspace)
     julia_project = resolve_julia_project(workspace)
-    scratch = Path(tempfile.mkdtemp(prefix="jutul-live-"))
+    scratch = Path(tempfile.mkdtemp(prefix="makker-live-"))
 
     config = KernelConfig(julia_project=julia_project, cwd=workspace)
     async with JuliaKernel(config) as julia:
@@ -197,7 +197,7 @@ def _cli(argv: list[str] | None = None) -> int:
     load_dotenv()
 
     w, h = (int(v) for v in args.size.lower().split("x"))
-    out = Path(args.out) if args.out else Path(tempfile.mkdtemp(prefix="jutul-live-out-"))
+    out = Path(args.out) if args.out else Path(tempfile.mkdtemp(prefix="makker-live-out-"))
     try:
         paths = capture_live(
             args.prompt,

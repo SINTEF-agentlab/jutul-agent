@@ -3,13 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./api";
 
 afterEach(() => {
-  delete window.__JUTUL_BASE_PATH__;
+  delete window.__MAKKER_BASE_PATH__;
   vi.unstubAllGlobals();
 });
 
 describe.each(["", "/restricted", "/nested/prefix"])("API under %j", (prefix) => {
   it("routes every request through the configured prefix exactly once", async () => {
-    window.__JUTUL_BASE_PATH__ = prefix;
+    window.__MAKKER_BASE_PATH__ = prefix;
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       providers: [], sessions: [], messages: [],
     })));
@@ -60,7 +60,7 @@ describe.each(["", "/restricted", "/nested/prefix"])("API under %j", (prefix) =>
   });
 
   it("builds prefixed download URLs", () => {
-    window.__JUTUL_BASE_PATH__ = prefix;
+    window.__MAKKER_BASE_PATH__ = prefix;
     expect(api.transcriptUrl("sid", "html")).toBe(
       `${prefix}/sessions/sid/transcript?format=html`,
     );

@@ -136,11 +136,11 @@ def test_a_project_with_nothing_in_it_is_refused(tmp_path: Path, julia: _FakeJul
 
 
 def test_verification_looks_for_the_packages_before_loading_them() -> None:
-    script = _verify_script(("JutulDarcy", "JutulAgent"), deps=set())
+    script = _verify_script(("JutulDarcy", "Makker"), deps=set())
     # Bound into Main at startup is the only evidence that the bake took; a
     # `using` would succeed either way and prove nothing.
     assert "isdefined(Main, Symbol(p))" in script
-    assert '"JutulDarcy"' in script and '"JutulAgent"' in script
+    assert '"JutulDarcy"' in script and '"Makker"' in script
 
 
 def test_verification_covers_plotting_only_where_the_env_can(tmp_path: Path) -> None:

@@ -183,7 +183,7 @@ def test_disk_resume_reports_stale_sysimage_as_conflict(tmp_path: Path) -> None:
         raise sysimage.SysimageUnavailable(
             sysimage.Decision(
                 status=sysimage.DIVERGENT,
-                reason="  edited since the image was built:\n    JutulAgentJutulDarcy",
+                reason="  edited since the image was built:\n    MakkerJutulDarcy",
             ),
             command="makker web",
         )
@@ -196,7 +196,7 @@ def test_disk_resume_reports_stale_sysimage_as_conflict(tmp_path: Path) -> None:
         )
 
     assert response.status_code == 409
-    assert "JutulAgentJutulDarcy" in response.json()["detail"]
+    assert "MakkerJutulDarcy" in response.json()["detail"]
     assert "--no-sysimage" in response.json()["detail"]
 
 
@@ -995,12 +995,12 @@ def _plot_eval_handler(code: str):
     from makker.agent import plot_julia_src as jl
     from makker.julia.session import EvalResult
 
-    if "Bonito.Server" in code and "__JUTUL_WEB_PORT__" in code:
-        return EvalResult(output="__JUTUL_WEB_PORT__=9123")
-    if "get(Main.__JUTUL_WEB_FIGS__" in code:  # a refit: echo the requested size
+    if "Bonito.Server" in code and "__MAKKER_WEB_PORT__" in code:
+        return EvalResult(output="__MAKKER_WEB_PORT__=9123")
+    if "get(Main.__MAKKER_WEB_FIGS__" in code:  # a refit: echo the requested size
         m = re.search(r"resize!\(_fig, (\d+), (\d+)\)", code)
         return EvalResult(output=f"{jl.FIG_SIZE_MARKER}={m.group(1)}x{m.group(2)}")
-    if "__JUTUL_WEB_FIGS__[" in code:
+    if "__MAKKER_WEB_FIGS__[" in code:
         return EvalResult(output=f"{jl.FIG_SIZE_MARKER}=1600x900")
     if jl.SCREEN_PREFERENCE_MARKER in code:
         return EvalResult(output=f"{jl.SCREEN_PREFERENCE_MARKER}=ok")
@@ -1069,7 +1069,7 @@ async def test_replot_revive_reserves_route_and_revives_view(tmp_path: Path) -> 
     assert "regenerated a plot" in note.content
     assert "plot_reservoir(model, states)" in note.content
     # The replay served the figure and saved a fresh poster (the poster block runs).
-    assert any("__JUTUL_WEB_FIGS__[" in c and "CairoMakie.save" in c for c in session.julia.calls)
+    assert any("__MAKKER_WEB_FIGS__[" in c and "CairoMakie.save" in c for c in session.julia.calls)
 
 
 async def test_replot_unknown_record_is_an_error(tmp_path: Path) -> None:
@@ -1092,7 +1092,7 @@ async def test_replot_popout_serves_independent_route_and_close_releases_it(
     # (1600x900 from the fake kernel), hosting the independent live route.
     assert ready["url"] == f"/popout/{session.session_id}?route=res--pop1&w=1600&h=900"
     assert not any(m["type"] == "viz" for m in ws.sent)  # no artifact re-recorded
-    serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
+    serve = next(c for c in session.julia.calls if "__MAKKER_WEB_FIGS__[" in c)
     assert "res--pop1" in serve
     assert "CairoMakie.save" not in serve  # poster skipped for the ephemeral view
 
@@ -1114,7 +1114,7 @@ async def test_replot_with_target_size_refits_the_figure(tmp_path: Path) -> None
         {"type": "replot", "record": "artifacts/res.png", "width": 900, "height": 850}
     )
     await st._turn
-    serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
+    serve = next(c for c in session.julia.calls if "__MAKKER_WEB_FIGS__[" in c)
     assert "local _pw, _ph = 900, 850" in serve
     # The viz reports the echoed size, not the request: the figure's own layout
     # has the last word on what a resize actually produced.
@@ -1128,7 +1128,7 @@ async def test_replot_with_junk_size_replays_unresized(tmp_path: Path) -> None:
         {"type": "replot", "record": "artifacts/res.png", "width": "huge", "height": -3}
     )
     await st._turn
-    serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
+    serve = next(c for c in session.julia.calls if "__MAKKER_WEB_FIGS__[" in c)
     assert "resize!(_fig" not in serve
 
 
@@ -1139,7 +1139,7 @@ async def test_replot_without_size_fits_the_session_panel_hint(tmp_path: Path) -
     session.web_canvas_hint = (900, 1100)
     await st._start_replot({"type": "replot", "record": "artifacts/res.png"})
     await st._turn
-    serve = next(c for c in session.julia.calls if "__JUTUL_WEB_FIGS__[" in c)
+    serve = next(c for c in session.julia.calls if "__MAKKER_WEB_FIGS__[" in c)
     assert "local _pw, _ph = 900, 1100" in serve
 
 

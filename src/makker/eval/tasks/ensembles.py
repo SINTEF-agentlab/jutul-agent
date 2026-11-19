@@ -3,7 +3,7 @@
 One task per simulator, each sweeping a real case the simulator ships or the
 workspace provides: a waterflood, a battery discharge, a geothermal doublet, a
 CO2-capture cycle. Each runs inside its simulator's workspace env, because
-``run_ensemble`` ships in the JutulAgent runtime package that only exists there,
+``run_ensemble`` ships in the Makker runtime package that only exists there,
 and worker processes inherit that env. The real check is the trace:
 ``run_ensemble`` (or plain ``pmap``) must appear in code the agent actually
 executed, so a serial fallback or a textual claim cannot pass. A real

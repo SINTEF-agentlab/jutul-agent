@@ -37,7 +37,7 @@ def profile_turn(scenario_name: str = "tool_call", repeat: int = 3) -> list[Hots
     profiler = cProfile.Profile()
     profiler.enable()
     for _ in range(repeat):
-        capture(scenario, Path(tempfile.mkdtemp(prefix="jutul-profturn-")))
+        capture(scenario, Path(tempfile.mkdtemp(prefix="makker-profturn-")))
     profiler.disable()
 
     stats = pstats.Stats(profiler)

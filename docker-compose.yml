@@ -1,4 +1,4 @@
-# jutul-bench in a container.
+# makker-bench in a container.
 #
 #   docker compose build
 #   docker compose run --rm eval canary --model openai/gpt-5.4-mini
@@ -28,8 +28,8 @@ services:
     mem_limit: 12g
     volumes:
       - julia-depot:/depot
-      - jutul-state:/state
+      - makker-state:/state
 
 volumes:
   julia-depot:
-  jutul-state:
+  makker-state:

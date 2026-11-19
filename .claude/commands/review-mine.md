@@ -44,7 +44,7 @@ Mine up to ${ARGUMENTS:-10} of the most recent unreviewed sessions, one at a tim
       as evidence. If the session is genuinely clean, return an empty `findings` list;
       do not invent issues.
 
-   c. Write the result as strict JSON to `.jutul-review/<session_id>.json`:
+   c. Write the result as strict JSON to `.makker-review/<session_id>.json`:
 
       ```json
       {
@@ -70,7 +70,7 @@ Mine up to ${ARGUMENTS:-10} of the most recent unreviewed sessions, one at a tim
    d. Ingest it (logs the findings and curates them into the issue store):
 
       ```
-      makker review ingest <session_id> --from .jutul-review/<session_id>.json
+      makker review ingest <session_id> --from .makker-review/<session_id>.json
       ```
 
 3. When every session is done, show the ranked result and report a short summary to

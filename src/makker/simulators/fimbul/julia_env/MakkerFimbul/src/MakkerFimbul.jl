@@ -1,15 +1,15 @@
-module JutulAgentFimbul
+module MakkerFimbul
 
 # Per-simulator warm-up package for Fimbul, which reuses JutulDarcy's solver plus an
 # energy equation and ships no PrecompileTools workload of its own. Bakes the agent's
-# simulate_reservoir + plot_reservoir paths; see JutulAgentJutulDarcy for the
+# simulate_reservoir + plot_reservoir paths; see MakkerJutulDarcy for the
 # @recompile_invalidations rationale.
 
 using Fimbul, JutulDarcy, Jutul
 using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workload
 
 @recompile_invalidations begin
-    import JutulAgent
+    import Makker
     import CairoMakie
     import WGLMakie
     using GLMakie

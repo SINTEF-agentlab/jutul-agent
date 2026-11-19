@@ -84,7 +84,7 @@ and check on staged `.py` files. To verify the whole tree like CI:
   `turns.py`, and `added_dirs.py`, which records `/add-dir` folders);
   `tool_labels.py` holds the one friendly name per tool shared by the TUI,
   approval prompt, and transcript. The Julia-side plot capture lives in the
-  `julia_runtime/JutulAgent` package. The full system prompt is assembled in
+  `julia_runtime/Makker` package. The full system prompt is assembled in
   `prompts.py` (each rule stated once).
 - `src/makker/simulators/`: adapter dataclass, registry, env bootstrap +
   launch-time preparation (`env_setup.prepare_workspace_env`), shared skills,
@@ -119,10 +119,10 @@ exactly three things:
   `module_dir = Path(__file__).resolve().parent` so the base class can
   derive `julia_env_template_path` and `skills_dir`.
 - `julia_env/`: `Project.toml` declaring the deps the agent can `using`, plus a
-  per-simulator `JutulAgent<Sim>/` warm package (a local `[sources]` path dep whose
+  per-simulator `Makker<Sim>/` warm package (a local `[sources]` path dep whose
   `@recompile_invalidations` + `@compile_workload` bakes that simulator's
   GLMakie-aware solve/plot into the precompile cache, so the first solve is fast).
-  The shared, sim-agnostic `JutulAgent` package (figure capture, ensemble helpers,
+  The shared, sim-agnostic `Makker` package (figure capture, ensemble helpers,
   generic-Makie warm-up) has a single source in `src/makker/julia_runtime/` and
   is copied into the env at bootstrap (also a relative `[sources]` dep). The
   `Manifest.toml` is generated on instantiate (gitignored). The whole `julia_env/`
@@ -170,7 +170,7 @@ silently at runtime. The contacts:
 
 ## WGLMakie private-surface contacts
 
-Live web plots render through `julia_runtime/JutulAgent/src/web_views.jl`: a new
+Live web plots render through `julia_runtime/Makker/src/web_views.jl`: a new
 browser connection closes the figure's earlier view and drops WGLMakie's cached
 render data, because WGLMakie 0.13 closes a shared scene when any view closes. It
 calls `WGLMakie.render_with_init` and `delete_wgl_robj!`, reads `Screen.session`,

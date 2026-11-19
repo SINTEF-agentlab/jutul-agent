@@ -1,14 +1,14 @@
-module JutulAgentBattMo
+module MakkerBattMo
 
 # Per-simulator warm-up package for BattMo. Bakes the agent's solve path (the shipped
 # chen_2020 cell with a constant-current discharge, mirroring the battmo-overview
-# skill). See JutulAgentJutulDarcy for the @recompile_invalidations rationale.
+# skill). See MakkerJutulDarcy for the @recompile_invalidations rationale.
 
 using BattMo, Jutul
 using PrecompileTools: @recompile_invalidations, @setup_workload, @compile_workload
 
 @recompile_invalidations begin
-    import JutulAgent
+    import Makker
     import CairoMakie
     import WGLMakie
     using GLMakie
@@ -25,7 +25,7 @@ end
 # The whole warm-up, strictly. Every warm package defines this; the simulator smoke
 # test calls it directly so a workload that has quietly stopped baking anything
 # fails a test instead of just being slow. BattMo's plots are 1D time series, whose
-# Makie path the shared JutulAgent package already warms, so there is no plot half.
+# Makie path the shared Makker package already warms, so there is no plot half.
 function _warm()
     _warm_solve()
     return nothing

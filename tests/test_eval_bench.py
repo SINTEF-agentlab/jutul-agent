@@ -1,4 +1,4 @@
-"""Unit tests for the jutul-bench eval package (no model calls).
+"""Unit tests for the makker-bench eval package (no model calls).
 
 Everything here runs offline: scorers are exercised against synthetic
 trace databases, and task modules are imported to catch API drift in the

@@ -38,7 +38,7 @@ class SimulatorAdapter:
     # which orient the agent). Injected into the critic prompt for the active simulator.
     review_hints: str = ""
     # Name of this env's per-simulator warm-up package (e.g.
-    # ``"JutulAgentJutulDarcy"``). Loaded in the background at session start so its
+    # ``"MakkerJutulDarcy"``). Loaded in the background at session start so its
     # precompiled, GLMakie-aware solver is resident; its solve/plot bake is what
     # makes the agent's first call fast. Empty disables the warm-up.
     warm_package: str = ""

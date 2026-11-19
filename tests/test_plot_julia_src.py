@@ -50,8 +50,8 @@ from makker.agent.plot_julia_src import (
 
 def test_web_server_start_reports_the_actual_bound_port() -> None:
     code = web_server_start(12345, "2026-01-01-0000-abcd")
-    assert "__JUTUL_WEB_PORT__ = __JUTUL_WEB_SERVER__.port" in code
-    assert "__JUTUL_WEB_PORT__ = 12345" not in code
+    assert "__MAKKER_WEB_PORT__ = __MAKKER_WEB_SERVER__.port" in code
+    assert "__MAKKER_WEB_PORT__ = 12345" not in code
 
 
 def test_web_server_start_sets_a_site_relative_proxy_url() -> None:
@@ -83,7 +83,7 @@ def test_live_call_never_lets_glmakie_draw_the_figure() -> None:
 def test_web_construction_uses_scoped_capture_without_gl_rendering() -> None:
     code = _live_code()
     assert code.index("start_web_capture()") < code.index("plot_reservoir(")
-    assert "finally\n        JutulAgent.JutulAgentPlots.stop_web_capture" in code
+    assert "finally\n        Makker.MakkerPlots.stop_web_capture" in code
     assert not re.search(r"(?<!W)GLMakie\.activate!", code)
     assert "GLMakie.closeall" not in code
 
@@ -304,7 +304,7 @@ def test_resize_call_resizes_the_routed_figure_and_echoes() -> None:
     from makker.agent.plot_julia_src import resize_web_fig_call
 
     code = resize_web_fig_call("/viz/res", 1200, 1000)
-    assert 'get(Main.__JUTUL_WEB_FIGS__, raw"/viz/res", nothing)' in code
+    assert 'get(Main.__MAKKER_WEB_FIGS__, raw"/viz/res", nothing)' in code
     assert "resize!(_fig, 1200, 1000)" in code
     # The overflow guard follows the resize and precedes the echo, so the echo
     # reports the size the figure really settled at.
@@ -353,7 +353,7 @@ def test_live_route_lets_each_new_view_take_the_figure_over() -> None:
     code = _live_code()
     start = code.index("Bonito.route!")
     route = code[start : code.index(")))", start)]
-    assert "JutulAgentWebViews.view(_session," in route
+    assert "MakkerWebViews.view(_session," in route
     assert "resize_to = :parent" in route
     assert "WithConfig" not in route
     assert code.index("update_state_before_display!(_fig)") < start
@@ -381,9 +381,9 @@ def test_the_session_keeps_the_reported_routes() -> None:
     from makker.agent.plot_julia import note_live_routes
 
     session = SimpleNamespace(live_routes={"/viz/old"})
-    note_live_routes(session, "ok\n__JUTUL_LIVE_ROUTES__=/viz/a /viz/b--pop1\n")
+    note_live_routes(session, "ok\n__MAKKER_LIVE_ROUTES__=/viz/a /viz/b--pop1\n")
     assert session.live_routes == {"/viz/a", "/viz/b--pop1"}
-    note_live_routes(session, "__JUTUL_LIVE_ROUTES__=\n")  # everything closed
+    note_live_routes(session, "__MAKKER_LIVE_ROUTES__=\n")  # everything closed
     assert session.live_routes == set()
     note_live_routes(session, "an error before the routes changed")
     assert session.live_routes == set()  # nothing reported, nothing changed
@@ -393,11 +393,11 @@ def test_dropping_a_live_route_closes_its_page() -> None:
     # A re-plot of the same slot, eviction past the cap, and closing plots all
     # close the dropped figure's browser page, so its view stops holding it.
     code = _live_code()
-    replace = 'JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, raw"/viz/reservoir")'
-    assert code.index(replace) < code.index('Main.__JUTUL_WEB_FIGS__[raw"/viz/reservoir"] =')
-    assert "JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, _victim)" in code
+    replace = 'MakkerWebViews.drop!(Main.__MAKKER_WEB_FIGS__, raw"/viz/reservoir")'
+    assert code.index(replace) < code.index('Main.__MAKKER_WEB_FIGS__[raw"/viz/reservoir"] =')
+    assert "MakkerWebViews.drop!(Main.__MAKKER_WEB_FIGS__, _victim)" in code
     for slot in ("reservoir", ""):
-        assert "JutulAgentWebViews.drop!(Main.__JUTUL_WEB_FIGS__, r)" in close_web_plots_call(slot)
+        assert "MakkerWebViews.drop!(Main.__MAKKER_WEB_FIGS__, r)" in close_web_plots_call(slot)
 
 
 def test_live_call_caps_the_route_registry() -> None:
@@ -424,4 +424,4 @@ def test_live_call_without_poster_skips_the_durable_record() -> None:
     )
     assert "CairoMakie.save" not in code
     assert "export_static" not in code
-    assert "__JUTUL_WEB_FIGS__" in code  # still served live
+    assert "__MAKKER_WEB_FIGS__" in code  # still served live

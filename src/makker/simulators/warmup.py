@@ -1,7 +1,7 @@
 """The session-start GL-context warm-up.
 
-Solve and plot paths are precompiled and cached at ``init`` (by the JutulAgent and
-per-simulator JutulAgent<Sim> packages), so loading them at session start pays only
+Solve and plot paths are precompiled and cached at ``init`` (by the Makker and
+per-simulator Makker<Sim> packages), so loading them at session start pays only
 load latency. The one thing precompilation cannot bake is GLMakie's runtime GL
 context, which is process-local. This module is the one simulator-agnostic snippet
 that warms it, in the background, with a tiny offscreen save. ``run._start_warmup``
@@ -83,7 +83,7 @@ def load_statement(warm_package: str, capability_packages: Sequence[str] = ()) -
 
     ``capability_packages`` follow the simulator's, not the other way round. A
     capability package is a sibling of the warm package rather than a dependant. It
-    is built on the simulator, but knows nothing of ``JutulAgent<Sim>``, so "most
+    is built on the simulator, but knows nothing of ``Makker<Sim>``, so "most
     derived" does not order the pair, and the question is only which bake survives.
     Measured on one capability package: naming it first costs 6.08s of recompilation
     at load, naming it after the warm package 1.56s. The warm package brings the
@@ -96,7 +96,7 @@ def load_statement(warm_package: str, capability_packages: Sequence[str] = ()) -
 
     names = [warm_package] if warm_package else []
     names.extend(n for n in capability_packages if n)
-    names.append("JutulAgent")
+    names.append("Makker")
     return "using " + ", ".join(names)
 
 

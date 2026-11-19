@@ -70,7 +70,7 @@ class Capability:
     alongside the simulator's own warm package. Declaring one only makes the
     session *load* it early; what makes the first call fast is the package
     baking its own hot paths with a ``PrecompileTools.@compile_workload``, the
-    way ``JutulAgent<Sim>`` does. Without a workload, ``Pkg.precompile`` caches
+    way ``Makker<Sim>`` does. Without a workload, ``Pkg.precompile`` caches
     the module's top level but none of the type-specialised inference behind its
     entry points, and the first real call pays that in full.
 
