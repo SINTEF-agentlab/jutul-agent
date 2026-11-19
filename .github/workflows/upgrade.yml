@@ -1,0 +1,38 @@
+name: Upgrade from jutul-agent
+
+# Temporary, like makker/legacy.py and bridge/: installs a released jutul-agent
+# from PyPI, updates it to this checkout's Makker the way a user's machine does
+# (`uv tool upgrade jutul-agent`, then `jutul-agent` again), and checks that the
+# data folder and the workspace came along. No Julia involved.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade:
+    name: from ${{ matrix.from }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Every released version on Linux; the newest on the other systems,
+          # where moving folders and replacing a running program differ.
+          - {os: ubuntu-latest, from: "0.2.1"}
+          - {os: ubuntu-latest, from: "0.2.0"}
+          - {os: ubuntu-latest, from: "0.1.0"}
+          - {os: macos-latest, from: "0.2.1"}
+          - {os: windows-latest, from: "0.2.1"}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Upgrade a real install and check it
+        run: uv run --no-project --python 3.12 tests/upgrade/check_upgrade.py --from ${{ matrix.from }}

@@ -86,7 +86,9 @@ SKIPPED_FILES = (
     "src/makker/legacy.py",
     "tests/test_legacy.py",
     "tests/test_bridge.py",
+    "tests/upgrade/check_upgrade.py",
     ".github/workflows/release-bridge.yml",
+    ".github/workflows/upgrade.yml",
 )
 
 # Where the product name is prose. Elsewhere it is a command, a path or an

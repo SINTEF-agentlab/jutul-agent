@@ -124,7 +124,7 @@ def _old_workspace(workspace: Path) -> Path:
     (env / "Manifest.toml").write_text("# resolved\n", encoding="utf-8")
     (env / ".jutul-agent-precompiled").write_text("", encoding="utf-8")
     (workspace / ".jutul-agent" / "config.toml").write_text(
-        'simulator = "jutuldarcy"\n', encoding="utf-8"
+        '[workspace]\nsimulator = "jutuldarcy"\n', encoding="utf-8"
     )
     return env
 
@@ -135,7 +135,9 @@ def test_a_workspace_folder_is_renamed_and_ignores_itself(tmp_path: Path) -> Non
     legacy.adopt_workspace(tmp_path)
 
     assert not (tmp_path / ".jutul-agent").exists()
-    assert (tmp_path / ".makker" / "config.toml").read_text() == 'simulator = "jutuldarcy"\n'
+    assert (
+        tmp_path / ".makker" / "config.toml"
+    ).read_text() == '[workspace]\nsimulator = "jutuldarcy"\n'
     assert (tmp_path / ".makker" / ".gitignore").read_text(encoding="utf-8") == "*\n"
     legacy.adopt_workspace(tmp_path)  # again: nothing to do
 

@@ -59,6 +59,9 @@ GitHub Actions workflows:
   `main`.
 - `release.yml`: on a published GitHub release tagged `vX.Y.Z`, builds and
   uploads to PyPI. The tag is the only source of the version.
+- `upgrade.yml`: every push/PR, temporary. Installs a released jutul-agent,
+  updates it to this checkout (`tests/upgrade/check_upgrade.py`), and checks the
+  data folder and workspace came along, on Linux, macOS and Windows.
 - `release-bridge.yml`: manual, run from a release tag. Publishes the last
   release of the old package, jutul-agent (`bridge/jutul-agent`), which installs
   Makker and starts it so existing installs move across on their next update.
