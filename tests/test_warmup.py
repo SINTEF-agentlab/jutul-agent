@@ -72,7 +72,7 @@ async def test_start_warmup_without_warm_package_still_loads_shared() -> None:
     await task
     # A placeholder sim with no warm package still loads the shared runtime, which is
     # where the capture helpers live, and warms the GL context.
-    assert "using Makker;" in julia.calls[0]
+    assert julia.calls[0] == "using Makker"
     assert julia.calls[-1] == GL_CONTEXT_WARMUP
 
 

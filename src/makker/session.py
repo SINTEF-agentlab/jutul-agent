@@ -17,6 +17,7 @@ from makker import legacy
 from makker.julia.session import JuliaSession
 from makker.paths import session_output_dir, workspace_state_dir
 from makker.simulators.base import SimulatorAdapter
+from makker.simulators.warmup import WarmPackage
 from makker.trace import TraceLog
 from makker.trace.schema import (
     HOST_CONTEXT,
@@ -300,6 +301,15 @@ class Session:
     # Folders holding a report written this session, whose sidecar transcript is
     # refreshed at turn end (see ``refresh_report_transcripts``).
     _report_transcript_dirs: set[Path] = field(default_factory=set, repr=False)
+    _warm: WarmPackage | None = field(default=None, repr=False)
+
+    @property
+    def warm(self) -> WarmPackage:
+        """The session's use of its simulator's warm package, shared by the
+        background warm-up and the plot tool so neither repeats a failed load."""
+        if self._warm is None:
+            self._warm = WarmPackage(self.simulator.warm_package, self.simulator.primary_package)
+        return self._warm
 
     @classmethod
     def create(

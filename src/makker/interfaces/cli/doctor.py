@@ -32,6 +32,7 @@ from makker.workspace import (
     newer_env_packages,
     outdated_env_packages,
     resolve_julia_project,
+    warm_failure_is_current,
 )
 
 PASS = "PASS"
@@ -93,6 +94,7 @@ def run(args: argparse.Namespace) -> int:
     # passed, else the error would just restate what we already reported.
     if julia.ok and project is not None:
         _check_julia_runs(report, project)
+        _check_fast_startup(report, project, julia.version_str)
     else:
         report.line(WARN, "Julia runs in env", "skipped (fix the items above first)")
 
@@ -399,6 +401,20 @@ def _check_plotting_display(report: _Report) -> None:
         "Install xvfb (e.g. `sudo apt-get install -y xvfb`) to enable plotting; "
         "simulation works without it.",
     )
+
+
+def _check_fast_startup(report: _Report, project: Path, julia_version: str | None) -> None:
+    """Warn when the env has it on record that the simulator's warm package does
+    not build here. An optimisation only, so never a failure."""
+
+    if warm_failure_is_current(project):
+        report.line(
+            WARN,
+            "Fast start-up",
+            f"could not be prepared on Julia {julia_version}; Makker works, but the "
+            "first solve and plot of a session are slower",
+            "Updating Julia may fix it; Makker tries again when Julia or the packages change.",
+        )
 
 
 def _check_julia_runs(report: _Report, project: Path) -> None:

@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -100,6 +101,57 @@ def load_statement(warm_package: str, capability_packages: Sequence[str] = ()) -
     return "using " + ", ".join(names)
 
 
+def fallback_load_statement(simulator_package: str, capability_packages: Sequence[str] = ()) -> str:
+    """What to load when the warm package cannot be: the same world, in the order
+    the warm package brings it up itself.
+
+    The simulator first (best-effort, the capture helpers do not need it), then the
+    shared package, which brings every Makie backend with GLMakie last, then the
+    capability packages. Nothing was baked against this, so the first solve and
+    plot compile what the warm package would have had ready.
+    """
+
+    using = "using " + ", ".join(["Makker", *(n for n in capability_packages if n)])
+    if not simulator_package:
+        return using
+    return f"try; @eval import {simulator_package}; catch; end\n{using}"
+
+
+@dataclass
+class WarmPackage:
+    """One session's use of its simulator's warm package, which is an optimisation only.
+
+    ``available`` is false from the start when the env has it on record that the
+    package does not build, and turns false the first time loading it fails: a
+    failed precompile is retried by every ``using``, at about a minute a time.
+    ``on_unavailable`` then hears Julia's error, once.
+    """
+
+    name: str
+    simulator_package: str = ""
+    available: bool = True
+    on_unavailable: Callable[[str], None] | None = None
+    # The warm-up and the first plot both load; the second waits for the first's verdict.
+    _loading: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+
+    def load_statement(self, capability_packages: Sequence[str] = ()) -> str:
+        if self.name and not self.available:
+            return fallback_load_statement(self.simulator_package, capability_packages)
+        return load_statement(self.name, capability_packages)
+
+    async def load(self, julia: Any, capability_packages: Sequence[str] = ()) -> Any:
+        """Load the session's Julia world, without the warm package if it will not load."""
+
+        async with self._loading:
+            result = await julia.eval(self.load_statement(capability_packages))
+            if result.error and self.name and self.available:
+                self.available = False
+                if self.on_unavailable is not None:
+                    self.on_unavailable(result.error)
+                result = await julia.eval(self.load_statement(capability_packages))
+            return result
+
+
 # Initialise this session's GLMakie GL context (the per-session cost precompilation
 # cannot bake) with a tiny offscreen save. Best-effort: if GLMakie isn't usable here
 # (no GL, no xvfb) the try/catch swallows it and plotting errors at first use.
@@ -126,7 +178,7 @@ end
 
 def start_warmup(
     julia: Any,
-    warm_package: str,
+    warm_package: str | WarmPackage,
     capability_packages: Sequence[str] = (),
     warm_code: Sequence[str] = (),
     abandonable: asyncio.Event | None = None,
@@ -155,15 +207,18 @@ def start_warmup(
     either way. The capability's ``warm_code`` is the genuinely optional part -- extra
     specialisation the session would be fine without -- and that is what stays
     abandonable.
+
+    ``warm_package`` is the session's :class:`WarmPackage`, or just its name.
     """
-    bootstrap = f"try; @eval {load_statement(warm_package, capability_packages)}; catch; end"
+    warm = warm_package if isinstance(warm_package, WarmPackage) else WarmPackage(warm_package)
 
     async def _run() -> None:
         # Shielded: cancelling here is what kills the kernel, so a cancel that lands
         # mid-load has to leave the eval running and take effect at the next step.
+        await _shielded(warm.load(julia, capability_packages))
         backend_setup = GL_CONTEXT_WARMUP if native_plotting else WEB_BACKEND_SETUP
-        for essential in (bootstrap, HYPRE_THREADS_SETUP, backend_setup):
-            await _shielded_eval(julia, essential)
+        for essential in (HYPRE_THREADS_SETUP, backend_setup):
+            await _shielded(julia.eval(essential))
         if abandonable is not None:
             abandonable.set()
         # Run capability snippets after loading and selecting the session's backend.
@@ -174,20 +229,20 @@ def start_warmup(
     return asyncio.create_task(_run(), name="julia-warmup")
 
 
-async def _shielded_eval(julia: Any, code: str) -> None:
-    """Run ``code`` so a cancel of the warm-up leaves it running, and quietly."""
+async def _shielded(step: Any) -> None:
+    """Await ``step`` so a cancel of the warm-up leaves it running, and quietly."""
 
     with contextlib.suppress(Exception):
-        await asyncio.shield(_eval(julia, code))
+        await asyncio.shield(_quietly(step))
 
 
-async def _eval(julia: Any, code: str) -> None:
+async def _quietly(step: Any) -> None:
     # The failure is swallowed inside the shielded coroutine, not around the
     # shield. A shield whose inner future ends in an exception hands it to the
     # loop's exception handler even when the waiter is long gone, so a session
     # closing mid-warm-up printed a KernelDied traceback that meant nothing.
     with contextlib.suppress(Exception):
-        await julia.eval(code)
+        await step
 
 
 # Pin HYPRE's OpenMP thread count for this session. JutulDarcy loads HYPRE (its

@@ -14,6 +14,7 @@ the user owns that env, and we only run dev and instantiate on request.
 from __future__ import annotations
 
 import errno
+import json
 import os
 import shutil
 import subprocess
@@ -32,6 +33,8 @@ from makker.paths import workspace_root
 from makker.simulators.base import SimulatorAdapter
 from makker.workspace import (
     PRECOMPILE_MARKER,
+    SHARED_JULIA_PACKAGE_DIRNAME,
+    WARM_FAILURE_MARKER,
     WARM_SOURCE_MARKER,
     WorkspaceBootstrapError,
     bootstrap_julia_env,
@@ -47,10 +50,12 @@ from makker.workspace import (
     newer_env_packages,
     outdated_env_packages,
     recopy_warm_sources,
+    record_warm_failure,
     resolve_julia_project,
     sync_julia_env_with_template,
     sync_julia_project_with_dependencies,
     user_owns_root_project,
+    warm_failure_is_current,
     warm_source_is_current,
     workspace_is_simulator_source,
     write_env_template_stamp,
@@ -215,7 +220,83 @@ _PRECOMPILE = (
     '@warn "Some packages failed to precompile (continuing; GL plotting may be '
     'unavailable here)" exception=e; end'
 )
-_RESILIENT_INSTANTIATE = [_INSTANTIATE, _PRECOMPILE]
+
+# ``Pkg.precompile`` is best-effort above, so its return says nothing about any one
+# package. The simulator's warm package is the one whose outcome a session acts on
+# (it loads without it, see ``simulators.warmup``), so the same Julia process says
+# whether it built, in a file next to the Project.toml.
+WARM_REPORT_FILENAME = ".makker-warm-report"
+_WARM_REPORT = (
+    'try; id = Base.identify_package("{package}"); '
+    f'write(joinpath(dirname(Base.active_project()), "{WARM_REPORT_FILENAME}"), '
+    'id !== nothing && Base.isprecompiled(id) ? "ready" : "failed"); catch; end'
+)
+
+
+def _precompile_cmds(project: Path) -> list[str]:
+    """``Pkg.precompile``, then Julia's word on whether the env's warm package built.
+
+    A warm package on record as not building here is left out instead, by naming
+    every other dependency: the bare call would spend another minute on it, and
+    launch precompiles more often than the env changes.
+    """
+
+    try:
+        text = (project / "Project.toml").read_text(encoding="utf-8")
+        deps = list(tomllib.loads(text).get("deps", {}))
+    except (OSError, tomllib.TOMLDecodeError):
+        deps = []
+    shared = SHARED_JULIA_PACKAGE_DIRNAME
+    package = next((name for name in deps if name.startswith(shared) and name != shared), None)
+    if package is None:
+        return [_PRECOMPILE]
+    if warm_failure_is_current(project):
+        others = json.dumps(sorted(name for name in deps if name != package))
+        return [_PRECOMPILE.replace("Pkg.precompile()", f"Pkg.precompile({others})")]
+    (project / WARM_REPORT_FILENAME).unlink(missing_ok=True)
+    return [_PRECOMPILE, _WARM_REPORT.replace("{package}", package)]
+
+
+def _settle_warm_package(project: Path) -> None:
+    """Act on Julia's report after a precompile; without one, conclude nothing."""
+
+    report = project / WARM_REPORT_FILENAME
+    try:
+        built = report.read_text(encoding="utf-8").strip() == "ready"
+        report.unlink()
+    except OSError:
+        return
+    if built:
+        (project / WARM_FAILURE_MARKER).unlink(missing_ok=True)
+    else:
+        _record_warm_failure(project)
+
+
+def _record_warm_failure(project: Path) -> None:
+    """Remember that the warm package does not build here, and tell the user once."""
+
+    from makker.julia.requirements import check_julia
+
+    record_warm_failure(project)
+    print(
+        "warning: the fast start-up could not be prepared on Julia "
+        f"{check_julia().version_str}.\n"
+        "         Makker works as usual, but the first solve and the first plot of a "
+        "session are slower.\n"
+        "         Updating Julia may fix it; Makker tries again when Julia or the "
+        "packages change.",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def note_warm_load_failure(project: Path, error: str) -> None:
+    """A session found that the warm package does not build, in an env that had no
+    record of it (one an earlier version prepared). Any other load error may not
+    repeat, so it is not recorded."""
+
+    if "failed to precompile" in error.lower() and env_declares_warm_packages(project):
+        _record_warm_failure(project)
 
 
 def bootstrap_workspace(
@@ -272,7 +353,7 @@ def _bootstrap_workspace_unlocked(
     if source_path is not None and not is_source:
         cmds.append(f'Pkg.develop(path=raw"{source_path}")')
     if precompile:
-        cmds.extend(_RESILIENT_INSTANTIATE)
+        cmds.extend([_INSTANTIATE, *_precompile_cmds(project)])
 
     with _local_source_compat(adapter, workspace, project, source_path):
         if len(cmds) > 1:
@@ -283,6 +364,7 @@ def _bootstrap_workspace_unlocked(
         # trivial eval is the right probe.
         verify_julia_runs(project)
         mark_env_precompiled(project)  # so launch skips a redundant bake
+        _settle_warm_package(project)
 
     return project
 
@@ -353,7 +435,8 @@ def precompile_env(project: Path) -> None:
     Precompile is best-effort (a headless GLMakie failure is warned, not fatal);
     a hard instantiate failure raises ``EnvSetupError``.
     """
-    _run_pkg(project, ["using Pkg", _INSTANTIATE, _PRECOMPILE], echo=False)
+    _run_pkg(project, ["using Pkg", _INSTANTIATE, *_precompile_cmds(project)], echo=False)
+    _settle_warm_package(project)
 
 
 def julia_probe(project: Path, *, timeout: float = 600.0) -> tuple[bool, str]:
@@ -427,8 +510,10 @@ def update_env(project: Path) -> None:
     reconciles stay cheap.
     """
 
-    _run_pkg(project, ["using Pkg", _REGISTRY_UPDATE, _UPDATE, _PRECOMPILE], echo=False)
+    cmds = ["using Pkg", _REGISTRY_UPDATE, _UPDATE, *_precompile_cmds(project)]
+    _run_pkg(project, cmds, echo=False)
     mark_env_precompiled(project)
+    _settle_warm_package(project)
 
 
 def _run_pkg(project: Path, cmds: list[str], *, capture: bool = False, echo: bool = True) -> None:
@@ -958,8 +1043,13 @@ def _ensure_env_warmed(
     # Only the managed env carries the warm-up packages; a user-owned env is theirs.
     if user_owns_root_project(ws) or not env_declares_warm_packages(julia_project):
         return
-    if env_precompile_is_current(julia_project) and dependency_source_is_current(
-        julia_project, dependencies
+    # A warm package that failed is tried again once what it failed against has
+    # changed. Julia is the one such change the other two checks cannot see.
+    failed = (julia_project / WARM_FAILURE_MARKER).exists()
+    if (
+        env_precompile_is_current(julia_project)
+        and dependency_source_is_current(julia_project, dependencies)
+        and (not failed or warm_failure_is_current(julia_project))
     ):
         return  # nothing changed since the last bake; skip without spawning Julia
 

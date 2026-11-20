@@ -46,8 +46,10 @@ makker                         # the web UI, at http://127.0.0.1:8742
 template, and **precompiles by default**: it instantiates the env and warms the
 precompile caches, including the terminal and web plotting backends. The first
 time can take a while (Julia compiles the simulator and the plotting stacks),
-after which the first session in any interface starts in seconds. Useful
-variants:
+after which the first session in any interface starts in seconds. If Julia
+cannot prepare that fast start-up on your machine, `init` says so; Makker works
+as usual, but the first solve and the first plot of a session are slower.
+Updating Julia may fix it. Useful variants:
 
 ```sh
 makker init --sim jutuldarcy --no-precompile                      # quick bootstrap, bake later

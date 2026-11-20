@@ -169,7 +169,9 @@ Everything simulator-specific lives in one folder per simulator under
   instantiate time.
 - `julia_env/Makker<Sim>/` is the warm package. Its precompile workload
   bakes the simulator's solve and plot paths into Julia's cache, which is why
-  a first solve takes seconds rather than minutes.
+  a first solve takes seconds rather than minutes. It is an optimisation only:
+  when Julia cannot precompile it, the env records that (`.makker-warm-failed`)
+  and sessions load without it until Julia or the packages change.
 - `skills/` holds the simulator's skill markdown.
 
 The shared `Makker` Julia package (`julia_runtime/`) is synced into every
