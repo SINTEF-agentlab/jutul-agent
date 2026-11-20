@@ -138,7 +138,9 @@ exactly three things:
   is copied into the env at bootstrap (also a relative `[sources]` dep). The
   `Manifest.toml` is generated on instantiate (gitignored). The whole `julia_env/`
   folder is copied into a workspace on bootstrap, so the relative `[sources]` paths
-  keep resolving.
+  keep resolving. The warm package is an optimisation: when it cannot be
+  precompiled the env records it (`.makker-warm-failed`) and sessions load
+  without it (`simulators/warmup.py`, `WarmPackage`).
 - `skills/<skill-name>/SKILL.md`: markdown skills surfaced via the
   deep-agents skill system.
 

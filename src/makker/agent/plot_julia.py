@@ -37,7 +37,6 @@ from langchain_core.tools import InjectedToolCallId, tool
 from makker.agent import plot_julia_src as jl
 from makker.paths import workspace_root
 from makker.session import Session
-from makker.simulators import warmup
 from makker.simulators.base import SimulatorAdapter
 from makker.trace.schema import ARTIFACT, artifact_payload
 
@@ -104,9 +103,12 @@ async def _load_agent_runtime(session: Session) -> str | None:
     simulator's rebuilds the parts of the bake that were inferred through a method the
     simulator brings. Warm-up normally gets here first; a plot requested before it
     finishes must not establish a different order.
+
+    The warm package only makes this fast: when it cannot be loaded, ``session.warm``
+    loads the helpers without it and the plot is made all the same.
     """
 
-    loaded = await session.julia.eval(warmup.load_statement(session.simulator.warm_package))
+    loaded = await session.warm.load(session.julia)
     if loaded.error:
         return f"ERROR: failed to load Makker plot helpers: {loaded.error}"
     return None

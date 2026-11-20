@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import sys
 from collections.abc import Awaitable, Callable, Sequence
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from makker.agent.turns import TurnRunner
@@ -489,9 +490,13 @@ class SessionHost:
         from makker.models import resolve_model
         from makker.paths import workspace_root
         from makker.session import Session, default_session_id, session_dir
-        from makker.simulators.env_setup import prepare_workspace_env
+        from makker.simulators.env_setup import note_warm_load_failure, prepare_workspace_env
         from makker.user_config import load_user_config
-        from makker.workspace import load_workspace_config, resolve_julia_project
+        from makker.workspace import (
+            load_workspace_config,
+            resolve_julia_project,
+            warm_failure_is_current,
+        )
 
         require_julia()
         ws = workspace or workspace_root()
@@ -607,6 +612,11 @@ class SessionHost:
                     open_windows=open_windows,
                     surface=surface,
                 )
+            # An env that has it on record that the warm package does not build
+            # starts the session without it. With no record the session tries, and
+            # a failed build it finds is recorded for the next one.
+            session.warm.available = not warm_failure_is_current(project)
+            session.warm.on_unavailable = partial(note_warm_load_failure, project)
             ckpt_path = session.state_dir / "checkpoints.sqlite"
             checkpointer = await stack.enter_async_context(
                 AsyncSqliteSaver.from_conn_string(str(ckpt_path))
@@ -667,7 +677,7 @@ class SessionHost:
             abandonable = asyncio.Event()
             host._warmup_task = start_warmup(
                 kernel,
-                simulator.warm_package,
+                session.warm,
                 collect_warm_packages(all_extensions),
                 collect_warm_code(all_extensions),
                 abandonable=abandonable,

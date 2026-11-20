@@ -254,6 +254,46 @@ def mark_warm_source(env_dir: Path, template_path: Path) -> None:
         )
 
 
+# Written when the simulator's warm package does not precompile here: a fingerprint
+# of what the attempt was made against. The package is an optimisation, and an
+# attempt costs about a minute and fails the same way each time, so while the
+# fingerprint still matches, sessions load without the package (see
+# ``simulators.warmup``) and nothing tries to build it again.
+WARM_FAILURE_MARKER = ".makker-warm-failed"
+
+
+def _warm_failure_fingerprint(env_dir: Path) -> str:
+    """Julia's version, the resolved dependencies and the env's Makker package
+    sources: a change to any of them can be what makes the warm package build."""
+
+    from makker.julia.requirements import check_julia
+
+    digest = hashlib.sha256((check_julia().version_str or "").encode("utf-8"))
+    with contextlib.suppress(OSError):
+        digest.update((env_dir / "Manifest.toml").read_bytes())
+    for root in sorted(env_dir.glob(SHARED_JULIA_PACKAGE_DIRNAME + "*")):
+        _update_with_package_source(digest, root)
+    return digest.hexdigest()
+
+
+def record_warm_failure(env_dir: Path) -> None:
+    with contextlib.suppress(OSError):
+        (env_dir / WARM_FAILURE_MARKER).write_text(
+            _warm_failure_fingerprint(env_dir), encoding="utf-8"
+        )
+
+
+def warm_failure_is_current(env_dir: Path) -> bool:
+    """Whether the warm package is on record as not building against the env as it
+    is now. Free without a record; with one, it asks which Julia is installed."""
+
+    try:
+        recorded = (env_dir / WARM_FAILURE_MARKER).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return recorded == _warm_failure_fingerprint(env_dir)
+
+
 # ---------------------------------------------------------------------------
 # Env-template stamping (so an upgrade that changes the template is detectable).
 

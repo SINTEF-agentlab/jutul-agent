@@ -147,7 +147,13 @@ def run(args: argparse.Namespace) -> int:
     if args.force:
         print("  env:           replaced from template (--force)")
     if args.precompile:
-        print("  precompile:    done (Pkg.instantiate + Pkg.precompile)")
+        from makker.workspace import warm_failure_is_current
+
+        # Not "done" when the package that makes a session start fast did not build.
+        if warm_failure_is_current(project):
+            print("  precompile:    done, except the fast start-up (see `makker doctor`)")
+        else:
+            print("  precompile:    done (Pkg.instantiate + Pkg.precompile)")
         _note_headless_plotting()
     else:
         print("  precompile:    skipped (--no-precompile); the first session will build the env")
