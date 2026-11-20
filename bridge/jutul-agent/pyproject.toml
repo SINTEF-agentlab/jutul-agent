@@ -3,7 +3,7 @@
 # and published by .github/workflows/release-bridge.yml, never by release.yml.
 [project]
 name = "jutul-agent"
-version = "0.3.0rc1"
+version = "0.3.0"
 description = "jutul-agent is now Makker. This final release installs Makker and starts it."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,7 +20,7 @@ classifiers = [
 # Keep this the only dependency, and keep it first: the release workflow reads
 # the Makker version it names.
 dependencies = [
-    "makker>=0.3.0rc1",
+    "makker>=0.3.0",
 ]
 
 [project.urls]
