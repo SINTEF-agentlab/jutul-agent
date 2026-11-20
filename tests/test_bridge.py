@@ -12,14 +12,19 @@ import pytest
 BRIDGE = Path(__file__).resolve().parents[1] / "bridge" / "jutul-agent"
 
 
-@pytest.fixture
-def bridge(monkeypatch):
+@pytest.fixture(params=[False, True], ids=["posix", "windows"])
+def bridge(request, monkeypatch):
+    """The bridge, set to start Makker the way each kind of system does.
+
+    Both ways run on every system: only the bridge's own switch is set, never
+    ``os.name``, which the standard library reads too.
+    """
     spec = importlib.util.spec_from_file_location(
         "jutul_agent_bridge", BRIDGE / "src" / "jutul_agent" / "__main__.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    monkeypatch.setattr(module.os, "name", "posix")
+    monkeypatch.setattr(module, "WINDOWS", request.param)
     return module
 
 
@@ -33,6 +38,8 @@ class Machine:
         self.tool.mkdir(parents=True)
         if uv_tool:
             (self.tool / "uv-receipt.toml").write_text("[tool]\n", encoding="utf-8")
+        self.command = "makker.exe" if bridge.WINDOWS else "makker"
+        self.own_bin = self.tool / ("Scripts" if bridge.WINDOWS else "bin")
         self.install_works = True
         self.uv_calls: list[list[str]] = []
         self.started: list[str] | None = None
@@ -41,6 +48,7 @@ class Machine:
         monkeypatch.setattr(bridge.shutil, "which", lambda name: "/usr/bin/uv" if has_uv else None)
         monkeypatch.setattr(bridge.subprocess, "run", self._uv)
         monkeypatch.setattr(bridge.os, "execv", self._exec)
+        monkeypatch.setattr(bridge.subprocess, "Popen", self._child)
         monkeypatch.setattr(bridge.os, "environ", {"JUTUL_AGENT_RESTARTED_AFTER_UPDATE": "1"})
         self.environ = bridge.os.environ
 
@@ -49,7 +57,7 @@ class Machine:
         if argv[1:4] == ["tool", "dir", "--bin"]:
             return subprocess.CompletedProcess(argv, 0, f"{self.bin}\n", "")
         if argv[1:3] == ["tool", "install"] and self.install_works:
-            (self.bin / "makker").write_text("#!/bin/sh\n", encoding="utf-8")
+            (self.bin / self.command).write_text("#!/bin/sh\n", encoding="utf-8")
             return subprocess.CompletedProcess(argv, 0, "", "")
         return subprocess.CompletedProcess(argv, 1, "", "")
 
@@ -57,9 +65,16 @@ class Machine:
         self.started = argv
         raise SystemExit(0)
 
+    def _child(self, argv, **kwargs):
+        self.started = argv
+        return type("Child", (), {"wait": lambda self: 3})()
+
     def start(self, bridge) -> list[str]:
-        with pytest.raises(SystemExit):
-            bridge.main()
+        if bridge.WINDOWS:
+            assert bridge.main() == 3  # Makker ran as a child; its exit code is passed on
+        else:
+            with pytest.raises(SystemExit):  # Makker replaced the process
+                bridge.main()
         assert self.started is not None
         return self.started
 
@@ -73,7 +88,7 @@ def test_the_first_start_installs_makker_as_its_own_tool_and_runs_it(
 
     python = f"{sys.version_info.major}.{sys.version_info.minor}"
     assert ["tool", "install", "makker", "--python", python] in machine.uv_calls
-    assert started == [str(machine.bin / "makker"), "--port", "8800"]
+    assert started == [str(machine.bin / machine.command), "--port", "8800"]
     assert "jutul-agent is now Makker" in capsys.readouterr().err
     # What the old version set for the restarted server reaches Makker under its name.
     assert machine.environ["MAKKER_RESTARTED_AFTER_UPDATE"] == "1"
@@ -82,11 +97,11 @@ def test_the_first_start_installs_makker_as_its_own_tool_and_runs_it(
 
 def test_a_makker_that_is_already_installed_is_just_started(tmp_path, monkeypatch, bridge) -> None:
     machine = Machine(tmp_path, monkeypatch, bridge, uv_tool=True)
-    (machine.bin / "makker").write_text("#!/bin/sh\n", encoding="utf-8")
+    (machine.bin / machine.command).write_text("#!/bin/sh\n", encoding="utf-8")
 
     started = machine.start(bridge)
 
-    assert started[0] == str(machine.bin / "makker")
+    assert started[0] == str(machine.bin / machine.command)
     assert not [call for call in machine.uv_calls if call[:2] == ["tool", "install"]]
 
 
@@ -112,10 +127,9 @@ def test_the_dependency_inside_its_own_environment_is_not_mistaken_for_an_instal
 ) -> None:
     machine = Machine(tmp_path, monkeypatch, bridge, uv_tool=True)
     machine.install_works = False
-    inside = machine.tool / "bin"
-    inside.mkdir()
-    (inside / "makker").write_text("#!/bin/sh\n", encoding="utf-8")
-    monkeypatch.setattr(sys, "argv", [str(inside / "jutul-agent")])
+    machine.own_bin.mkdir()
+    (machine.own_bin / machine.command).write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [str(machine.own_bin / "jutul-agent")])
 
     assert machine.start(bridge) == [sys.executable, "-m", "makker"]
 

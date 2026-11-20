@@ -23,6 +23,7 @@ OLD_SETTING_PREFIX = "JUTUL_AGENT_"
 # Tells Makker it was started through this package, which it would otherwise
 # tidy away as an install nobody uses any more.
 VIA_OLD_COMMAND = "MAKKER_VIA_JUTUL_AGENT"
+WINDOWS = os.name == "nt"
 
 
 def translate_settings(environ: MutableMapping[str, str]) -> None:
@@ -46,7 +47,7 @@ def _uv(*args: str, show: bool = False) -> subprocess.CompletedProcess[str] | No
 
 def installed_makker() -> str | None:
     """The ``makker`` command of Makker's own uv tool, if that is installed."""
-    name = "makker.exe" if os.name == "nt" else "makker"
+    name = "makker.exe" if WINDOWS else "makker"
     folders = []
     bin_dir = _uv("tool", "dir", "--bin")
     if bin_dir is not None and bin_dir.returncode == 0 and bin_dir.stdout.strip():
@@ -55,7 +56,7 @@ def installed_makker() -> str | None:
     for folder in folders:
         # This package's own environment holds a `makker` too, the dependency's.
         # It is not an install of its own, so it does not count.
-        if folder != Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin"):
+        if folder != Path(sys.prefix) / ("Scripts" if WINDOWS else "bin"):
             candidate = folder / name
             if candidate.is_file():
                 return str(candidate)
@@ -77,7 +78,7 @@ def own_install() -> str | None:
 
 
 def run(argv: list[str]) -> int:
-    if os.name != "nt":
+    if not WINDOWS:
         os.execv(argv[0], argv)
     # Windows cannot replace a process, so Makker runs as a child and its exit
     # code is passed on. Ctrl+C reaches the child directly; wait for it to finish.
