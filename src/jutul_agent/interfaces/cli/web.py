@@ -19,6 +19,9 @@ from jutul_agent.interfaces.cli._helpers import add_session_flags, add_workspace
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from fastapi import FastAPI
+
+    from jutul_agent.interfaces.server.updates import Updater
     from jutul_agent.workspace import WorkspaceConfig
 
 
@@ -208,19 +211,19 @@ def _sysimage_ready(
     return True
 
 
-def run(args: argparse.Namespace) -> int:
-    try:
-        import uvicorn
-    except ModuleNotFoundError:
-        # uvicorn ships in the core install, so this only fires on a broken
-        # environment; reinstalling restores the web stack.
-        print(
-            "error: the web stack (uvicorn/fastapi) is missing from this install. "
-            "Reinstall jutul-agent, or run `uv sync` from a checkout.",
-            file=sys.stderr,
-        )
-        return 1
+def build_app(
+    args: argparse.Namespace, *, updatable: bool = True, served_as: str | None = None
+) -> tuple[FastAPI, Updater] | int:
+    """Resolve the folder, check its environment, and build the application.
 
+    Everything ``jutul-agent web`` does before it binds a port, kept apart from the
+    serving so the desktop app (``interfaces/desktop``) builds the very same
+    application and serves it over a pipe instead. Returns an exit code instead of
+    the application when the launch is refused; the reason is already on stderr.
+
+    ``updatable=False`` never offers to update jutul-agent from the UI, and
+    ``served_as`` replaces the ``http://host:port`` in the launch line.
+    """
     from jutul_agent.interfaces.cli._helpers import apply_workspace_flags
 
     apply_workspace_flags(args)  # bind the server to its --workspace folder (or the cwd)
@@ -244,7 +247,7 @@ def run(args: argparse.Namespace) -> int:
     add_dirs = resolve_add_dirs(args.add_dir, ws)
 
     from jutul_agent.interfaces.server.access import is_loopback_host
-    from jutul_agent.interfaces.server.updates import RESTARTED_ENV_VAR, Updater, restart_server
+    from jutul_agent.interfaces.server.updates import RESTARTED_ENV_VAR, Updater
 
     restarted = os.environ.pop(RESTARTED_ENV_VAR, None) is not None
     if restarted:
@@ -264,7 +267,8 @@ def run(args: argparse.Namespace) -> int:
             return 1
 
     print(
-        f"jutul-agent {__version__.split('+')[0]} server on http://{args.host}:{args.port} "
+        f"jutul-agent {__version__.split('+')[0]} server on "
+        f"{served_as or f'http://{args.host}:{args.port}'} "
         f"(simulator: {sim}"
         + (f", model: {model}" if model else "")
         + (f", approval: {approval_mode}" if approval_mode else "")
@@ -276,7 +280,7 @@ def run(args: argparse.Namespace) -> int:
     # Serving this computer only: no reverse proxy in front (that would set
     # --base-path), and bound to a loopback address.
     local = is_loopback_host(args.host) and not args.base_path
-    updater = Updater(ws, local=local)
+    updater = Updater(ws, local=local and updatable)
     if restarted:
         updater.report_last_update()
     app = create_app(
@@ -293,6 +297,26 @@ def run(args: argparse.Namespace) -> int:
         local_only=local,
         allowed_origins=args.allowed_origin,
     )
+    return app, updater
+
+
+def run(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+    except ModuleNotFoundError:
+        # uvicorn ships in the core install, so this only fires on a broken
+        # environment; reinstalling restores the web stack.
+        print(
+            "error: the web stack (uvicorn/fastapi) is missing from this install. "
+            "Reinstall jutul-agent, or run `uv sync` from a checkout.",
+            file=sys.stderr,
+        )
+        return 1
+
+    built = build_app(args)
+    if isinstance(built, int):
+        return built
+    app, updater = built
     server = uvicorn.Server(
         uvicorn.Config(app, host=args.host, port=args.port, timeout_graceful_shutdown=5)
     )
@@ -307,6 +331,8 @@ def run(args: argparse.Namespace) -> int:
     if not server.started:  # the port was taken, say; uvicorn said why
         return 1
     if updater.restart_requested:
+        from jutul_agent.interfaces.server.updates import restart_server
+
         restart_server()
     if updater.handed_off:
         print(

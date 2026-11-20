@@ -87,6 +87,10 @@ class JuliaKernel:
         self._config = config or KernelConfig()
         self._proc: asyncio.subprocess.Process | None = None
         self._listener: socket.socket | None = None
+        # Pipe mode only: the auxiliary channel's streams, and every stream writer
+        # to close with the process.
+        self._aux: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None
+        self._pipe_writers: list[asyncio.StreamWriter] = []
         self._conn: KernelConnection | None = None
         self._watch_task: asyncio.Task[None] | None = None
         self._stderr_fh: IO[bytes] | None = None
@@ -300,11 +304,25 @@ class JuliaKernel:
     async def _spawn(self) -> None:
         loop = asyncio.get_running_loop()
 
-        self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._listener.bind(("127.0.0.1", 0))
-        self._listener.listen(1)
-        self._listener.setblocking(False)
-        port = self._listener.getsockname()[1]
+        pipes: _InheritedPipes | None = None
+        port: int | str
+        if self._config.pipes:
+            if os.name == "nt":
+                # Refuse rather than quietly open a port: pipe mode is a promise
+                # that nothing listens.
+                raise JuliaStartupError(
+                    "the pipe-only kernel transport is not implemented on Windows yet",
+                    julia_executable=self._config.julia_executable,
+                    julia_project=self._config.julia_project,
+                )
+            pipes = _InheritedPipes()
+            port = pipes.control_arg
+        else:
+            self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._listener.bind(("127.0.0.1", 0))
+            self._listener.listen(1)
+            self._listener.setblocking(False)
+            port = self._listener.getsockname()[1]
         self._token = secrets.token_hex(16)
 
         if self._config.stderr_file is not None:
@@ -312,6 +330,11 @@ class JuliaKernel:
             self._stderr_fh = open(self._config.stderr_file, "wb")  # noqa: SIM115
 
         command, args, env = self._build_launch(port)
+        if pipes is not None:
+            env[AUX_FDS_ENV_VAR] = pipes.aux_arg
+            group_pipes: dict[str, object] = {"pass_fds": pipes.child_fds}
+        else:
+            group_pipes = {}
         # Put the kernel in its own process group so an interrupt targets only it,
         # never the agent. POSIX: a new session (setsid) for SIGINT. Windows:
         # CREATE_NEW_PROCESS_GROUP, which is what lets CTRL_BREAK_EVENT reach this
@@ -329,8 +352,11 @@ class JuliaKernel:
                 cwd=str(self._config.cwd) if self._config.cwd is not None else None,
                 env=env,
                 **group_kwargs,
+                **group_pipes,
             )
         except FileNotFoundError as exc:
+            if pipes is not None:
+                pipes.close_all()
             await self._teardown(graceful=False)  # close the listener / stderr log we opened
             raise JuliaStartupError(
                 f"`{command}` is not on PATH",
@@ -345,8 +371,18 @@ class JuliaKernel:
         self._watch_task = asyncio.create_task(self._watch_proc(self._proc, self._conn))
 
         try:
-            conn = await self._accept_control(loop, port)
-            await self._conn.attach_control(conn)
+            if pipes is not None:
+                # Nothing to accept: the child already holds its ends. The RDY
+                # handshake below still proves the server came up.
+                reader, writer = await pipes.parent_streams("control")
+                self._pipe_writers.append(writer)
+                self._conn.attach_streams(reader, writer)
+                self._aux = await pipes.parent_streams("aux")
+                self._pipe_writers.append(self._aux[1])
+            else:
+                assert isinstance(port, int)
+                conn = await self._accept_control(loop, port)
+                await self._conn.attach_control(conn)
             await self._await_ready()
         except JuliaStartupError:
             await self._teardown(graceful=False)
@@ -440,6 +476,11 @@ class JuliaKernel:
             with contextlib.suppress(Exception):
                 self._listener.close()
             self._listener = None
+        for writer in self._pipe_writers:
+            with contextlib.suppress(Exception):
+                writer.close()
+        self._pipe_writers = []
+        self._aux = None
         if self._stderr_fh is not None:
             with contextlib.suppress(Exception):
                 self._stderr_fh.close()
@@ -447,7 +488,18 @@ class JuliaKernel:
         self._proc = None
         self._token = ""
 
-    def _build_launch(self, port: int) -> tuple[str, list[str], dict[str, str]]:
+    def aux_streams(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
+        """The auxiliary pipe to the running Julia process, in pipe mode.
+
+        A second byte channel beside the control protocol, for the embedder's own
+        use; Julia finds its ends in ``ENV["JK_AUX_FDS"]`` (``"<read>,<write>"``).
+        It belongs to the process: a restart closes it and makes a new one.
+        """
+        return self._aux
+
+    def _build_launch(self, port: int | str) -> tuple[str, list[str], dict[str, str]]:
+        """The Julia command line. ``port`` is the control endpoint: a loopback
+        port, or ``fd:<read>,<write>`` naming the pipes the child inherits."""
         cfg = self._config
         args: list[str] = []
         if cfg.julia_project is not None:
@@ -464,6 +516,77 @@ class JuliaKernel:
         env["JK_TOKEN"] = self._token
 
         return cfg.julia_executable, args, env
+
+
+# Where the Julia process finds the auxiliary pipe's descriptors.
+AUX_FDS_ENV_VAR = "JK_AUX_FDS"
+
+
+class _InheritedPipes:
+    """The anonymous pipes of a pipe-mode kernel: two channels, each a pipe per
+    direction. The child inherits one end of each; nothing has a name or an
+    address, so no other process can attach."""
+
+    def __init__(self) -> None:
+        self._fds: dict[str, tuple[int, int, int, int]] = {}
+        self._open: set[int] = set()
+        try:
+            for name in ("control", "aux"):
+                child_r, parent_w = os.pipe()
+                self._open.update((child_r, parent_w))
+                parent_r, child_w = os.pipe()
+                self._open.update((parent_r, child_w))
+                # The parent's ends must not leak into the child (or into any
+                # other process this one spawns): a stray copy of a write end
+                # would keep the pipe from ever reading as closed.
+                os.set_inheritable(parent_r, False)
+                os.set_inheritable(parent_w, False)
+                self._fds[name] = (child_r, child_w, parent_r, parent_w)
+        except BaseException:
+            self.close_all()
+            raise
+
+    @property
+    def child_fds(self) -> tuple[int, ...]:
+        return tuple(fd for fds in self._fds.values() for fd in fds[:2])
+
+    @property
+    def control_arg(self) -> str:
+        child_r, child_w, _, _ = self._fds["control"]
+        return f"fd:{child_r},{child_w}"
+
+    @property
+    def aux_arg(self) -> str:
+        child_r, child_w, _, _ = self._fds["aux"]
+        return f"{child_r},{child_w}"
+
+    def _close(self, fd: int) -> None:
+        if fd in self._open:
+            self._open.discard(fd)
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+    def close_all(self) -> None:
+        for fd in list(self._open):
+            self._close(fd)
+
+    async def parent_streams(self, name: str) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        """This process's ends of a channel as asyncio streams. Also closes its
+        copies of the child's ends, so the child exiting reads as end-of-file."""
+        child_r, child_w, parent_r, parent_w = self._fds[name]
+        self._close(child_r)
+        self._close(child_w)
+        loop = asyncio.get_running_loop()
+        reader = asyncio.StreamReader()
+        self._open.discard(parent_r)  # owned by the transports from here on
+        self._open.discard(parent_w)
+        await loop.connect_read_pipe(
+            lambda: asyncio.StreamReaderProtocol(reader), os.fdopen(parent_r, "rb", 0)
+        )
+        transport, protocol = await loop.connect_write_pipe(
+            asyncio.streams.FlowControlMixin, os.fdopen(parent_w, "wb", 0)
+        )
+        return reader, asyncio.StreamWriter(transport, protocol, None, loop)
 
 
 def describe_exit(code: int | None) -> str:

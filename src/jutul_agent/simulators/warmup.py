@@ -49,6 +49,11 @@ class YieldsToWork:
         self.drop_warmup()
         return await self._inner.eval(code, on_chunk)
 
+    def aux_streams(self) -> Any:
+        """The kernel's auxiliary pipe, if it has one (see ``JuliaKernel.aux_streams``)."""
+        getter = getattr(self._inner, "aux_streams", None)
+        return getter() if getter is not None else None
+
     def drop_warmup(self) -> None:
         """Cancel the warm-up if it has reached a point where that is safe. Idempotent.
 

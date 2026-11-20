@@ -540,6 +540,37 @@ def web_server_start(port: int, session_id: str, *, base_path: str = "") -> str:
     )
 
 
+# What ``web_pipe_start`` prints once the kernel serves figures on its pipe.
+WEB_PIPE_MARKER = "__JUTUL_WEB_PIPE__=ok"
+
+
+def web_pipe_start(session_id: str, *, base_path: str = "") -> str:
+    """Julia to serve the session's live figures over the kernel's inherited pipe
+    instead of a ``Bonito.Server`` (idempotent, like ``web_server_start``).
+
+    For a session that may not listen on any port (the desktop app). The object
+    left in ``__JUTUL_WEB_SERVER__`` takes ``Bonito.route!`` / ``delete_route!``
+    like the real server, so everything that serves and closes figures is shared;
+    see ``JutulAgent.JutulAgentPipeViews``. Pages reach it under the same
+    ``{base_path}/live/<session_id>/`` prefix the reverse proxy uses.
+    """
+    prefix = (base_path or "").rstrip("/")
+    proxy = f"{prefix}/live/{session_id}/"
+    return (
+        "begin\n"
+        "    import WGLMakie, Bonito\n"
+        "    if !isdefined(Main, :__JUTUL_WEB_SERVER__)\n"
+        "        global __JUTUL_WEB_SERVER__ =\n"
+        f'            JutulAgent.JutulAgentPipeViews.serve(raw"{proxy}")\n'
+        "        global __JUTUL_WEB_FIGS__ = Dict{String,Any}()\n"
+        "        global __JUTUL_WEB_ORDER__ = String[]\n"
+        "    end\n"
+        f'    println("{WEB_PIPE_MARKER}")\n'
+        "    nothing\n"
+        "end"
+    )
+
+
 def web_live_call(
     *,
     user_code: str,

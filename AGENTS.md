@@ -32,6 +32,11 @@ ecosystem, built on Deep Agents.
 - Python style (matches CI): `uv run ruff check .` then `uv run ruff format .`
 - After editing Python, run `uv run ruff format` on touched paths (or rely on
   format-on-save / pre-commit if installed).
+- Desktop app: `uv run pytest -q tests/test_desktop_ipc.py -m "integration or not integration"`
+  (bridge, pipe-mode kernel, plot pipe), and `npm test` in
+  `interfaces/desktop/electron` (supervisor and frame codec, plain Node, no
+  Electron needed). `requirements-desktop.txt` is the backend's install without
+  the web stack.
 - Web UI (React + TypeScript in `interfaces/server/webapp`): `npm install`, then
   `npm test` (vitest) and `npm run typecheck`. It ships **pre-built** — after any
   change under `webapp/src`, run `npm run build` and commit the regenerated
@@ -107,6 +112,17 @@ and check on staged `.py` files. To verify the whole tree like CI:
   (committed and shipped, so an install needs no Node). `server/updates.py`
   runs an update started from the browser: `uv tool upgrade`, the env step of
   `jutul-agent upgrade`, then a restart of the server into the new version.
+- `src/jutul_agent/interfaces/desktop/`: the desktop app (`jutul-agent desktop`):
+  the same web UI and FastAPI application with no server. `backend.py` serves
+  the app over its own stdin/stdout (`asgi_bridge.py` drives the ASGI app from
+  frames, `framing.py` is the frame format); `electron/` is the shell (`main.js`
+  answers the `jutul://` scheme from the backend, `preload.js` carries WebSockets
+  over Electron IPC, `backend.js` supervises and restarts the backend);
+  `launcher.py` installs Electron into the Python env and starts it. In this mode
+  kernels run over inherited pipes (`juliakernel/config.py:pipes_enabled`) and
+  live plots over the kernel's auxiliary pipe (`agent/plot_pipe.py`,
+  `julia_runtime/JutulAgent/src/pipe_views.jl`). Nothing may bind or listen: no
+  fallback to a TCP port or Unix socket. See `docs/desktop.md`.
 - `tests/`: end-to-end, chat, CLI, and tool coverage. `tests/integration/`
   needs Julia; `tests/live/` needs an LLM provider key.
 
@@ -167,6 +183,17 @@ silently at runtime. The contacts:
   `deepagents.profiles.harness.harness_profiles._harness_profile_for_model`
   to assert our profile resolves for built model instances. It also pins the
   exact tool set the framework installs, since a bump can add or drop one.
+
+## Bonito private-surface contacts (desktop app)
+
+`julia_runtime/JutulAgent/src/pipe_views.jl` serves live figures without Bonito's
+HTTP server. It subtypes `Bonito.FrontendConnection` (the documented interface
+for custom connections) and adds methods to `Bonito.route!` /
+`Bonito.delete_route!` for its own server type, but also calls
+`Bonito.page_html`, `Bonito.mark_displayed!`, reads `session.inbox`, and its page
+script calls `Bonito.on_connection_open` (whose send callback must return `true`),
+`lock_loading`, `process_message`, `decode_binary` and `send_error`. Written
+against Bonito 5.3. Only the desktop app uses it.
 
 ## WGLMakie private-surface contacts
 

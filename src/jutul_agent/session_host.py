@@ -422,6 +422,12 @@ class SessionHost:
             # teardown below (the CLI path awaits here too).
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._warmup_task
+        # The live-plot pipe (desktop app only) reads the kernel's auxiliary pipe;
+        # stop it before the kernel closes that pipe under it.
+        plot_pipe = getattr(self.session, "web_plot_pipe", None)
+        if plot_pipe is not None:
+            with contextlib.suppress(Exception):
+                await plot_pipe.aclose()
         if self._exit_stack is not None:
             await self._exit_stack.aclose()
             self._exit_stack = None

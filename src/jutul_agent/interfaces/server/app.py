@@ -756,7 +756,9 @@ def create_app(
 
         with TraceLog(state_dir / "trace.sqlite") as log:
             events = list(log.iter_events())
-        live = host is not None and host.session.web_plot_port is not None
+        live = host is not None and (
+            host.session.web_plot_port is not None or _live_pipe(host) is not None
+        )
         bp = (
             host.session.base_path
             if host is not None
@@ -1015,6 +1017,11 @@ def create_app(
         only needs to strip that prefix and forward to the real port.
         """
         host = manager.get(session_id)
+        pipe = _live_pipe(host)
+        if pipe is not None:
+            # A session that may not listen on a port (the desktop app): the
+            # figure's page comes over the kernel's pipe, with nothing to proxy.
+            return await _live_pipe_page(pipe, path, head=request.method == "HEAD")
         port = host.session.web_plot_port if host is not None else None
         if port is None:
             raise HTTPException(status_code=404, detail="no live plot server for this session")
@@ -1076,6 +1083,10 @@ def create_app(
         the same reverse proxy as ``live_plot_proxy``, for the same reason: the
         browser has no route to Bonito's own port, only to this one."""
         host = manager.get(session_id)
+        pipe = _live_pipe(host)
+        if pipe is not None:
+            await _live_pipe_socket(pipe, websocket, path)
+            return
         port = host.session.web_plot_port if host is not None else None
         if port is None:
             # Refuse before ``accept`` so the upgrade is answered with a plain HTTP
@@ -1323,6 +1334,77 @@ def create_app(
             app.mount("/assets", StaticFiles(directory=assets), name="web-assets")
 
     return app
+
+
+def _live_pipe(host: SessionHost | None) -> Any | None:
+    """The session's live-plot pipe while a kernel serves on it, else ``None``.
+
+    Only a session whose kernel runs without any listening endpoint has one (the
+    desktop app; see ``agent/plot_pipe.py``). Everywhere else this is ``None`` and
+    the ``/live`` routes reverse-proxy the kernel's Bonito server as before.
+    """
+    pipe = getattr(host.session, "web_plot_pipe", None) if host is not None else None
+    return pipe if pipe is not None and pipe.connected else None
+
+
+async def _live_pipe_page(pipe: Any, path: str, *, head: bool) -> Response:
+    """Answer a live figure's page request from the kernel's pipe."""
+    if head:
+        # A readiness probe: the pipe being up is the answer. Rendering for it
+        # would leave a view nobody attaches to (see ``live_plot_proxy``).
+        return Response(status_code=200)
+    from jutul_agent.agent.plot_pipe import PlotPipeError
+
+    try:
+        page = await pipe.render(f"/{path}")
+    except PlotPipeError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    return HTMLResponse(page)
+
+
+async def _live_pipe_socket(pipe: Any, websocket: WebSocket, path: str) -> None:
+    """Relay a live figure's widget traffic between its page and the kernel's pipe."""
+    from jutul_agent.agent.plot_pipe import PlotPipeError
+
+    view = path.removeprefix("pipe/")
+    closed = asyncio.Event()
+
+    async def to_page(data: bytes) -> None:
+        await websocket.send_bytes(data)
+
+    async def on_close() -> None:
+        closed.set()
+
+    try:
+        if view == path or not view:
+            raise PlotPipeError(404, "not a plot view")
+        # Attach before accepting, so a kernel that is gone refuses the
+        # handshake instead of opening a socket that closes at once.
+        pipe.attach(view, to_page, on_close)
+        await websocket.accept()
+
+        async def from_page() -> None:
+            while True:
+                message = await websocket.receive()
+                if message["type"] == "websocket.disconnect":
+                    return
+                data = message.get("bytes")
+                if data is None and message.get("text") is not None:
+                    data = message["text"].encode("utf-8")
+                if data is not None:
+                    pipe.send(view, data)
+
+        pumps = {asyncio.create_task(from_page()), asyncio.create_task(closed.wait())}
+        done, pending = await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*done, *pending, return_exceptions=True)
+    except (WebSocketDisconnect, OSError, PlotPipeError):
+        pass
+    finally:
+        pipe.detach(view)
+        with contextlib.suppress(RuntimeError, WebSocketDisconnect, OSError):
+            await websocket.close()
 
 
 def _artifact_url(session_id: str, rel: str, *, base_path: str = "") -> str:

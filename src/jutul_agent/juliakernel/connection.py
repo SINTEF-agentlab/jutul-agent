@@ -99,6 +99,11 @@ class KernelConnection:
     async def attach_control(self, conn: socket.socket) -> None:
         """Open the control connection over ``conn`` and start reading frames."""
         reader, writer = await asyncio.open_connection(sock=conn)
+        self.attach_streams(reader, writer)
+
+    def attach_streams(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """Run the control protocol over an already-open pair of streams (the
+        kernel's inherited pipes, when it runs without a socket)."""
         self._ctrl_writer = writer
         self._tasks.append(asyncio.create_task(self._read_frames(reader)))
 

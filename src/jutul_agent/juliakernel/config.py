@@ -2,9 +2,23 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# Set to ``pipe`` to run kernels with no listening endpoint at all: the control
+# channel then travels over anonymous pipes the Julia process inherits at spawn,
+# instead of a loopback TCP connection it dials back on. Nothing binds, listens or
+# accepts, so there is no address another process could connect to. The desktop
+# app sets it (a security and deployment constraint there); every other front end
+# leaves it unset and is unchanged.
+IPC_ENV_VAR = "JUTUL_AGENT_IPC"
+
+
+def pipes_enabled() -> bool:
+    """Whether kernels must be reached over inherited pipes only."""
+    return os.environ.get(IPC_ENV_VAR, "").strip().lower() == "pipe"
 
 
 @dataclass(frozen=True)
@@ -33,3 +47,10 @@ class KernelConfig:
     stderr_file: Path | None = None
     # Seconds to wait for the control handshake before declaring a startup failure.
     startup_timeout: float = 180.0
+    # Carry the control channel over inherited anonymous pipes instead of loopback
+    # TCP (the protocol on it is identical), and give the kernel a second,
+    # auxiliary pipe pair for whoever embeds it (``JuliaKernel.aux_streams``;
+    # jutul-agent serves live plots over it). Never falls back to a socket: where
+    # pipes can't be inherited the kernel refuses to start. Defaults to the
+    # process-wide switch above.
+    pipes: bool = field(default_factory=pipes_enabled)

@@ -161,6 +161,44 @@ async def _load_web_plot_backend(session: Session, adapter: SimulatorAdapter) ->
     return None
 
 
+async def _start_live_server(session: Session) -> str | None:
+    """Start (or find) the session's live plot server; why it failed, or ``None``.
+
+    Normally a Bonito server on a loopback port, which ``session.web_plot_port``
+    then names for the app server's reverse proxy. A session whose kernel runs in
+    pipe mode (the desktop app) may not listen anywhere, so there the figures are
+    served over the kernel's inherited pipe and ``session.web_plot_pipe`` is the
+    relay. That mode never falls back to a port: a failure leaves the static
+    export, which needs no server.
+    """
+    from jutul_agent.juliakernel.config import pipes_enabled
+
+    if pipes_enabled():
+        from jutul_agent.agent import plot_pipe
+
+        pipe = plot_pipe.ensure(session)
+        if pipe is None:
+            return "this session's Julia kernel has no pipe for live plots"
+        started = await session.julia.eval(
+            jl.web_pipe_start(session.session_id, base_path=session.base_path)
+        )
+        if started.error or jl.WEB_PIPE_MARKER not in (started.output or ""):
+            return started.error or "the kernel did not start serving on its pipe"
+        return None
+    # Idempotent: an existing server answers with its real port, a fresh kernel
+    # gets one started. Either way the reverse proxy learns where to dial.
+    started = await session.julia.eval(
+        jl.web_server_start(_free_port(), session.session_id, base_path=session.base_path)
+    )
+    # The server prints its bound port on a uniquely-tagged line; read that
+    # rather than scanning for digits (a startup log line could carry others).
+    match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
+    if started.error or match is None:
+        return started.error or "the server did not report a port"
+    session.web_plot_port = int(match.group(1))
+    return None
+
+
 def _free_port() -> int:
     """Pick a free localhost TCP port for the session's Bonito server."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -420,16 +458,10 @@ async def replot_web(
     err = await _load_web_plot_backend(session, session.simulator)
     if err is not None:
         return err, None, None
-    # Idempotent: an existing server answers with its real port, a fresh kernel
-    # gets one started. Either way the reverse proxy learns where to dial.
-    started = await session.julia.eval(
-        jl.web_server_start(_free_port(), session.session_id, base_path=session.base_path)
-    )
-    match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
-    if started.error or match is None:
-        reason = _truncate(started.error or "the server did not report a port", 200)
+    failure = await _start_live_server(session)
+    if failure is not None:
+        reason = _truncate(failure, 200)
         return f"the session's live plot server is unavailable ({reason})", None, None
-    session.web_plot_port = int(match.group(1))
 
     plot_id = _plot_id_of(payload)
     route = jl.viz_route(f"{plot_id}{route_suffix}")
@@ -507,16 +539,10 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
                 return err  # don't latch: a fixable load failure can be retried
             backend_loaded = True
         if web and live_base is None:
-            started = await session.julia.eval(
-                jl.web_server_start(_free_port(), session.session_id, base_path=session.base_path)
-            )
-            # The server prints its bound port on a uniquely-tagged line; read that
-            # rather than scanning for digits (a startup log line could carry others).
-            match = re.search(r"__JUTUL_WEB_PORT__=(\d+)", started.output or "")
-            if started.error or match is None:
+            reason = await _start_live_server(session)
+            if reason is not None:
                 if not warned_no_live:
                     warned_no_live = True
-                    reason = started.error or "the server did not report a port"
                     print(
                         f"warning: live plot serving unavailable ({_truncate(reason, 200)}); "
                         "falling back to static interactive exports.",
@@ -530,7 +556,6 @@ def make_plot_julia_tool(session: Session, *, surface: str | None = None):
                 # (an SSH tunnel, VS Code/Cursor remote, Docker) already knows about.
                 # ``session.web_plot_port`` is what tells that proxy where to send it.
                 live_base = f"/live/{session.session_id}"
-                session.web_plot_port = int(match.group(1))
         return None
 
     @tool
