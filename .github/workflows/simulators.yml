@@ -76,7 +76,7 @@ jobs:
       - name: Install headless OpenGL (xvfb + Mesa)
         run: sudo apt-get update && sudo apt-get install -y xvfb xorg-dev mesa-utils libgl1 libgl1-mesa-dri
 
-      # Sync the shared JutulAgent package into the template (it lives once in
+      # Sync the shared Makker package into the template (it lives once in
       # julia_runtime/ and is copied in at bootstrap; an in-place instantiate must
       # do the same so the env's relative [sources] resolves). Then refresh the
       # registry so every resolve sees the latest releases and instantiate
@@ -88,11 +88,11 @@ jobs:
       # broken env.
       - name: Instantiate ${{ matrix.simulator }} env
         run: >
-          uv run python -c "from pathlib import Path; from jutul_agent.workspace import
+          uv run python -c "from pathlib import Path; from makker.workspace import
           sync_shared_julia_package as s;
-          s(Path('src/jutul_agent/simulators/${{ matrix.simulator }}/julia_env'))" &&
+          s(Path('src/makker/simulators/${{ matrix.simulator }}/julia_env'))" &&
           xvfb-run -a julia
-          --project=src/jutul_agent/simulators/${{ matrix.simulator }}/julia_env
+          --project=src/makker/simulators/${{ matrix.simulator }}/julia_env
           --startup-file=no
           -e 'using Pkg; Pkg.Registry.update();
           withenv("JULIA_PKG_PRECOMPILE_AUTO" => "0") do; Pkg.instantiate(); end;
@@ -101,7 +101,7 @@ jobs:
       - name: Identify the compiled environment
         id: resolved
         env:
-          CACHE_KEY: ${{ steps.depot.outputs.cache-primary-key }}${{ hashFiles(format('src/jutul_agent/simulators/{0}/julia_env/**', matrix.simulator), 'src/jutul_agent/julia_runtime/**') }}
+          CACHE_KEY: ${{ steps.depot.outputs.cache-primary-key }}${{ hashFiles(format('src/makker/simulators/{0}/julia_env/**', matrix.simulator), 'src/makker/julia_runtime/**') }}
         run: echo "key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
 
       # A Python/docs change resolves the same environment and saves nothing.
@@ -164,7 +164,7 @@ jobs:
       # Under xvfb, like the lane above: the env's GLMakie wants a display to
       # precompile, bake and verify.
       - name: Bootstrap a workspace
-        run: xvfb-run -a uv run jutul-agent init --sim jutuldarcy --workspace "$RUNNER_TEMP/ws"
+        run: xvfb-run -a uv run makker init --sim jutuldarcy --workspace "$RUNNER_TEMP/ws"
 
       # PackageCompiler links a multi-GB image in one process, and 16 GB is not
       # reliably enough: out of memory, the runner dies rather than the step, and
@@ -182,8 +182,8 @@ jobs:
       - name: Build the system image
         run: |
           df -h /
-          /usr/bin/time -v xvfb-run -a uv run jutul-agent sysimage build --workspace "$RUNNER_TEMP/ws"
-          uv run jutul-agent sysimage status --workspace "$RUNNER_TEMP/ws"
+          /usr/bin/time -v xvfb-run -a uv run makker sysimage build --workspace "$RUNNER_TEMP/ws"
+          uv run makker sysimage status --workspace "$RUNNER_TEMP/ws"
 
       # The kernel is the only place an out-of-memory kill is recorded.
       - name: What the machine says, if the build died
@@ -195,5 +195,5 @@ jobs:
 
       - name: Start a kernel from it, and check the staleness guard
         env:
-          JUTUL_AGENT_SYSIMAGE_WORKSPACE: ${{ runner.temp }}/ws
+          MAKKER_SYSIMAGE_WORKSPACE: ${{ runner.temp }}/ws
         run: xvfb-run -a uv run pytest tests/test_sysimage_integration.py -ra

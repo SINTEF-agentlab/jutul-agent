@@ -4,21 +4,21 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage
 
-from jutul_agent.agent.approval import (
+from makker.agent.approval import (
     SUPPORTED_APPROVAL_DECISIONS,
     allowed_decisions_for_interrupt,
     build_resume_payload,
     pending_allowed_decisions,
 )
-from jutul_agent.agent.turns import (
+from makker.agent.turns import (
     TurnInterrupt,
     TurnReasoningDelta,
     TurnTextDelta,
     TurnTextEnd,
     TurnToolEvent,
 )
-from jutul_agent.interfaces.server import protocol
-from jutul_agent.tool_labels import tool_label
+from makker.interfaces.server import protocol
+from makker.tool_labels import tool_label
 
 # --- to_wire: streamed events ---------------------------------------------
 
@@ -278,7 +278,7 @@ def test_build_resume_payload_copies_are_independent() -> None:
 
 def test_interrupt_wire_carries_the_edit_diff(tmp_path, monkeypatch) -> None:
     """A file edit's approval body shows the on-disk diff, browser and terminal alike."""
-    from jutul_agent import paths
+    from makker import paths
 
     monkeypatch.setattr(paths, "workspace_root", lambda: tmp_path)
     (tmp_path / "a.jl").write_text("x = 1\n", encoding="utf-8")

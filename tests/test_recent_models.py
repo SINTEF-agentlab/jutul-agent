@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from jutul_agent.recent_models import (
+from makker.recent_models import (
     RECENT_LIMIT,
     load_recent_models,
     record_recent_model,

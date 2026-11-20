@@ -7,20 +7,20 @@ import types
 
 import pytest
 
-from jutul_agent.review.findings import (
+from makker.review.findings import (
     Finding,
     ReviewReport,
     append_report,
     load_reports,
     now_iso,
 )
-from jutul_agent.review.reviewer import _coerce_text, _extract_json, review_transcript
-from jutul_agent.review.settings import review_enabled, review_model
+from makker.review.reviewer import _coerce_text, _extract_json, review_transcript
+from makker.review.settings import review_enabled, review_model
 
 
 @pytest.fixture(autouse=True)
 def _state_home(tmp_path, monkeypatch):
-    from jutul_agent import paths
+    from makker import paths
 
     monkeypatch.setattr(paths, "_state_home_override", tmp_path)
     return tmp_path
@@ -53,7 +53,7 @@ def test_findings_store_round_trip():
 
 
 def test_load_reports_skips_malformed_lines(_state_home):
-    from jutul_agent.review.findings import review_log_path
+    from makker.review.findings import review_log_path
 
     path = review_log_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,12 +89,12 @@ def test_coerce_text_flattens_parts():
 
 
 def test_settings_env(monkeypatch):
-    monkeypatch.delenv("JUTUL_AGENT_REVIEW", raising=False)
-    monkeypatch.delenv("JUTUL_AGENT_REVIEW_MODEL", raising=False)
+    monkeypatch.delenv("MAKKER_REVIEW", raising=False)
+    monkeypatch.delenv("MAKKER_REVIEW_MODEL", raising=False)
     assert review_enabled() is False
     assert review_model() == "openai:gpt-5.4"
-    monkeypatch.setenv("JUTUL_AGENT_REVIEW", "1")
-    monkeypatch.setenv("JUTUL_AGENT_REVIEW_MODEL", "openai:gpt-5.4-mini")
+    monkeypatch.setenv("MAKKER_REVIEW", "1")
+    monkeypatch.setenv("MAKKER_REVIEW_MODEL", "openai:gpt-5.4-mini")
     assert review_enabled() is True
     assert review_model() == "openai:gpt-5.4-mini"
 
@@ -135,7 +135,7 @@ def _report(session_id, *findings, created="2026-06-17T10:00:00+00:00"):
 
 
 def test_issue_store_and_merge_bookkeeping():
-    from jutul_agent.review.issues import load_issues, merge_finding, new_issue, save_issues
+    from makker.review.issues import load_issues, merge_finding, new_issue, save_issues
 
     rep_a = _report("sess-A")
     f1 = Finding("validation-gap", "medium", "Perm in mD", "perm=500", "convert", "case-validation")
@@ -157,14 +157,14 @@ def test_issue_store_and_merge_bookkeeping():
 
 
 def test_unique_id_avoids_collisions():
-    from jutul_agent.review.issues import unique_id
+    from makker.review.issues import unique_id
 
     existing = {"perm-in-md": object(), "perm-in-md-2": object()}
     assert unique_id("Perm in mD", existing) == "perm-in-md-3"
 
 
 def test_set_status_round_trips():
-    from jutul_agent.review.issues import load_issues, new_issue, save_issues, set_status
+    from makker.review.issues import load_issues, new_issue, save_issues, set_status
 
     issue = new_issue(
         Finding("agent-error", "low", "x", "ev", "s", "skill"),
@@ -179,7 +179,7 @@ def test_set_status_round_trips():
 
 
 def test_delete_issue_removes_it():
-    from jutul_agent.review.issues import delete_issue, load_issues, new_issue, save_issues
+    from makker.review.issues import delete_issue, load_issues, new_issue, save_issues
 
     issue = new_issue(
         Finding("agent-error", "low", "x", "ev", "s", "skill"),
@@ -194,7 +194,7 @@ def test_delete_issue_removes_it():
 
 
 def test_is_stale_only_when_version_diverges():
-    from jutul_agent.review.issues import Issue, is_stale
+    from makker.review.issues import Issue, is_stale
 
     base = dict(
         id="i",
@@ -215,20 +215,20 @@ def test_is_stale_only_when_version_diverges():
 
 
 def test_fix_prompt_includes_evidence_and_resolve_command():
-    from jutul_agent.review.issues import new_issue
-    from jutul_agent.review.prompt import fix_prompt
+    from makker.review.issues import new_issue
+    from makker.review.prompt import fix_prompt
 
     f = Finding("validation-gap", "high", "Perm in mD", "perm=500 left in mD", "convert", "skill")
     issue = new_issue(f, _report("sess-A"), title=None, existing={})
     text = fix_prompt(issue, transcript_paths=["/tmp/sess-A.html"])
     assert "perm=500 left in mD" in text  # evidence carried through
-    assert f"jutul-agent review resolve {issue.id}" in text  # closes the loop
+    assert f"makker review resolve {issue.id}" in text  # closes the loop
     assert "/tmp/sess-A.html" in text  # transcript pointer
 
 
 async def test_curate_creates_then_merges(monkeypatch):
-    from jutul_agent.review.curate import curate_report
-    from jutul_agent.review.issues import load_issues
+    from makker.review.curate import curate_report
+    from makker.review.issues import load_issues
 
     # The matcher only calls the (mocked) model when a provider key is present.
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -261,7 +261,7 @@ async def test_curate_creates_then_merges(monkeypatch):
 
 async def test_ingest_findings_logs_without_a_model_call():
     """The coding-agent path: ingest external findings with curate=False -> no API."""
-    from jutul_agent.review import ingest_findings, load_reports
+    from makker.review import ingest_findings, load_reports
 
     data = {
         "summary": "one unit error",
@@ -286,9 +286,9 @@ async def test_ingest_findings_logs_without_a_model_call():
 
 async def test_curate_falls_back_to_titles_when_no_api_key(monkeypatch):
     """Offline path: with no provider key, curation merges by exact title, no model call."""
-    from jutul_agent.review import curate
-    from jutul_agent.review.curate import curate_report
-    from jutul_agent.review.issues import load_issues
+    from makker.review import curate
+    from makker.review.curate import curate_report
+    from makker.review.issues import load_issues
 
     # No reviewer-model credential available -> deterministic matcher only.
     monkeypatch.setattr(curate, "missing_credential", lambda _model: "OPENAI_API_KEY")
@@ -325,7 +325,7 @@ def _make_session(state_home, ws, sid, *, title=None):
 
 
 def test_discover_sessions_spans_workspaces_and_flags_reviewed(_state_home):
-    from jutul_agent.review.discovery import discover_sessions
+    from makker.review.discovery import discover_sessions
 
     _make_session(_state_home, "ws1", "2026-06-17-1000-aaaa", title="first")
     _make_session(_state_home, "ws2", "2026-06-17-1200-bbbb", title="second")
@@ -343,7 +343,7 @@ def test_discover_sessions_spans_workspaces_and_flags_reviewed(_state_home):
 
 
 def test_find_session_by_prefix(_state_home):
-    from jutul_agent.review.discovery import find_session
+    from makker.review.discovery import find_session
 
     _make_session(_state_home, "ws1", "2026-06-17-1000-aaaa")
     assert find_session("2026-06-17-1000-aaaa").workspace == "ws1"
@@ -352,8 +352,8 @@ def test_find_session_by_prefix(_state_home):
 
 
 def test_session_simulator_and_ground_truth_read_from_trace(tmp_path):
-    from jutul_agent.review.discovery import session_ground_truth, session_simulator
-    from jutul_agent.trace import TraceLog
+    from makker.review.discovery import session_ground_truth, session_simulator
+    from makker.trace import TraceLog
 
     trace = tmp_path / "trace.sqlite"
     log = TraceLog(trace)
@@ -369,7 +369,7 @@ def test_session_simulator_and_ground_truth_read_from_trace(tmp_path):
 
 
 def test_build_user_message_includes_ground_truth():
-    from jutul_agent.review.prompt import build_user_message
+    from makker.review.prompt import build_user_message
 
     msg = build_user_message("trace", simulator="jutuldarcy", ground_truth="about 203.7 bar")
     assert "EVAL run" in msg and "203.7 bar" in msg
@@ -377,8 +377,8 @@ def test_build_user_message_includes_ground_truth():
 
 
 def test_eval_review_context_combines_expected_and_verdict(tmp_path):
-    from jutul_agent.review.discovery import eval_review_context, session_eval_result
-    from jutul_agent.trace import TraceLog
+    from makker.review.discovery import eval_review_context, session_eval_result
+    from makker.trace import TraceLog
 
     trace = tmp_path / "trace.sqlite"
     log = TraceLog(trace)
@@ -394,9 +394,9 @@ def test_link_eval_results_writes_verdict_onto_session(_state_home):
 
     pytest.importorskip("inspect_ai")  # _passed grades via inspect_ai (the eval extra)
 
-    from jutul_agent.review.discovery import session_eval_result
-    from jutul_agent.review.eval_link import link_eval_results
-    from jutul_agent.trace import TraceLog
+    from makker.review.discovery import session_eval_result
+    from makker.review.eval_link import link_eval_results
+    from makker.trace import TraceLog
 
     d = _make_session(_state_home, "eval-jutuldarcy", "2026-06-18-0900-eval")
     # Give the session a real trace so find_session/append work.
@@ -421,7 +421,7 @@ def test_passed_ignores_non_grade_metric_scorers():
 
     pytest.importorskip("inspect_ai")  # _passed grades via inspect_ai (the eval extra)
 
-    from jutul_agent.review.eval_link import _passed
+    from makker.review.eval_link import _passed
 
     def g(v):
         return types.SimpleNamespace(value=v)
@@ -432,7 +432,7 @@ def test_passed_ignores_non_grade_metric_scorers():
 
 
 def test_critic_prompt_is_general_and_injects_only_active_simulator_hints():
-    from jutul_agent.review.prompt import SYSTEM, full_prompt
+    from makker.review.prompt import SYSTEM, full_prompt
 
     low = SYSTEM.lower()
     assert "permeability" not in low and "casevalidation" not in low and "voltage" not in low
@@ -444,8 +444,8 @@ def test_critic_prompt_is_general_and_injects_only_active_simulator_hints():
 
 
 def test_eval_sessions_state_root_is_discoverable(_state_home):
-    from jutul_agent.paths import eval_sessions_state_root
-    from jutul_agent.review.discovery import discover_sessions
+    from makker.paths import eval_sessions_state_root
+    from makker.review.discovery import discover_sessions
 
     root = eval_sessions_state_root("jutuldarcy")
     assert root == _state_home / "workspaces" / "eval-jutuldarcy"
@@ -457,8 +457,8 @@ def test_eval_sessions_state_root_is_discoverable(_state_home):
 
 
 def test_server_apply_action(_state_home):
-    from jutul_agent.review.issues import load_issues, new_issue, save_issues
-    from jutul_agent.review.server import _apply_action
+    from makker.review.issues import load_issues, new_issue, save_issues
+    from makker.review.server import _apply_action
 
     issue = new_issue(
         Finding("agent-error", "low", "x", "ev", "s", "skill"),
@@ -480,7 +480,7 @@ def test_server_apply_action(_state_home):
 
 def _seed_issue_and_report(state_home, sid, finding, *, simulator=""):
     """One discoverable session with a logged review and a matching curated issue."""
-    from jutul_agent.review.issues import new_issue, save_issues
+    from makker.review.issues import new_issue, save_issues
 
     _make_session(state_home, "ws1", sid, title="perm run")
     report = ReviewReport(
@@ -493,7 +493,7 @@ def _seed_issue_and_report(state_home, sid, finding, *, simulator=""):
 
 
 def test_build_data_ranks_by_priority_and_tags_simulator(_state_home):
-    from jutul_agent.review.dashboard import build_data
+    from makker.review.dashboard import build_data
 
     f = Finding("validation-gap", "high", "Perm in mD", "perm=500", "convert", "case-validation")
     _seed_issue_and_report(_state_home, "2026-06-17-1000-aaaa", f, simulator="jutuldarcy")
@@ -507,7 +507,7 @@ def test_build_data_ranks_by_priority_and_tags_simulator(_state_home):
 
 
 def test_render_page_embeds_data_and_transcripts():
-    from jutul_agent.review.dashboard import render_page
+    from makker.review.dashboard import render_page
 
     data = {"stats": {}, "issues": [], "reviews": []}
     html = render_page(data, transcripts={"sid": "<html>stub</html>"})
@@ -515,7 +515,7 @@ def test_render_page_embeds_data_and_transcripts():
 
 
 def test_export_html_and_markdown(_state_home, monkeypatch):
-    from jutul_agent.review import export
+    from makker.review import export
 
     monkeypatch.setattr(export, "render_trace_html", lambda _p: "<html>embedded transcript</html>")
     f = Finding("validation-gap", "high", "Perm in mD", "perm=500", "convert", "case-validation")

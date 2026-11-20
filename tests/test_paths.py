@@ -6,7 +6,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from jutul_agent.paths import (
+from makker.paths import (
     resolve_in_workspace,
     set_state_home,
     set_workspace_root,
@@ -41,7 +41,7 @@ def test_state_home_defaults_to_xdg(monkeypatch, tmp_path: Path) -> None:
     xdg = tmp_path / "xdg"
     monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
     set_state_home(None)
-    assert state_home() == (xdg / "jutul-agent").resolve()
+    assert state_home() == (xdg / "makker").resolve()
 
 
 def test_workspace_state_dir_under_state_home(tmp_path: Path) -> None:

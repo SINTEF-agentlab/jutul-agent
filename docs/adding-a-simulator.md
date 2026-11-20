@@ -8,14 +8,14 @@ folder on its own and the agent code reads it generically.
 <name>/
   __init__.py         # exports the adapter
   adapter.py          # SimulatorAdapter instance
-  julia_env/          # Project.toml + JutulAgent<Sim>/ warm package
+  julia_env/          # Project.toml + Makker<Sim>/ warm package
   skills/             # one folder per skill, each with a SKILL.md
 ```
 
 The folder goes in one of two places, depending on who it is for:
 
-- **In-tree**, under `src/jutul_agent/simulators/<name>/` in a checkout of this
-  repo, to contribute a simulator to jutul-agent itself. The rest of this page
+- **In-tree**, under `src/makker/simulators/<name>/` in a checkout of this
+  repo, to contribute a simulator to Makker itself. The rest of this page
   follows this route.
 - **In your own package**, to add a simulator for your own use without forking.
   The folder is laid out the same way; you publish its adapter under an entry
@@ -31,7 +31,7 @@ edit and no core code to change.
 
 ```python
 from pathlib import Path
-from jutul_agent.simulators.base import SimulatorAdapter
+from makker.simulators.base import SimulatorAdapter
 
 MYSIM = SimulatorAdapter(
     name="mysim",
@@ -40,7 +40,7 @@ MYSIM = SimulatorAdapter(
     package_imports=("Jutul", "MySim"),
     primary_package="MySim",
     domain_hints="What the simulator is for, in one or two sentences.",
-    warm_package="JutulAgentMySim",
+    warm_package="MakkerMySim",
     example_prompts=("Run a small case and show me the result.", ...),
 )
 ```
@@ -60,9 +60,9 @@ the registry to find it.
 
 `julia_env/Project.toml` lists the packages a workspace gets. Keep compat
 loose and do not commit a `Manifest.toml`, so that the env resolves when
-the workspace is instantiated. Declare the shared `JutulAgent` package as a
+the workspace is instantiated. Declare the shared `Makker` package as a
 relative `[sources]` path dependency (copy the entry from an existing
-simulator). Its single source lives in `src/jutul_agent/julia_runtime/` and
+simulator). Its single source lives in `src/makker/julia_runtime/` and
 is synced into the env at bootstrap.
 
 The kernel itself needs no dependency in the env. Its Julia server is
@@ -70,14 +70,14 @@ standard-library only.
 
 ## 3. The warm package
 
-`julia_env/JutulAgentMySim/` is a small Julia package whose only job is
+`julia_env/MakkerMySim/` is a small Julia package whose only job is
 precompilation. Start from an existing simulator's and adapt the workload:
 
 - `@recompile_invalidations` around the imports, so the simulator and the
   plotting stack are compiled together.
 - Every Makie backend a session can hold at once (`WGLMakie` as well as
   `GLMakie`), imported inside that block.
-- The shared `JutulAgent` package, imported inside that block too, and declared
+- The shared `Makker` package, imported inside that block too, and declared
   in the warm package's own `[deps]`. That makes it a dependency rather than a
   sibling, which is what lets a session load it by loading this one.
 - A `_warm()` function running the smallest representative solve and the
@@ -106,7 +106,7 @@ Three things are easy to get wrong here, and all of them fail silently:
   included, so the warm package has to load them all up front.
 - **Load the warm package first, not alongside.** A pkgimage is only valid for
   the world it was baked in, so the order the session loads packages in has to
-  match the order they were built in, and the shared `JutulAgent` package is
+  match the order they were built in, and the shared `Makker` package is
   built after the simulator's imports. Loading it ahead of the warm package
   instead invalidates whatever the bake inferred through a method it brings,
   which is then rebuilt at first use. Depending on it, so that one `using` pulls
@@ -143,14 +143,14 @@ that break the template.
 
 ```sh
 mkdir try-mysim && cd try-mysim
-uv run jutul-agent init --sim mysim
-uv run jutul-agent
+uv run makker init --sim mysim
+uv run makker
 ```
 
 To develop against a local checkout of the simulator package:
 
 ```sh
-uv run jutul-agent init --sim mysim --source-path /path/to/MySim.jl
+uv run makker init --sim mysim --source-path /path/to/MySim.jl
 ```
 
 The checkout resolves at its real path (writable, since it is a dev checkout
@@ -160,24 +160,24 @@ package source itself.
 ## Trying a new simulator version
 
 The template's `[compat]` names the simulator versions the bundled skills were
-written for. A simulator developer can still run jutul-agent against a newer
+written for. A simulator developer can still run Makker against a newer
 version, to check that the agent copes and to update the skills before release:
 
 - **A local checkout ahead of the registry.** `init --source-path` dev-links it,
   and the checkout's own `[compat]` replaces the template's bounds on the
   simulator and on every package the checkout bounds itself. So an unreleased
   JutulDarcy that needs a newer Jutul resolves. While a package the template
-  bounds is dev-linked, jutul-agent leaves the versions to you: it doesn't
+  bounds is dev-linked, Makker leaves the versions to you: it doesn't
   check them, refuse them or update them.
 - **A release newer than the template.** Widen its bound in the workspace's
-  `.jutul-agent/julia-env/Project.toml`, then update the env:
+  `.makker/julia-env/Project.toml`, then update the env:
 
   ```sh
-  julia --project=.jutul-agent/julia-env -e 'using Pkg; Pkg.update()'
+  julia --project=.makker/julia-env -e 'using Pkg; Pkg.update()'
   ```
 
-  jutul-agent starts with a note that the simulator is newer than it was made
-  for (`jutul-agent doctor` shows it as a warning), and neither `jutul-agent
+  Makker starts with a note that the simulator is newer than it was made
+  for (`makker doctor` shows it as a warning), and neither `makker
   upgrade` nor the web UI's update moves it back.
 
 Once the skills are updated, raise the bound in the simulator's

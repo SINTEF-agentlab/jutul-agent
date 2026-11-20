@@ -2,11 +2,11 @@
 
 Three layers, each optional: workspace config, user config, environment.
 For the model, precedence is `--model` flag, then workspace, then user
-config, then `$JUTUL_AGENT_MODEL`, then the built-in default.
+config, then `$MAKKER_MODEL`, then the built-in default.
 
 ## Workspace config
 
-`.jutul-agent/config.toml` in the workspace, written by `init` and by the
+`.makker/config.toml` in the workspace, written by `init` and by the
 TUI when you save a choice:
 
 ```toml
@@ -21,7 +21,7 @@ source_path = "/path/to/JutulDarcy.jl"  # dev-link, set by init --source-path
 sysimage = true                    # start sessions from this folder's system image
 ```
 
-The `[julia] sysimage` key is written by `jutul-agent sysimage build` and
+The `[julia] sysimage` key is written by `makker sysimage build` and
 `clear` (and by `init --sysimage`), so it is not normally edited by hand. When
 it is on, a launch that finds the image missing or out of date refuses to
 start rather than falling back to the slow path; see
@@ -31,7 +31,7 @@ This file is safe to commit: API keys never go here.
 
 ## User config
 
-`<state home>/config.toml` (default `~/.local/share/jutul-agent/config.toml`)
+`<state home>/config.toml` (default `~/.local/share/makker/config.toml`)
 holds user-wide defaults, currently the model:
 
 ```toml
@@ -51,8 +51,8 @@ with owner-only permissions. Recognized:
 You never have to find or edit that file by hand. Set or change a key in
 whichever interface you use:
 
-- **Command line:** `jutul-agent key` lists which provider keys are set (and
-  where each comes from); `jutul-agent key <provider>` (e.g. `jutul-agent key
+- **Command line:** `makker key` lists which provider keys are set (and
+  where each comes from); `makker key <provider>` (e.g. `makker key
   openai`) prompts for a key and saves it. This is the way to replace a wrong
   or expired key, and it needs no checkout, workspace, or Julia.
 - **Terminal UI:** `/key` shows the same status; `/key <provider>` opens a
@@ -68,18 +68,18 @@ so a stale shell variable can't silently override a key you just changed.
 
 | Variable | Meaning |
 |---|---|
-| `JUTUL_AGENT_MODEL` | Default model when no flag or config sets one (useful in CI) |
-| `OPENROUTER_API_KEY` | API key for `openrouter:<vendor>/<model>` models; also saved by `jutul-agent key openrouter` |
-| `JUTUL_AGENT_JULIA_THREADS` | Compute threads for the Julia kernel: an integer, or `auto` for all logical cores. Defaults to physical cores minus one; the `--threads` flag overrides it. Jutul's assembly and preconditioner are threaded, so this speeds up larger solves. The kernel adds one interactive thread on top, and pins OpenBLAS to one thread (unless `OPENBLAS_NUM_THREADS` is set) to avoid oversubscription. The eval/benchmark harness uses the same policy (production parity); pin it per run with this variable. |
-| `JUTUL_AGENT_HYPRE_THREADS` | OpenMP threads for HYPRE's BoomerAMG (JutulDarcy's CPR pressure preconditioner). Defaults to physical cores minus one, capped at 8 (HYPRE's solver performance degrades with many threads). Independent of the Julia compute-thread count. |
-| `JUTUL_AGENT_OLLAMA_NUM_CTX` | Memory cap for local models' context window (default 64K tokens, lower on tight hardware) |
-| `JUTUL_AGENT_NO_XVFB` | Opt out of starting a virtual display on headless Linux (plotting then errors at use) |
-| `JUTUL_AGENT_SYSIMAGE` | Start from the folder's [system image](sysimage.md) when the workspace config says nothing (`1`/`true` to enable). The `--sysimage` / `--no-sysimage` flags override it |
-| `JUTUL_AGENT_NO_OPEN` | Never open artifacts in the OS default application (CI, tests) |
-| `JUTUL_AGENT_NO_UPDATE_CHECK` | Skip the once-a-day release check at launch |
-| `JUTUL_AGENT_REVIEW` | Developer tool: set to `1` to auto-review every finished turn (see [session review](review.md)) |
-| `JUTUL_AGENT_REVIEW_MODEL` | Model the reviewer uses (default `openai:gpt-5.4`) |
-| `XDG_DATA_HOME` | Relocates the state home (`<value>/jutul-agent`) |
+| `MAKKER_MODEL` | Default model when no flag or config sets one (useful in CI) |
+| `OPENROUTER_API_KEY` | API key for `openrouter:<vendor>/<model>` models; also saved by `makker key openrouter` |
+| `MAKKER_JULIA_THREADS` | Compute threads for the Julia kernel: an integer, or `auto` for all logical cores. Defaults to physical cores minus one; the `--threads` flag overrides it. Jutul's assembly and preconditioner are threaded, so this speeds up larger solves. The kernel adds one interactive thread on top, and pins OpenBLAS to one thread (unless `OPENBLAS_NUM_THREADS` is set) to avoid oversubscription. The eval/benchmark harness uses the same policy (production parity); pin it per run with this variable. |
+| `MAKKER_HYPRE_THREADS` | OpenMP threads for HYPRE's BoomerAMG (JutulDarcy's CPR pressure preconditioner). Defaults to physical cores minus one, capped at 8 (HYPRE's solver performance degrades with many threads). Independent of the Julia compute-thread count. |
+| `MAKKER_OLLAMA_NUM_CTX` | Memory cap for local models' context window (default 64K tokens, lower on tight hardware) |
+| `MAKKER_NO_XVFB` | Opt out of starting a virtual display on headless Linux (plotting then errors at use) |
+| `MAKKER_SYSIMAGE` | Start from the folder's [system image](sysimage.md) when the workspace config says nothing (`1`/`true` to enable). The `--sysimage` / `--no-sysimage` flags override it |
+| `MAKKER_NO_OPEN` | Never open artifacts in the OS default application (CI, tests) |
+| `MAKKER_NO_UPDATE_CHECK` | Skip the once-a-day release check at launch |
+| `MAKKER_REVIEW` | Developer tool: set to `1` to auto-review every finished turn (see [session review](review.md)) |
+| `MAKKER_REVIEW_MODEL` | Model the reviewer uses (default `openai:gpt-5.4`) |
+| `XDG_DATA_HOME` | Relocates the state home (`<value>/makker`) |
 
 ## What lives where
 
@@ -87,16 +87,16 @@ In the workspace:
 
 ```
 <workspace>/
-  .jutul-agent/
+  .makker/
     config.toml          # workspace config (committable)
     julia-env/           # the simulator's Julia environment
     sysimage/            # the system image, if this folder has one (several GB)
-  jutul-agent-output/
+  makker-output/
     sessions/<date>-<id>/
       artifacts/         # plots and reports the agent saved
 ```
 
-In the state home (default `~/.local/share/jutul-agent/`):
+In the state home (default `~/.local/share/makker/`):
 
 ```
 config.toml              # user config
@@ -107,7 +107,7 @@ workspaces/<hash>/
     trace.sqlite         # the session event log
     checkpoints.sqlite   # conversation state (resume, model switching)
     julia-startup.log    # kernel boot log, referenced by error messages
-eval-logs/               # Inspect logs from jutul-agent eval
+eval-logs/               # Inspect logs from makker eval
 eval-envs/<sim>/         # golden envs the bench copies per sample
 ```
 

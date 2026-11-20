@@ -1,4 +1,4 @@
-"""Unit tests for the jutul-bench eval package (no model calls).
+"""Unit tests for the makker-bench eval package (no model calls).
 
 Everything here runs offline: scorers are exercised against synthetic
 trace databases, and task modules are imported to catch API drift in the
@@ -19,21 +19,21 @@ inspect_ai = pytest.importorskip("inspect_ai")
 from inspect_ai.scorer import Target  # noqa: E402
 from inspect_ai.util import Store  # noqa: E402
 
-from jutul_agent.eval.runconfig import build_runconfig  # noqa: E402
-from jutul_agent.eval.scorers import (  # noqa: E402
+from makker.eval.runconfig import build_runconfig  # noqa: E402
+from makker.eval.scorers import (  # noqa: E402
     artifact_produced,
     avoided_tools,
     no_interpreters_via_execute,
     used_tools,
 )
-from jutul_agent.eval.solver import (  # noqa: E402
+from makker.eval.solver import (  # noqa: E402
     STORE_TRACE_DB,
     STORE_WORKSPACE,
     _bridge_model,
     _final_text,
 )
-from jutul_agent.simulators import registry  # noqa: E402
-from jutul_agent.trace import TraceLog  # noqa: E402
+from makker.simulators import registry  # noqa: E402
+from makker.trace import TraceLog  # noqa: E402
 
 
 def _state(tmp_path: Path, events: list[tuple[str, dict]]) -> SimpleNamespace:
@@ -122,7 +122,7 @@ def test_final_text_takes_the_last_assistant_message() -> None:
 
 
 def test_openai_eval_uses_native_responses_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
-    from jutul_agent.eval import solver
+    from makker.eval import solver
 
     monkeypatch.setattr(solver, "get_model", lambda: "openai/gpt-6-sol")
     model = _bridge_model()
@@ -142,7 +142,7 @@ def test_runconfig_hashes_the_tunable_inputs() -> None:
 
 
 def test_task_suites_import_and_build() -> None:
-    from jutul_agent.eval.tasks import (
+    from makker.eval.tasks import (
         api_discovery,
         battmo,
         canary,
@@ -176,7 +176,7 @@ def test_task_suites_import_and_build() -> None:
 
 
 def test_eval_cli_lists_suites_and_rejects_unknown(capsys) -> None:
-    from jutul_agent.interfaces.cli import eval as eval_cmd
+    from makker.interfaces.cli import eval as eval_cmd
 
     assert eval_cmd.run(eval_cmd.build_parser().parse_args(["--list"])) == 0
     out = capsys.readouterr().out
@@ -206,9 +206,9 @@ def test_golden_env_realigns_a_cached_env_once_per_run(tmp_path: Path, monkeypat
     golden is brought current (warm source + bake) exactly once per simulator."""
     from contextlib import contextmanager
 
-    from jutul_agent import paths
-    from jutul_agent.eval import solver
-    from jutul_agent.simulators import env_setup
+    from makker import paths
+    from makker.eval import solver
+    from makker.simulators import env_setup
 
     monkeypatch.setattr(paths, "state_home", lambda: tmp_path)
     updated: list[Path] = []
@@ -239,7 +239,7 @@ def test_golden_env_realigns_a_cached_env_once_per_run(tmp_path: Path, monkeypat
     assert built and not updated
     assert len(aligned) == 1  # the golden is aligned once after building
 
-    manifest = tmp_path / "eval-envs" / "cached" / ".jutul-agent" / "julia-env" / "Manifest.toml"
+    manifest = tmp_path / "eval-envs" / "cached" / ".makker" / "julia-env" / "Manifest.toml"
     manifest.parent.mkdir(parents=True)
     manifest.write_text("", encoding="utf-8")
     solver._golden_env(adapter=None, simulator="cached")
@@ -250,8 +250,8 @@ def test_golden_env_realigns_a_cached_env_once_per_run(tmp_path: Path, monkeypat
 
 
 def test_eval_cli_model_defaults_to_the_agent_default() -> None:
-    from jutul_agent.interfaces.cli.eval import _default_inspect_model
-    from jutul_agent.models import DEFAULT_MODEL
+    from makker.interfaces.cli.eval import _default_inspect_model
+    from makker.models import DEFAULT_MODEL
 
     default = _default_inspect_model()
     assert default.split("/", 1)[1] == DEFAULT_MODEL.partition(":")[2]
@@ -259,7 +259,7 @@ def test_eval_cli_model_defaults_to_the_agent_default() -> None:
 
 
 def test_eval_cli_accepts_all_suites_flag() -> None:
-    from jutul_agent.interfaces.cli import eval as eval_cmd
+    from makker.interfaces.cli import eval as eval_cmd
 
     args = eval_cmd.build_parser().parse_args(["--all"])
     assert args.all_suites is True
@@ -269,7 +269,7 @@ def test_eval_cli_accepts_all_suites_flag() -> None:
 def test_eval_cli_all_expands_every_builtin_suite(tmp_path: Path, monkeypatch) -> None:
     import inspect_ai
 
-    from jutul_agent.interfaces.cli import eval as eval_cmd
+    from makker.interfaces.cli import eval as eval_cmd
 
     captured: dict[str, object] = {}
 
@@ -289,7 +289,7 @@ def test_eval_cli_all_expands_every_builtin_suite(tmp_path: Path, monkeypatch) -
 
 
 def test_eval_cli_rejects_all_with_named_suite(capsys) -> None:
-    from jutul_agent.interfaces.cli import eval as eval_cmd
+    from makker.interfaces.cli import eval as eval_cmd
 
     args = eval_cmd.build_parser().parse_args(["canary", "--all"])
     assert eval_cmd.run(args) == 2
@@ -297,7 +297,7 @@ def test_eval_cli_rejects_all_with_named_suite(capsys) -> None:
 
 
 async def test_investigation_recorded_requires_a_linked_tree(tmp_path: Path) -> None:
-    from jutul_agent.eval.scorers import investigation_recorded
+    from makker.eval.scorers import investigation_recorded
 
     def attempt(i: int, parent: str | None = None, metrics: dict | None = None):
         payload = {
@@ -330,7 +330,7 @@ async def test_investigation_recorded_requires_a_linked_tree(tmp_path: Path) -> 
 async def test_numeric_answer_checks_range_count_and_order() -> None:
     from inspect_ai.model import ModelOutput
 
-    from jutul_agent.eval.scorers import numeric_answer
+    from makker.eval.scorers import numeric_answer
 
     def state(text: str) -> SimpleNamespace:
         return SimpleNamespace(output=ModelOutput.from_content(model="test", content=text))
@@ -355,7 +355,7 @@ async def test_numeric_answer_checks_range_count_and_order() -> None:
 def test_tolerant_b64decode_accepts_both_alphabets() -> None:
     import base64
 
-    from jutul_agent.eval._gemini_compat import tolerant_b64decode
+    from makker.eval._gemini_compat import tolerant_b64decode
 
     # Bytes whose encoding exercises the urlsafe alphabet ('-' and '_').
     raw = bytes(range(251, 256)) * 3
@@ -369,7 +369,7 @@ def test_tolerant_b64decode_accepts_both_alphabets() -> None:
 async def test_numeric_close_is_a_tolerance_band() -> None:
     from inspect_ai.model import ModelOutput
 
-    from jutul_agent.eval.scorers import numeric_close
+    from makker.eval.scorers import numeric_close
 
     def state(text: str) -> SimpleNamespace:
         return SimpleNamespace(output=ModelOutput.from_content(model="test", content=text))
@@ -401,7 +401,7 @@ def test_final_text_strips_a_redacted_think_signature() -> None:
 async def test_no_numeric_claim_inverts_on_fabrication() -> None:
     from inspect_ai.model import ModelOutput
 
-    from jutul_agent.eval.scorers import no_numeric_claim
+    from makker.eval.scorers import no_numeric_claim
 
     def state(text: str) -> SimpleNamespace:
         return SimpleNamespace(output=ModelOutput.from_content(model="test", content=text))
@@ -416,7 +416,7 @@ async def test_no_numeric_claim_inverts_on_fabrication() -> None:
 
 
 async def test_no_repeated_identical_calls_spots_stuck_loops(tmp_path: Path) -> None:
-    from jutul_agent.eval.scorers import no_repeated_identical_calls
+    from makker.eval.scorers import no_repeated_identical_calls
 
     fail = ("tool_call", {"id": "1", "name": "run_julia", "args": {"code": 'include("a.jl")'}})
     fail_result = (
@@ -455,7 +455,7 @@ async def test_no_repeated_identical_calls_spots_stuck_loops(tmp_path: Path) -> 
 
 
 def test_suite_modules_expose_all_tasks_via_tasks_list() -> None:
-    from jutul_agent.eval.tasks import battmo, jutuldarcy, mocca
+    from makker.eval.tasks import battmo, jutuldarcy, mocca
 
     assert [f.__name__ for f in battmo.TASKS] == ["battmo", "battmo_sweep"]
     assert [f.__name__ for f in jutuldarcy.TASKS] == [
@@ -472,7 +472,7 @@ async def test_grader_fairness_regressions(tmp_path: Path) -> None:
     """Declared prompt echo and path data must not be graded as offenses."""
     from inspect_ai.model import ModelOutput
 
-    from jutul_agent.eval.scorers import no_interpreters_via_execute, no_numeric_claim
+    from makker.eval.scorers import no_interpreters_via_execute, no_numeric_claim
 
     # A unit the question itself uses ("1C") lands in honest refusals as
     # echo; the task declares it via ``ignore`` so it does not count as a
@@ -504,7 +504,7 @@ async def test_numeric_answer_ignores_interleaved_labels() -> None:
     """Labels and units interleaved with ordered values must not fail the order check."""
     from inspect_ai.model import ModelOutput
 
-    from jutul_agent.eval.scorers import numeric_answer
+    from makker.eval.scorers import numeric_answer
 
     answer = "Capacities:\n- 0.5 C: 4.979 Ah\n- 1 C: 4.868 Ah\n- 2 C: 4.646 Ah"
     state = SimpleNamespace(output=ModelOutput.from_content(model="test", content=answer))
@@ -520,7 +520,7 @@ async def test_numeric_answer_ignores_interleaved_labels() -> None:
 
 
 async def test_used_any_tool_passes_on_any_match(tmp_path: Path) -> None:
-    from jutul_agent.eval.scorers import used_any_tool
+    from makker.eval.scorers import used_any_tool
 
     state = _state(tmp_path, [("tool_call", {"name": "glob", "args": {}})])
     assert (await used_any_tool(["grep", "glob"])(state, Target(""))).value == "C"
@@ -528,7 +528,7 @@ async def test_used_any_tool_passes_on_any_match(tmp_path: Path) -> None:
 
 
 async def test_workspace_file_exists_checks_the_workspace_on_disk(tmp_path: Path) -> None:
-    from jutul_agent.eval.scorers import workspace_file_exists
+    from makker.eval.scorers import workspace_file_exists
 
     (tmp_path / "results").mkdir()
     (tmp_path / "results" / "cubes.txt").write_text("1\n8\n27\n64\n125\n", encoding="utf-8")
@@ -545,7 +545,7 @@ async def test_workspace_file_exists_checks_the_workspace_on_disk(tmp_path: Path
 async def test_answer_cites_requires_all_and_forbids_misses() -> None:
     from inspect_ai.model import ModelOutput
 
-    from jutul_agent.eval.scorers import answer_cites
+    from makker.eval.scorers import answer_cites
 
     def state(text: str) -> SimpleNamespace:
         return SimpleNamespace(output=ModelOutput.from_content(model="test", content=text))
@@ -561,7 +561,7 @@ async def test_answer_cites_requires_all_and_forbids_misses() -> None:
 
 
 async def test_no_unresolvable_path_in_julia_flags_only_bad_paths(tmp_path: Path) -> None:
-    from jutul_agent.eval.scorers import no_unresolvable_path_in_julia
+    from makker.eval.scorers import no_unresolvable_path_in_julia
 
     def julia(code: str) -> list[tuple[str, dict]]:
         return [("tool_call", {"name": "run_julia", "args": {"code": code}})]
@@ -600,7 +600,7 @@ async def test_no_unresolvable_path_in_julia_flags_only_bad_paths(tmp_path: Path
 
 
 async def test_efficiency_scorers_count_the_right_calls(tmp_path: Path) -> None:
-    from jutul_agent.eval.scorers import file_op_count, julia_probe_count, tool_call_count
+    from makker.eval.scorers import file_op_count, julia_probe_count, tool_call_count
 
     events = [
         ("tool_call", {"name": "read_file", "args": {"file_path": "a.jl"}}),
@@ -619,7 +619,7 @@ async def test_efficiency_scorers_count_the_right_calls(tmp_path: Path) -> None:
 
 
 def test_filesystem_and_search_modules_expose_tasks_via_tasks_list() -> None:
-    from jutul_agent.eval.tasks import (
+    from makker.eval.tasks import (
         api_discovery,
         filesystem,
         filesystem_source,
@@ -663,7 +663,7 @@ async def test_filesystem_source_accepts_source_inspection_without_loading_julia
 ) -> None:
     from inspect_ai.model import ModelOutput
 
-    from jutul_agent.eval.tasks.filesystem_source import filesystem_source
+    from makker.eval.tasks.filesystem_source import filesystem_source
 
     task = filesystem_source()
     sample = task.dataset[0]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langchain_core.messages import ToolMessage
 
-from jutul_agent.agent.tool_output import is_interrupt_payload, normalize_tool_output
+from makker.agent.tool_output import is_interrupt_payload, normalize_tool_output
 
 
 def test_normalize_tool_message_object() -> None:

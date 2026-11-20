@@ -1,4 +1,4 @@
-"""A minimal jutul-agent extension, end to end.
+"""A minimal Makker extension, end to end.
 
 This example wires a custom simulator and tools into the agent to show the
 extension seam in one place: a toy library (``DemoSim``) added as a simulator, and
@@ -10,7 +10,7 @@ in another application.
 
 It serves the bundled web UI, so the interactive plot lands in the canvas and the
 UI action shows as a note (a host app can consume it instead through
-``window.onJutulUi``). Run it with ``python examples/demo-app/demo.py`` (the web
+``window.onMakkerUi``). Run it with ``python examples/demo-app/demo.py`` (the web
 stack ships in the core install). The first run instantiates the Julia env, then
 the app is served at http://127.0.0.1:8742.
 """
@@ -23,12 +23,12 @@ from uuid import uuid4
 
 from langchain_core.tools import tool
 
-from jutul_agent.agent.capabilities import Capability
-from jutul_agent.session import Session
-from jutul_agent.simulators.base import SimulatorAdapter
-from jutul_agent.simulators.env_setup import prepare_workspace_env
-from jutul_agent.trace import schema
-from jutul_agent.workspace import resolve_julia_project
+from makker.agent.capabilities import Capability
+from makker.session import Session
+from makker.simulators.base import SimulatorAdapter
+from makker.simulators.env_setup import prepare_workspace_env
+from makker.trace import schema
+from makker.workspace import resolve_julia_project
 
 DEMO_DIR = Path(__file__).resolve().parent
 JULIA_ENV = DEMO_DIR / "julia_env"
@@ -109,9 +109,9 @@ def demo_capability() -> Capability:
 
 def create_demo_app():
     """Build the demo server: the standard app and bundled UI, running DemoSim."""
-    from jutul_agent.interfaces.server.app import create_app
-    from jutul_agent.interfaces.server.manager import SessionManager
-    from jutul_agent.session_host import SessionHost
+    from makker.interfaces.server.app import create_app
+    from makker.interfaces.server.manager import SessionManager
+    from makker.session_host import SessionHost
 
     WORKSPACE.mkdir(exist_ok=True)
 
@@ -154,7 +154,7 @@ def main() -> int:
     try:
         import uvicorn
     except ModuleNotFoundError:
-        print("The web stack is missing; reinstall jutul-agent (or `uv sync`).", file=sys.stderr)
+        print("The web stack is missing; reinstall Makker (or `uv sync`).", file=sys.stderr)
         return 1
     ensure_env()
     print("Demo app on http://127.0.0.1:8742")

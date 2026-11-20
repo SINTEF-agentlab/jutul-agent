@@ -37,7 +37,7 @@ jobs:
       # release tag, or we would ship a `0.1.devN` artifact under a clean release.
       - name: Verify built version matches the release tag
         run: |
-          built=$(basename dist/jutul_agent-*-py3-none-any.whl | cut -d- -f2)
+          built=$(basename dist/makker-*-py3-none-any.whl | cut -d- -f2)
           tag="${GITHUB_REF_NAME#v}"
           if [ "$built" != "$tag" ]; then
             echo "Built version '$built' does not match release tag '$tag'." >&2

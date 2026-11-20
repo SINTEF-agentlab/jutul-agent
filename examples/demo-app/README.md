@@ -1,4 +1,4 @@
-# jutul-agent demo app
+# Makker demo app
 
 A small, runnable example of extending the agent: a custom simulator and tools
 added through the extension seam, served with the bundled web UI. Copy it as a
@@ -18,7 +18,7 @@ What it demonstrates:
   is the fiddly part to get right, so it is the main thing to copy.
 - **A UI action.** The `set_param` tool emits a `ui` action. The bundled UI shows
   it as a note; a host app embedding the agent can instead apply it to its own
-  controls by setting `window.onJutulUi`.
+  controls by setting `window.onMakkerUi`.
 
 ## Run it
 
@@ -44,6 +44,6 @@ and plot it"*. The interactive plot appears in the canvas on the right.
 - Swap `DemoSim` for a real simulator: point the adapter at it and add it to the
   Julia env.
 - Add tools, skills, or subagents by extending the `Capability` in `demo.py`, or
-  publish your own under the `jutul_agent.extensions` entry point.
+  publish your own under the `makker.extensions` entry point.
 - Add a new canvas surface (a map, a custom chart) by registering a panel in the
   web UI; see [docs/web-ui.md](../../docs/web-ui.md).

@@ -6,11 +6,11 @@ from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from jutul_agent.agent.builder import build_agent
-from jutul_agent.agent.recovery import _recover
-from jutul_agent.agent.turns import TurnRunner
-from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter, make_scripted_model, scripted_final
-from jutul_agent.session import Session
+from makker.agent.builder import build_agent
+from makker.agent.recovery import _recover
+from makker.agent.turns import TurnRunner
+from makker.lab.fakes import FakeJulia, make_fake_adapter, make_scripted_model, scripted_final
+from makker.session import Session
 
 _INVALID = {
     "name": "read_file",

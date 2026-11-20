@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.responses import Response
 
-from jutul_agent.interfaces.server.app import WEB_DIST_DIR, _ui_dir, create_app
+from makker.interfaces.server.app import WEB_DIST_DIR, _ui_dir, create_app
 
 
 def test_built_app_is_present_and_served() -> None:
@@ -29,7 +29,7 @@ def test_serves_the_single_page_app() -> None:
     with TestClient(create_app(ui=True)) as client:
         body = client.get("/").text
         assert '<div id="root">' in body
-        assert 'window.__JUTUL_BASE_PATH__=""' in body
+        assert 'window.__MAKKER_BASE_PATH__=""' in body
         match = re.search(r'assets/index-[^"\']+\.js', body)
         assert match, "index.html should reference the hashed JS bundle"
         resp = client.get("/" + match.group(0))
@@ -41,7 +41,7 @@ def test_serves_the_single_page_app() -> None:
 def test_serves_spa_with_base_path_injected() -> None:
     with TestClient(create_app(ui=True, base_path="/restricted")) as client:
         body = client.get("/").text
-        assert 'window.__JUTUL_BASE_PATH__="/restricted"' in body
+        assert 'window.__MAKKER_BASE_PATH__="/restricted"' in body
 
 
 @pytest.mark.parametrize("prefix", ["", "/restricted", "/nested/prefix"])

@@ -32,7 +32,7 @@ problem below.
 
 ## Headless machines are fine, as long as they have xvfb
 
-Headless is the ordinary case on a server and it is unaffected: jutul-agent
+Headless is the ordinary case on a server and it is unaffected: Makker
 starts an Xvfb display for the Julia process, and a session runs from an image
 there exactly as it does with a monitor attached, plotting included.
 
@@ -43,42 +43,42 @@ its OpenGL binding initialises as the process starts, before any code of ours,
 and takes the process down when there is no window system to bind to.
 
 So the case to know about is narrow: no display and no `xvfb`, which means either
-`JUTUL_AGENT_NO_XVFB` is set or the image was copied somewhere `xvfb` is not
+`MAKKER_NO_XVFB` is set or the image was copied somewhere `xvfb` is not
 installed. A machine that built its own image already has it, because the build
 needs one too. Rather than let Julia abort with a message that explains nothing,
 the guard checks this and says which fix applies:
 
 ```console
-$ jutul-agent run "..."
+$ makker run "..."
 This workspace is set to run from a Julia system image, but it cannot be used:
 
   the image contains GLMakie, whose OpenGL binding initialises as the process
   starts, and this machine has no display for it
 
-Allow a virtual display by unsetting JUTUL_AGENT_NO_XVFB:
-    unset JUTUL_AGENT_NO_XVFB
+Allow a virtual display by unsetting MAKKER_NO_XVFB:
+    unset MAKKER_NO_XVFB
 
 Or start without it, just for this run:
-    jutul-agent run --no-sysimage
+    makker run --no-sysimage
 ```
 
 ## Building one
 
 ```console
-$ jutul-agent init --sim jutuldarcy --sysimage   # environment, precompile, then image
-$ jutul-agent sysimage build                     # rebuild an initialised folder
-$ jutul-agent sysimage status                    # what it contains, and whether it still fits
-$ jutul-agent sysimage clear                     # remove it, and stop using it
+$ makker init --sim jutuldarcy --sysimage   # environment, precompile, then image
+$ makker sysimage build                     # rebuild an initialised folder
+$ makker sysimage status                    # what it contains, and whether it still fits
+$ makker sysimage clear                     # remove it, and stop using it
 ```
 
 `--sysimage` on `init` is remembered in the folder's config, so a later plain
-`jutul-agent init` here rebuilds the image without being asked again. A
+`makker init` here rebuilds the image without being asked again. A
 successful `sysimage build` turns the folder on the same way, and `clear` turns
 it off, so the setting and the file on disk cannot drift apart.
 
 Everything in the environment is baked, path-tracked packages included. Those are
-usually the ones that matter: the shared `JutulAgent` runtime, each
-`JutulAgent<Sim>` warm package, and any Julia package an
+usually the ones that matter: the shared `Makker` runtime, each
+`Makker<Sim>` warm package, and any Julia package an
 [extension](extending-for-your-application.md) contributes. Capabilities are
 composed before the build for exactly this reason, so an extended workspace gets
 an image of the environment it actually runs.
@@ -112,7 +112,7 @@ an environment, which precompiles the same packages. To override it — on a
 machine that still runs out, or one that can take more — set it yourself:
 
 ```console
-$ JULIA_NUM_PRECOMPILE_TASKS=2 jutul-agent sysimage build
+$ JULIA_NUM_PRECOMPILE_TASKS=2 makker sysimage build
 ```
 
 A value you set is always kept. It reaches PackageCompiler's own precompile too,
@@ -142,7 +142,7 @@ lost but a few seconds, once, on the sessions that use them.
 
 It also sets `[CairoMakie] precompile_workload = false` in the environment's
 `LocalPreferences.toml`, because that one workload costs 163 MiB — more than the
-limit leaves spare. The poster shapes we actually save are baked by `JutulAgent`'s
+limit leaves spare. The poster shapes we actually save are baked by `Makker`'s
 own workload instead, so what this costs is a first Cairo render of a plot that
 goes off those paths. It is written on Windows only, and only into the generated
 environment, so it never follows a checkout elsewhere.
@@ -182,21 +182,21 @@ matching is the failure this feature exists to prevent, because nobody notices
 until the slow path is on screen in front of an audience.
 
 ```console
-$ jutul-agent
+$ makker
 This workspace is set to run from a Julia system image, but it cannot be used:
 
   edited since the image was built:
     CapabilityPackage
 
 Rebuild it with:
-    jutul-agent sysimage build
+    makker sysimage build
 
 Or start without it, just for this run:
-    jutul-agent --no-sysimage
+    makker --no-sysimage
 ```
 
 `--sysimage` and `--no-sysimage` work on the web UI, `tui` and `run`, and override the
-folder's setting for one launch. `jutul-agent doctor` reports the image and the
+folder's setting for one launch. `makker doctor` reports the image and the
 same diagnosis without having to trigger it.
 
 ## What a build actually does

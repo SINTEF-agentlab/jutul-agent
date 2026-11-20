@@ -1,8 +1,8 @@
-# Container for running evals (and headless jutul-agent) in isolation.
+# Container for running evals (and headless Makker) in isolation.
 #
 #   docker compose run --rm eval canary
 #
-# Julia's depot and the jutul-agent state home are volumes (see
+# Julia's depot and the Makker state home are volumes (see
 # docker-compose.yml): the first simulator run pays the full env instantiate
 # and precompile, every run after reuses the caches. Without the volumes each
 # run starts cold, which costs many minutes per simulator suite.
@@ -30,5 +30,5 @@ RUN uv sync --locked --extra eval
 ENV JULIA_DEPOT_PATH=/depot \
     XDG_DATA_HOME=/state
 
-ENTRYPOINT ["uv", "run", "jutul-agent"]
+ENTRYPOINT ["uv", "run", "makker"]
 CMD ["eval", "--list"]

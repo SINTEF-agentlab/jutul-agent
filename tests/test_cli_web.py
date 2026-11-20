@@ -11,11 +11,11 @@ def test_sysimage_preflight_prepares_env_before_final_decision(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     """A bundled-source refresh must refuse before uvicorn serves a dead UI."""
-    from jutul_agent import sysimage
-    from jutul_agent.agent import capabilities
-    from jutul_agent.interfaces.cli.web import _sysimage_ready
-    from jutul_agent.simulators import env_setup, registry
-    from jutul_agent.workspace import WorkspaceConfig, workspace_julia_env
+    from makker import sysimage
+    from makker.agent import capabilities
+    from makker.interfaces.cli.web import _sysimage_ready
+    from makker.simulators import env_setup, registry
+    from makker.workspace import WorkspaceConfig, workspace_julia_env
 
     project = workspace_julia_env(tmp_path)
     project.mkdir(parents=True)
@@ -25,7 +25,7 @@ def test_sysimage_preflight_prepares_env_before_final_decision(
             sysimage.Decision(status=sysimage.CURRENT, path=image),
             sysimage.Decision(
                 status=sysimage.DIVERGENT,
-                reason="  edited since the image was built:\n    JutulAgentJutulDarcy",
+                reason="  edited since the image was built:\n    MakkerJutulDarcy",
             ),
         ]
     )
@@ -60,17 +60,17 @@ def test_sysimage_preflight_prepares_env_before_final_decision(
     assert ready is False
     assert prepared == [(adapter, tmp_path, project, "jutuldarcy", [])]
     stderr = capsys.readouterr().err
-    assert "JutulAgentJutulDarcy" in stderr
-    assert "jutul-agent sysimage build" in stderr
+    assert "MakkerJutulDarcy" in stderr
+    assert "makker sysimage build" in stderr
 
 
 def test_sysimage_preflight_leaves_explicit_julia_project_alone(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from jutul_agent import sysimage
-    from jutul_agent.interfaces.cli.web import _sysimage_ready
-    from jutul_agent.simulators import env_setup
-    from jutul_agent.workspace import WorkspaceConfig
+    from makker import sysimage
+    from makker.interfaces.cli.web import _sysimage_ready
+    from makker.simulators import env_setup
+    from makker.workspace import WorkspaceConfig
 
     project = tmp_path / "shared-env"
     image = tmp_path / "agent.dylib"
@@ -98,8 +98,8 @@ def test_web_refuses_an_outdated_workspace_env_before_binding(
     """Without a system image the env is prepared per session, so check at launch."""
     from types import SimpleNamespace
 
-    from jutul_agent.interfaces.cli import web
-    from jutul_agent.simulators import env_setup
+    from makker.interfaces.cli import web
+    from makker.simulators import env_setup
 
     def outdated(*_args):
         raise env_setup.EnvSetupError("has Foo 0.3.12, but requires Foo 0.4")
@@ -123,8 +123,8 @@ def test_outdated_env_offers_an_upgrade_from_a_terminal(
     """A terminal launch can upgrade in place and carry on; anything else stops."""
     from types import SimpleNamespace
 
-    from jutul_agent.interfaces.cli import _helpers, upgrade
-    from jutul_agent.simulators import env_setup
+    from makker.interfaces.cli import _helpers, upgrade
+    from makker.simulators import env_setup
 
     def outdated(*_args):
         raise env_setup.EnvSetupError("has Foo 0.3.12, but requires Foo 0.4")
@@ -145,8 +145,8 @@ def test_outdated_env_offers_an_upgrade_from_a_terminal(
 def test_a_newer_simulator_launches_with_a_note(tmp_path, monkeypatch, capsys) -> None:
     from types import SimpleNamespace
 
-    from jutul_agent.interfaces.cli import _helpers
-    from jutul_agent.simulators import env_setup
+    from makker.interfaces.cli import _helpers
+    from makker.simulators import env_setup
 
     monkeypatch.setattr(env_setup, "check_env_versions", lambda *_a: None)
     monkeypatch.setattr(env_setup, "newer_simulator_note", lambda *_a: "has JutulDarcy 0.5.0")

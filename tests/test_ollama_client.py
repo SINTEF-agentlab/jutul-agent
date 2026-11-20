@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from jutul_agent import ollama_client
-from jutul_agent.ollama_client import _matches, host, model_name
+from makker import ollama_client
+from makker.ollama_client import _matches, host, model_name
 
 
 class _Model:
@@ -141,16 +141,16 @@ def test_context_window_none_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_ctx_budget_default_and_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("JUTUL_AGENT_OLLAMA_NUM_CTX", raising=False)
+    monkeypatch.delenv("MAKKER_OLLAMA_NUM_CTX", raising=False)
     assert ollama_client.ctx_budget() == 65536
-    monkeypatch.setenv("JUTUL_AGENT_OLLAMA_NUM_CTX", "16384")
+    monkeypatch.setenv("MAKKER_OLLAMA_NUM_CTX", "16384")
     assert ollama_client.ctx_budget() == 16384
-    monkeypatch.setenv("JUTUL_AGENT_OLLAMA_NUM_CTX", "not-an-int")
+    monkeypatch.setenv("MAKKER_OLLAMA_NUM_CTX", "not-an-int")
     assert ollama_client.ctx_budget() == 65536  # bad value falls back to the default
 
 
 def test_num_ctx_clamps_model_context_to_budget(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("JUTUL_AGENT_OLLAMA_NUM_CTX", raising=False)  # budget = 65536
+    monkeypatch.delenv("MAKKER_OLLAMA_NUM_CTX", raising=False)  # budget = 65536
     # A big-context model is capped at the budget...
     monkeypatch.setattr(ollama_client, "context_window", lambda name: 262144)
     assert ollama_client.num_ctx("qwen3.6:27b") == 65536

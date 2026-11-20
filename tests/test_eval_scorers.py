@@ -11,7 +11,7 @@ pytest.importorskip("inspect_ai", reason="eval extra not installed")
 
 from inspect_ai.scorer import CORRECT, INCORRECT
 
-from jutul_agent.eval.scorers import reads_digit
+from makker.eval.scorers import reads_digit
 
 
 def _score(scorer, completion: str):

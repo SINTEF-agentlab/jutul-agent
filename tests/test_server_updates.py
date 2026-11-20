@@ -1,4 +1,4 @@
-"""Updating jutul-agent and the folder's Julia environment from the web UI."""
+"""Updating Makker and the folder's Julia environment from the web UI."""
 
 from __future__ import annotations
 
@@ -12,13 +12,13 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from jutul_agent.interfaces.server import updates
-from jutul_agent.interfaces.server.access import is_loopback_host, request_is_local
-from jutul_agent.interfaces.server.app import create_app
-from jutul_agent.interfaces.server.manager import SessionManager
-from jutul_agent.interfaces.server.updates import Updater, UpdateRefused
-from jutul_agent.paths import state_home
-from jutul_agent.update_check import InstallInfo
+from makker.interfaces.server import updates
+from makker.interfaces.server.access import is_loopback_host, request_is_local
+from makker.interfaces.server.app import create_app
+from makker.interfaces.server.manager import SessionManager
+from makker.interfaces.server.updates import Updater, UpdateRefused
+from makker.paths import state_home
+from makker.update_check import InstallInfo
 
 LOCAL = {"host": "127.0.0.1:8742", "origin": "http://127.0.0.1:8742"}
 
@@ -125,7 +125,7 @@ def _join_update_thread() -> None:
     # The state flips to "restarting" before the server is stopped, so wait for
     # the whole job rather than for the state.
     for thread in threading.enumerate():
-        if thread.name == "jutul-agent-update":
+        if thread.name == "makker-update":
             thread.join(timeout=5)
             assert not thread.is_alive()
 
@@ -134,7 +134,7 @@ def _join_update_thread() -> None:
 def run_update(monkeypatch):
     """Start an update whose commands exit with ``codes``, and wait for it.
 
-    ``versions`` is the installed jutul-agent version before and after.
+    ``versions`` is the installed Makker version before and after.
     """
 
     def run(updater, manager, *, install, sysimage=None, codes=(), versions=("1.0", "1.0")):
@@ -166,7 +166,7 @@ def test_environment_only_update(tmp_path, run_update) -> None:
     ran = run_update(updater, manager, install=False, sysimage="off", codes=[0])
 
     assert manager.closed  # sessions are closed before anything changes
-    env_step = [sys.executable, "-m", "jutul_agent", "upgrade", "--env-only"]
+    env_step = [sys.executable, "-m", "makker", "upgrade", "--env-only"]
     assert ran == [[*env_step, "--workspace", str(tmp_path), "--sysimage", "off"]]
     assert updater._job.state == "done"
     assert not updater.restart_requested
@@ -178,9 +178,9 @@ def test_new_version_then_environment_then_restart(tmp_path, uv_tool, run_update
     updater.bind_server(lambda: stopped.append(True))
     ran = run_update(updater, _Manager(), install=True, codes=[0, 0], versions=("1.0", "1.1"))
 
-    assert ran[0] == ["uv", "tool", "upgrade", "jutul-agent"]
+    assert ran[0] == ["uv", "tool", "upgrade", "makker"]
     # The interpreter now imports the new version, so its templates decide.
-    assert ran[1][:5] == [sys.executable, "-m", "jutul_agent", "upgrade", "--env-only"]
+    assert ran[1][:5] == [sys.executable, "-m", "makker", "upgrade", "--env-only"]
     assert updater._job.state == "restarting"
     assert updater.restart_requested and stopped == [True]
     assert not updater.handed_off
@@ -218,7 +218,7 @@ def test_the_restarted_server_reports_how_the_update_went(tmp_path, uv_tool, run
     restarted.report_last_update()
     job = restarted.status()["job"]
     assert job["state"] == "failed" and "Julia environment" in job["error"]
-    assert job["lines"] == ["$ uv tool upgrade jutul-agent", "$ jutul-agent upgrade --env-only"]
+    assert job["lines"] == ["$ uv tool upgrade makker", "$ makker upgrade --env-only"]
     assert not restarted.running  # sessions may start
     # Reported once: a later restart of the server says nothing.
     later = _updater(tmp_path)
@@ -243,7 +243,7 @@ def test_windows_hands_the_update_to_a_helper_and_exits(
     tmp_path, uv_tool, monkeypatch, helper
 ) -> None:
     monkeypatch.setattr(updates, "_on_windows", lambda: True)
-    launcher = tmp_path / "bin" / "jutul-agent.exe"
+    launcher = tmp_path / "bin" / "makker.exe"
     launcher.parent.mkdir()
     launcher.write_bytes(b"")
     # As the launcher's own script leaves it: without ".exe".
@@ -260,7 +260,7 @@ def test_windows_hands_the_update_to_a_helper_and_exits(
     assert plan["wait_for"] == [os.getpid(), os.getppid()]
     assert plan["free"] == [str(launcher)]
     upgrade, env = (step["argv"] for step in plan["steps"])
-    assert upgrade == ["/usr/bin/uv", "tool", "upgrade", "jutul-agent"]
+    assert upgrade == ["/usr/bin/uv", "tool", "upgrade", "makker"]
     assert env[0] == str(launcher)
     assert env[1:] == ["upgrade", "--env-only", "--workspace", str(tmp_path), "--sysimage", "off"]
     assert plan["relaunch"] == {
@@ -279,13 +279,13 @@ def test_the_separate_window_can_be_forced_for_testing(
     tmp_path, uv_tool, monkeypatch, helper
 ) -> None:
     monkeypatch.setenv(updates.SEPARATE_WINDOW_ENV_VAR, "1")
-    monkeypatch.setattr(sys, "argv", ["/somewhere/jutul_agent/__main__.py", "web"])
+    monkeypatch.setattr(sys, "argv", ["/somewhere/makker/__main__.py", "web"])
     _start_and_wait(_updater(tmp_path), _Manager(), install=True, sysimage=None)
 
     [plan] = helper
     # Not started from a launcher: nothing else to wait for, and `python -m` runs it.
     assert plan["wait_for"] == [os.getpid()] and plan["free"] == []
-    assert plan["relaunch"]["argv"] == [sys.executable, "-m", "jutul_agent", "web"]
+    assert plan["relaunch"]["argv"] == [sys.executable, "-m", "makker", "web"]
 
 
 def test_a_helper_that_cannot_start_leaves_the_server_running(
@@ -310,7 +310,7 @@ def test_windows_updates_only_the_environment_in_place(
     monkeypatch.setattr(updates, "_on_windows", lambda: True)
     updater = _updater(tmp_path)
     ran = run_update(updater, _Manager(), install=False, codes=[0])
-    assert ran[0][:3] == [sys.executable, "-m", "jutul_agent"]
+    assert ran[0][:3] == [sys.executable, "-m", "makker"]
     assert helper == [] and updater._job.state == "done"
 
 
@@ -425,7 +425,7 @@ def test_sessions_wait_for_an_update(tmp_path) -> None:
 
 
 def test_an_outdated_environment_points_at_the_sidebar(tmp_path) -> None:
-    from jutul_agent.simulators.env_setup import EnvOutdatedError
+    from makker.simulators.env_setup import EnvOutdatedError
 
     async def outdated_factory(**_kwargs):
         raise EnvOutdatedError("old", [("JutulDarcy", "0.3.12", "0.4")])
@@ -453,7 +453,7 @@ def test_version_tells_the_page_about_restarts_and_the_environment(tmp_path, mon
 
 
 def _web_args(**overrides):
-    from jutul_agent.interfaces.cli import web
+    from makker.interfaces.cli import web
 
     # Keep the test's state folder: launching sets it from the arguments.
     args = web.build_parser().parse_args(["--sim", "jutuldarcy", "--state-home", str(state_home())])
@@ -467,7 +467,7 @@ def web_run(tmp_path, monkeypatch):
     """``web.run`` up to serving, with a uvicorn that returns at once."""
     import uvicorn
 
-    from jutul_agent.interfaces.cli import web
+    from makker.interfaces.cli import web
 
     monkeypatch.chdir(tmp_path)
     calls = SimpleNamespace(
@@ -494,7 +494,7 @@ def web_run(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "_env_versions_ok", check("env"))
     monkeypatch.setattr(web, "_sysimage_ready", check("image"))
     monkeypatch.setattr(updates, "restart_server", lambda: setattr(calls, "restarted", True))
-    monkeypatch.setattr("jutul_agent.update_check.notify_at_launch", lambda: None)
+    monkeypatch.setattr("makker.update_check.notify_at_launch", lambda: None)
     return web, calls
 
 
@@ -531,7 +531,7 @@ def test_a_restarted_server_starts_even_if_something_needs_fixing(web_run, monke
     web, calls = web_run
     monkeypatch.setenv(updates.RESTARTED_ENV_VAR, "1")
     monkeypatch.setattr(web, "_sysimage_ready", lambda *a, **k: calls.checks.append("image"))
-    updates._record_outcome(["$ uv tool upgrade jutul-agent"], None)
+    updates._record_outcome(["$ uv tool upgrade makker"], None)
     args = _web_args()
     assert web.run(args) == 0
     # The env check (which would refuse) is skipped; a stale image is dropped.
@@ -542,7 +542,7 @@ def test_a_restarted_server_starts_even_if_something_needs_fixing(web_run, monke
 
 
 def _guard(app):
-    from jutul_agent.interfaces.server.access import OriginGuard
+    from makker.interfaces.server.access import OriginGuard
 
     return next(m.kwargs for m in app.user_middleware if m.cls is OriginGuard)
 
@@ -561,7 +561,7 @@ def test_behind_a_proxy_origins_are_checked_but_not_hosts(web_run) -> None:
     web, calls = web_run
     assert web.run(_web_args(base_path="/restricted")) == 0
     assert _guard(calls.app)["local_only"] is False
-    assert not calls.updater.local  # nor is jutul-agent updated from a proxied page
+    assert not calls.updater.local  # nor is Makker updated from a proxied page
 
 
 def test_a_server_on_the_network_never_updates(web_run) -> None:
@@ -571,8 +571,8 @@ def test_a_server_on_the_network_never_updates(web_run) -> None:
 
 
 def test_upgrade_choice_for_a_system_image(tmp_path, monkeypatch) -> None:
-    from jutul_agent.interfaces.cli import upgrade
-    from jutul_agent.workspace import WorkspaceConfig, load_workspace_config, write_workspace_config
+    from makker.interfaces.cli import upgrade
+    from makker.workspace import WorkspaceConfig, load_workspace_config, write_workspace_config
 
     write_workspace_config(
         WorkspaceConfig(simulator="jutuldarcy", sysimage=True), workspace=tmp_path

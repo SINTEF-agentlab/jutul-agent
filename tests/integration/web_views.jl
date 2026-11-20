@@ -1,7 +1,7 @@
 using Test
-import JutulAgent, WGLMakie
+import Makker, WGLMakie
 
-const V = JutulAgent.JutulAgentWebViews
+const V = Makker.MakkerWebViews
 const M = WGLMakie.Makie
 const B = WGLMakie.Bonito
 

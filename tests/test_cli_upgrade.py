@@ -1,14 +1,16 @@
-"""Tests for the ``jutul-agent upgrade`` subcommand."""
+"""Tests for the ``makker upgrade`` subcommand."""
 
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from jutul_agent.interfaces.cli import upgrade as upgrade_cmd
-from jutul_agent.update_check import InstallInfo
+from makker import update_check
+from makker.interfaces.cli import upgrade as upgrade_cmd
+from makker.update_check import InstallInfo
 
 
 @pytest.fixture(autouse=True)
@@ -74,13 +76,31 @@ def test_registry_runs_uv_tool_upgrade(monkeypatch, capsys) -> None:
     assert code == 0
     # The new install, not this process, updates the environment: only it has
     # the new simulator templates.
-    assert calls[0] == ["uv", "tool", "upgrade", "jutul-agent"]
-    assert calls[1][1:3] == ["upgrade", "--env-only"]
+    assert calls[0] == ["uv", "tool", "upgrade", "makker"]
+    # Not started through the `makker` launcher here, so this environment's own
+    # interpreter stands in for it.
+    assert calls[1][:5] == [sys.executable, "-m", "makker", "upgrade", "--env-only"]
+
+
+def test_upgrade_names_the_uv_tool_this_install_lives_in(monkeypatch, tmp_path) -> None:
+    # An application built on Makker carries it inside its own uv tool, and it is
+    # that tool `uv tool upgrade` has to be given.
+    tool = tmp_path / "tools" / "my-app"
+    tool.mkdir(parents=True)
+    (tool / "uv-receipt.toml").write_text(
+        '[tool]\nrequirements = [{ name = "my-app" }, { name = "makker" }]\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(update_check.sys, "prefix", str(tool))
+    assert update_check.uv_tool_name() == "my-app"
+    assert update_check.upgrade_command(InstallInfo("registry")) == "uv tool upgrade my-app"
+
+    monkeypatch.setattr(update_check.sys, "prefix", str(tmp_path / "not-a-tool"))
+    assert update_check.uv_tool_name() == "makker"
 
 
 def test_registry_windows_runs_detached(monkeypatch, capsys) -> None:
     # On Windows the running launcher is locked, so uv must run in a separate
-    # process while jutul-agent exits — not inline (which would fail the copy).
+    # process while Makker exits — not inline (which would fail the copy).
     monkeypatch.setattr(upgrade_cmd, "install_info", lambda: InstallInfo("registry"))
     monkeypatch.setattr(upgrade_cmd, "refresh_cache", lambda force=False: "9.9.9")
     monkeypatch.setattr(upgrade_cmd.shutil, "which", lambda _name: "C:/uv.exe")
@@ -100,7 +120,7 @@ def test_registry_windows_runs_detached(monkeypatch, capsys) -> None:
 
     code = upgrade_cmd.run(_args(check=False))
     assert code == 0
-    assert popened == [["uv", "tool", "upgrade", "jutul-agent"]]
+    assert popened == [["uv", "tool", "upgrade", "makker"]]
     assert "new window" in capsys.readouterr().out
 
 
@@ -187,7 +207,7 @@ def test_a_newer_environment_is_left_alone(tmp_path, monkeypatch, capsys) -> Non
 
     assert upgrade_cmd.run(_args(env_only=True)) == 0
     out = capsys.readouterr().out
-    assert "has JutulDarcy 0.5.0, newer than this version of jutul-agent was made for" in out
+    assert "has JutulDarcy 0.5.0, newer than this version of Makker was made for" in out
     assert "Nothing to update." in out
 
 
@@ -208,7 +228,7 @@ def test_a_system_image_is_rebuilt_or_switched_off(
     tmp_path, monkeypatch, interactive, answer, rebuild, still_on
 ) -> None:
     """An update makes the image stale, so the user picks: rebuild it or stop using it."""
-    from jutul_agent.workspace import (
+    from makker.workspace import (
         WorkspaceConfig,
         load_workspace_config,
         write_workspace_config,

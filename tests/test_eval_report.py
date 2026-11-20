@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("inspect_ai", reason="eval extra not installed")
 
-from jutul_agent.eval.report import PRICES, SampleRecord, _classify, _price, render_markdown
+from makker.eval.report import PRICES, SampleRecord, _classify, _price, render_markdown
 
 
 def test_classify_ignores_numeric_efficiency_scorers() -> None:
@@ -73,7 +73,7 @@ def test_render_has_overview_suite_and_simulator_sections() -> None:
 
 
 def test_humanize_tokens_scales_units() -> None:
-    from jutul_agent.eval.report import _humanize_tokens
+    from makker.eval.report import _humanize_tokens
 
     assert _humanize_tokens(850) == "850"
     assert _humanize_tokens(85_000) == "85k"
@@ -91,7 +91,7 @@ def test_overview_shows_input_with_cache_annotation_and_output() -> None:
 
 
 def test_suite_grouping_collapses_task_variants() -> None:
-    from jutul_agent.eval.report import _suite
+    from makker.eval.report import _suite
 
     assert _suite("ensembles_fimbul") == "ensembles"
     assert _suite("usage_battmo") == "usage"
@@ -103,7 +103,7 @@ def test_load_records_round_trips_a_json_snapshot(tmp_path) -> None:
     import json
     from dataclasses import asdict
 
-    from jutul_agent.eval.report import load_records
+    from makker.eval.report import load_records
 
     records = [_record(), _record(model="ollama/qwen3", run="2026-06-14T10-00-00")]
     snapshot = tmp_path / "records.jsonl"
@@ -114,7 +114,7 @@ def test_load_records_round_trips_a_json_snapshot(tmp_path) -> None:
 
 
 def test_dedupe_keeps_distinct_runs_but_drops_exact_duplicates() -> None:
-    from jutul_agent.eval.report import _dedupe
+    from makker.eval.report import _dedupe
 
     run_a = _record(run="2026-06-13T00-00-00", verdict="fail", category="answer")
     run_b = _record(run="2026-06-14T00-00-00", verdict="pass", category="pass")

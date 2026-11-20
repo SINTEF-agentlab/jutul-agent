@@ -11,18 +11,18 @@ Three intentional layers:
   JutulDarcy's setup/plotter API, so it will need updating when that API drifts.
 
 Skipped unless the JutulDarcy env is instantiated (the shipped template has no
-Manifest). The shared JutulAgent package lives once in ``julia_runtime/`` and is
+Manifest). The shared Makker package lives once in ``julia_runtime/`` and is
 synced into the env at bootstrap; an in-place instantiate must do the same first.
 To run locally:
 
-    uv run python -c "from pathlib import Path; from jutul_agent.workspace import \
+    uv run python -c "from pathlib import Path; from makker.workspace import \
         sync_shared_julia_package as s; \
-        s(Path('src/jutul_agent/simulators/jutuldarcy/julia_env'))"
-    julia --project=src/jutul_agent/simulators/jutuldarcy/julia_env \
+        s(Path('src/makker/simulators/jutuldarcy/julia_env'))"
+    julia --project=src/makker/simulators/jutuldarcy/julia_env \
         -e 'using Pkg; Pkg.instantiate()'
     uv run pytest tests/integration/test_julia_plot_integration.py
 
-Set JUTUL_AGENT_TEST_JULIA_PROJECT to reuse a prepared JutulDarcy environment.
+Set MAKKER_TEST_JULIA_PROJECT to reuse a prepared JutulDarcy environment.
 
 On headless Linux GLMakie needs a virtual display; the ``plot_display`` fixture
 starts a private Xvfb (as production does via ``managed_display``). CI runs these
@@ -37,23 +37,23 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.agent import plot_julia_src as jl
-from jutul_agent.agent.plot_julia import make_plot_julia_tool
-from jutul_agent.display import has_display, managed_display, xvfb_available
-from jutul_agent.juliakernel import JuliaKernel, KernelConfig
-from jutul_agent.session import Session
-from jutul_agent.simulators.env_setup import manifest_has_package
-from jutul_agent.simulators.jutuldarcy import JUTULDARCY
-from jutul_agent.workspace import sync_shared_julia_package
+from makker.agent import plot_julia_src as jl
+from makker.agent.plot_julia import make_plot_julia_tool
+from makker.display import has_display, managed_display, xvfb_available
+from makker.juliakernel import JuliaKernel, KernelConfig
+from makker.session import Session
+from makker.simulators.env_setup import manifest_has_package
+from makker.simulators.jutuldarcy import JUTULDARCY
+from makker.workspace import sync_shared_julia_package
 
 JUTULDARCY_ENV = Path(
-    os.environ.get("JUTUL_AGENT_TEST_JULIA_PROJECT", JUTULDARCY.julia_env_template_path)
+    os.environ.get("MAKKER_TEST_JULIA_PROJECT", JUTULDARCY.julia_env_template_path)
 )
 
 
 @pytest.fixture(autouse=True)
 def _materialize_shared_package() -> None:
-    """Keep the shared JutulAgent package present in the in-place template env.
+    """Keep the shared Makker package present in the in-place template env.
 
     It lives once in ``julia_runtime/`` and is copied into an env at bootstrap;
     these tests instantiate the template directly, so sync it here too (idempotent).
@@ -135,13 +135,13 @@ pytestmark = pytest.mark.integration
     reason="Julia and a WGLMakie-instantiated jutuldarcy env are required",
 )
 async def test_web_warmup_does_not_open_native_screens(plot_display) -> None:
-    from jutul_agent.simulators.warmup import start_warmup
+    from makker.simulators.warmup import start_warmup
 
     async with JuliaKernel(_plot_kernel_config(plot_display)) as julia:
         await start_warmup(julia, JUTULDARCY.warm_package, native_plotting=False)
         result = await julia.eval(
             "@assert WGLMakie.Makie.current_backend() === WGLMakie; "
-            "@assert isempty(JutulAgent.GLMakie.ALL_SCREENS); nothing"
+            "@assert isempty(Makker.GLMakie.ALL_SCREENS); nothing"
         )
         assert not result.error, result.error
 
@@ -153,7 +153,7 @@ async def test_web_warmup_does_not_open_native_screens(plot_display) -> None:
 async def test_web_capture_preserves_backend_attributes_and_display_state(plot_display) -> None:
     config = _plot_kernel_config(plot_display)
     async with JuliaKernel(config) as julia:
-        loaded = await julia.eval("using JutulAgent")
+        loaded = await julia.eval("using Makker")
         assert not loaded.error, loaded.error
         source = Path(__file__).with_name("web_capture.jl")
         result = await julia.eval(f'include(raw"{source.as_posix()}")')
@@ -182,8 +182,7 @@ nothing
         )
         assert "expected capture error" in (failed.error or "")
         restored = await julia.eval(
-            "@assert !any(d -> d isa JutulAgent.JutulAgentPlots.WebPlotDisplay, "
-            "Base.Multimedia.displays)"
+            "@assert !any(d -> d isa Makker.MakkerPlots.WebPlotDisplay, Base.Multimedia.displays)"
         )
         assert not restored.error, restored.error
 
@@ -194,7 +193,7 @@ nothing
 )
 async def test_web_view_take_over(plot_display) -> None:
     async with JuliaKernel(_plot_kernel_config(plot_display)) as julia:
-        loaded = await julia.eval("using JutulAgent")
+        loaded = await julia.eval("using Makker")
         assert not loaded.error, loaded.error
         source = Path(__file__).with_name("web_views.jl")
         checked = await julia.eval(f'include(raw"{source.as_posix()}")')
@@ -208,7 +207,7 @@ async def test_web_view_take_over(plot_display) -> None:
 async def test_dropped_routes_close_their_pages(plot_display, tmp_path, monkeypatch) -> None:
     open_page = (
         "global page = WGLMakie.Bonito.Session(); "
-        'JutulAgent.JutulAgentWebViews.view(page, Main.__JUTUL_WEB_FIGS__["/viz/{}"]); nothing'
+        'Makker.MakkerWebViews.view(page, Main.__MAKKER_WEB_FIGS__["/viz/{}"]); nothing'
     )
     page_closed = "@assert WGLMakie.Bonito.isclosed(page)"
     code = "fig = WGLMakie.Figure(); WGLMakie.lines!(WGLMakie.Axis(fig[1, 1]), 1:3); fig"
@@ -227,7 +226,7 @@ async def test_dropped_routes_close_their_pages(plot_display, tmp_path, monkeypa
         assert not (await julia.eval(page_closed)).error
         assert not (await julia.eval(open_page.format("b"))).error
         assert not (await julia.eval(jl.close_web_plots_call("b"))).error
-        result = await julia.eval(page_closed + "; @assert isempty(Main.__JUTUL_WEB_FIGS__)")
+        result = await julia.eval(page_closed + "; @assert isempty(Main.__MAKKER_WEB_FIGS__)")
         assert not result.error, result.error
         session.finalize()
 
@@ -385,7 +384,7 @@ async def test_reservoir_phase_selection(tmp_path: Path, plot_display) -> None:
                         'x.selection[] == "Saturations row 2", fig.content)\n'
                     )
                 verified = await julia.eval(
-                    f'let fig = Main.__JUTUL_WEB_FIGS__["/viz/{slot}"], Makie = WGLMakie.Makie\n'
+                    f'let fig = Main.__MAKKER_WEB_FIGS__["/viz/{slot}"], Makie = WGLMakie.Makie\n'
                     f"{check}\nend"
                 )
                 assert not verified.error, f"{slot}: {verified.error}"
@@ -438,8 +437,8 @@ async def test_native_plotters_render_to_png(tmp_path: Path, plot_display, surfa
                 # A Cairo poster does not exercise browser serialization. Render each
                 # plotter into two pages; the second takes the figure over.
                 checked = await julia.eval(
-                    "let B = WGLMakie.Bonito, V = JutulAgent.JutulAgentWebViews\n"
-                    f'    fig = Main.__JUTUL_WEB_FIGS__["/viz/{slot}"]\n'
+                    "let B = WGLMakie.Bonito, V = Makker.MakkerWebViews\n"
+                    f'    fig = Main.__MAKKER_WEB_FIGS__["/viz/{slot}"]\n'
                     "    pages = [B.Session(B.NoConnection(); asset_server = B.NoServer())\n"
                     "             for _ in 1:2]\n"
                     "    for page in pages\n"

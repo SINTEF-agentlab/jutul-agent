@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.agent.prompts import assemble_session_prompt
-from jutul_agent.simulators.base import SimulatorAdapter
+from makker.agent.prompts import assemble_session_prompt
+from makker.simulators.base import SimulatorAdapter
 
 
 def _adapter(tmp_path: Path) -> SimulatorAdapter:
@@ -62,8 +62,8 @@ def test_prompt_states_working_directory_when_given(tmp_path: Path) -> None:
 
 
 def test_session_prompt_resume_note(tmp_path) -> None:
-    from jutul_agent.agent.prompts import assemble_session_prompt
-    from jutul_agent.lab.fakes import make_fake_adapter
+    from makker.agent.prompts import assemble_session_prompt
+    from makker.lab.fakes import make_fake_adapter
 
     adapter = make_fake_adapter(tmp_path)
     fresh = assemble_session_prompt(adapter)

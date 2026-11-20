@@ -1,0 +1,52 @@
+name: Release bridge
+
+# Publishes the last release of the old package, jutul-agent (in
+# bridge/jutul-agent). It contains no product code: it depends on Makker,
+# installs it as its own uv tool, and starts it, which is how existing installs
+# move across on their next update.
+#
+# Run it by hand, from the release tag whose version it carries (the `pypi`
+# environment only accepts `v*` tags), and only after that tag's Makker release
+# is on PyPI: an install that updates to this before Makker exists would fail.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Build sdist and wheel
+        run: uv build bridge/jutul-agent --out-dir dist
+
+      - name: Verify the version matches the tag this runs from
+        run: |
+          built=$(basename dist/jutul_agent-*-py3-none-any.whl | cut -d- -f2)
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$built" != "$tag" ]; then
+            echo "The bridge is version '$built' but this runs from '$GITHUB_REF_NAME'." >&2
+            echo "Run it from the tag v$built." >&2
+            exit 1
+          fi
+
+      - name: Verify the Makker release it depends on is on PyPI
+        run: |
+          needs=$(python3 -c "import tomllib; print(tomllib.load(open('bridge/jutul-agent/pyproject.toml', 'rb'))['project']['dependencies'][0].split('>=')[1])")
+          if ! curl --fail --silent --output /dev/null "https://pypi.org/pypi/makker/${needs}/json"; then
+            echo "makker ${needs} is not on PyPI yet. Release Makker first." >&2
+            exit 1
+          fi
+
+      # No credentials passed: uv uses trusted publishing, as in release.yml.
+      - name: Publish to PyPI
+        run: uv publish dist/*

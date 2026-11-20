@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from unittest import mock
 
-from jutul_agent.julia.threads import (
+from makker.julia.threads import (
     HYPRE_THREADS_ENV_VAR,
     THREADS_ENV_VAR,
     blas_thread_env,
@@ -23,7 +23,7 @@ def _with_env(value: str | None):
 
 
 def _physical(n: int):
-    return mock.patch("jutul_agent.julia.threads._physical_cores", return_value=n)
+    return mock.patch("makker.julia.threads._physical_cores", return_value=n)
 
 
 def test_default_is_physical_cores_minus_one():

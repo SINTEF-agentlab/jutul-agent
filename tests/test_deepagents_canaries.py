@@ -1,4 +1,4 @@
-"""Canaries over the private upstream surface jutul-agent deliberately touches.
+"""Canaries over the private upstream surface Makker deliberately touches.
 
 A failure here means an upstream bump moved something we compose with. Some
 contacts degrade gracefully at runtime; others can break request construction.
@@ -11,7 +11,7 @@ from __future__ import annotations
 def test_summarization_engine_private_methods_still_exist() -> None:
     from deepagents.middleware.summarization import SummarizationMiddleware
 
-    from jutul_agent.agent.summarization import _ENGINE_METHODS, manual_compaction_available
+    from makker.agent.summarization import _ENGINE_METHODS, manual_compaction_available
 
     missing = [name for name in _ENGINE_METHODS if not hasattr(SummarizationMiddleware, name)]
     assert manual_compaction_available(), (
@@ -22,7 +22,7 @@ def test_summarization_engine_private_methods_still_exist() -> None:
 
 
 def test_langgraph_tool_call_writer_still_exposed() -> None:
-    from jutul_agent.agent import tools
+    from makker.agent import tools
 
     assert tools._tool_call_writer is not None, (
         "langgraph moved pregel._tools._tool_call_writer; live run_julia output "

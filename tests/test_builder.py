@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from jutul_agent.agent.builder import _set_profile_window, register_provider_profiles
-from jutul_agent.models import DEFAULT_MODEL, MODEL_ENV_VAR, resolve_model
+from makker.agent.builder import _set_profile_window, register_provider_profiles
+from makker.models import DEFAULT_MODEL, MODEL_ENV_VAR, resolve_model
 
 
 @pytest.fixture(autouse=True)
 def _provider_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
     """Supply capabilities explicitly while constructing real provider models."""
-    from jutul_agent import models
-    from jutul_agent.agent import builder
+    from makker import models
+    from makker.agent import builder
 
     profiles = {
         f"{provider}:reasoning-test-model": {
@@ -32,7 +32,7 @@ def _provider_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_set_profile_window_feeds_loaded_window(monkeypatch: pytest.MonkeyPatch) -> None:
     """The loaded window goes into the model profile, where the stock summarizer
     reads its trigger from."""
-    from jutul_agent import models
+    from makker import models
 
     class _Model:
         profile = None
@@ -81,11 +81,11 @@ def test_resolve_model_for_agent_handles_ollama_and_cloud(monkeypatch: pytest.Mo
     from deepagents.profiles.harness.harness_profiles import _harness_profile_for_model
     from langchain_core.language_models import BaseChatModel
 
-    from jutul_agent import ollama_client
-    from jutul_agent.agent.builder import _resolve_model_for_agent
+    from makker import ollama_client
+    from makker.agent.builder import _resolve_model_for_agent
 
     register_provider_profiles()
-    monkeypatch.delenv("JUTUL_AGENT_OLLAMA_NUM_CTX", raising=False)
+    monkeypatch.delenv("MAKKER_OLLAMA_NUM_CTX", raising=False)
     monkeypatch.setattr(ollama_client, "context_window", lambda name: 262144)
     monkeypatch.setattr(ollama_client, "thinks", lambda name: True)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -124,7 +124,7 @@ def test_resolve_model_for_agent_enables_openai_reasoning(
     from deepagents.profiles.harness.harness_profiles import _harness_profile_for_model
     from langchain_core.language_models import BaseChatModel
 
-    from jutul_agent.agent.builder import _resolve_model_for_agent
+    from makker.agent.builder import _resolve_model_for_agent
 
     register_provider_profiles()
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -155,7 +155,7 @@ def test_resolve_model_for_agent_enables_anthropic_thinking(
 ) -> None:
     from langchain_core.language_models import BaseChatModel
 
-    from jutul_agent.agent.builder import _resolve_model_for_agent
+    from makker.agent.builder import _resolve_model_for_agent
 
     register_provider_profiles()
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
@@ -182,7 +182,7 @@ def test_resolve_model_for_agent_bounds_cloud_requests(
     out but cancelling it. The timeout only reaches the client at construction,
     which is why this is asserted on the client and not on the model.
     """
-    from jutul_agent.agent.builder import _resolve_model_for_agent
+    from makker.agent.builder import _resolve_model_for_agent
 
     for env_var, spec in (
         ("OPENAI_API_KEY", "openai:reasoning-test-model"),
@@ -204,10 +204,10 @@ def test_resolve_model_for_agent_bounds_cloud_requests(
 def test_resolve_model_for_agent_builds_openrouter(monkeypatch: pytest.MonkeyPatch) -> None:
     from deepagents.profiles.harness.harness_profiles import _harness_profile_for_model
 
-    from jutul_agent import models
-    from jutul_agent.agent import builder
-    from jutul_agent.agent.builder import _resolve_model_for_agent
-    from jutul_agent.agent.openrouter import ChatOpenRouterWithToolImages
+    from makker import models
+    from makker.agent import builder
+    from makker.agent.builder import _resolve_model_for_agent
+    from makker.agent.openrouter import ChatOpenRouterWithToolImages
 
     register_provider_profiles()
     monkeypatch.setenv("OPENROUTER_API_KEY", "router-key")
@@ -249,7 +249,7 @@ def test_resolve_model_for_agent_degrades_without_credentials(
 ) -> None:
     """Reading the profile builds the model; with no key the spec string
     passes through unchanged instead of failing the agent build here."""
-    from jutul_agent.agent.builder import _resolve_model_for_agent
+    from makker.agent.builder import _resolve_model_for_agent
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
@@ -266,7 +266,7 @@ def test_resolve_model_for_agent_enables_gemini_thoughts(
 ) -> None:
     from langchain_core.language_models import BaseChatModel
 
-    from jutul_agent.agent.builder import _resolve_model_for_agent
+    from makker.agent.builder import _resolve_model_for_agent
 
     register_provider_profiles()
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
@@ -291,15 +291,15 @@ def test_agent_tool_surface_is_pinned(tmp_path) -> None:
     stop installing one without a line of our code changing. Pinning the set
     turns either into a failure here instead of a surprise in a live session.
     """
-    from jutul_agent.agent.approval import ApprovalMode, interrupt_on_for_mode
-    from jutul_agent.agent.builder import build_agent
-    from jutul_agent.lab.fakes import (
+    from makker.agent.approval import ApprovalMode, interrupt_on_for_mode
+    from makker.agent.builder import build_agent
+    from makker.lab.fakes import (
         FakeJulia,
         make_fake_adapter,
         make_scripted_model,
         scripted_final,
     )
-    from jutul_agent.session import Session
+    from makker.session import Session
 
     session = Session.create(
         julia=FakeJulia(), state_root=tmp_path, simulator=make_fake_adapter(tmp_path)
@@ -336,7 +336,7 @@ def test_agent_tool_surface_is_pinned(tmp_path) -> None:
         interrupt_on_for_mode(ApprovalMode.ASK)
     )
     # No tool reaches a person as its raw agent-facing id.
-    from jutul_agent.tool_labels import tool_label
+    from makker.tool_labels import tool_label
 
     assert [name for name in sorted(names) if tool_label(name) == name] == []
 
@@ -351,9 +351,9 @@ def test_agent_drops_delegation_without_a_subagent(
     keeps it, so the surface a real session sees has to be pinned against a
     profiled model rather than a scripted one.
     """
-    from jutul_agent.agent.builder import _resolve_model_for_agent, build_agent
-    from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
-    from jutul_agent.session import Session
+    from makker.agent.builder import _resolve_model_for_agent, build_agent
+    from makker.lab.fakes import FakeJulia, make_fake_adapter
+    from makker.session import Session
 
     register_provider_profiles()
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")

@@ -48,7 +48,7 @@ the write-guard automatically.
 ## Memory and skills
 
 Agent memory is real markdown under the workspace state dir
-(`$XDG_DATA_HOME/jutul-agent/workspaces/<hash>/memory/`); the agent reads and
+(`$XDG_DATA_HOME/makker/workspaces/<hash>/memory/`); the agent reads and
 edits it at that real path, the `remember` tool writes there directly, and the
 user can open the files. Ephemeral memory (used by the eval) is the same, in a
 real temp directory that is discarded afterward.

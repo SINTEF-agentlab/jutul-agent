@@ -1588,7 +1588,7 @@ wheels = [
 ]
 
 [[package]]
-name = "jutul-agent"
+name = "makker"
 source = { editable = "." }
 dependencies = [
     { name = "deepagents" },

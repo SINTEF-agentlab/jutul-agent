@@ -6,12 +6,12 @@ from pathlib import Path
 
 from deepagents.backends import CompositeBackend, LocalShellBackend
 
-from jutul_agent.agent.builder import build_backend, skill_sources
-from jutul_agent.agent.prompts import assemble_session_prompt
-from jutul_agent.lab.fakes import make_fake_adapter
-from jutul_agent.paths import SHARED_SKILLS_DIR
-from jutul_agent.simulators import registry
-from jutul_agent.simulators.base import SimulatorAdapter
+from makker.agent.builder import build_backend, skill_sources
+from makker.agent.prompts import assemble_session_prompt
+from makker.lab.fakes import make_fake_adapter
+from makker.paths import SHARED_SKILLS_DIR
+from makker.simulators import registry
+from makker.simulators.base import SimulatorAdapter
 
 
 def test_registry_lists_known_simulators() -> None:

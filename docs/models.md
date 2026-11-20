@@ -1,13 +1,13 @@
 # Models
 
-jutul-agent treats models as opaque `provider:model` strings resolved by
+Makker treats models as opaque `provider:model` strings resolved by
 LangChain's `init_chat_model`. Adding a new model is configuration, not a
 code change.
 
 ## Selection
 
 Precedence, highest first: the `--model` flag, the workspace config, the
-user config, `$JUTUL_AGENT_MODEL`, the built-in default.
+user config, `$MAKKER_MODEL`, the built-in default.
 
 In the web UI, `/model` opens the model picker with OpenAI, Anthropic, Google,
 OpenRouter, and Ollama entries. You can also type `/model provider:model` to
@@ -15,7 +15,7 @@ use another model ID. Switching mid-session keeps the conversation (see
 [context handling](context.md)).
 
 Providers beyond the bundled five work once their LangChain package is
-installed, and jutul-agent names the exact package when it is missing.
+installed, and Makker names the exact package when it is missing.
 API keys are prompted for on first use and stored in the user-global `.env`
 ([configuration](configuration.md)).
 
@@ -24,8 +24,8 @@ API keys are prompted for on first use and stored in the user-global `.env`
 OpenRouter is included. Save an API key and start the web UI:
 
 ```sh
-jutul-agent key openrouter
-jutul-agent
+makker key openrouter
+makker
 ```
 
 Then use `/model` to choose an OpenRouter model.
@@ -96,7 +96,7 @@ for you:
 - Context sizing: the agent's system prompt is large, so local models are
   loaded with a context window sized to what the model reports, capped by
   a memory budget (64K tokens by default, lowered with
-  `JUTUL_AGENT_OLLAMA_NUM_CTX` on tight hardware).
+  `MAKKER_OLLAMA_NUM_CTX` on tight hardware).
 - Malformed tool calls: a weaker model occasionally serializes a tool
   call with unparseable arguments (e.g. two parallel calls merged into
   one). Such a reply would otherwise end the turn silently; instead the
@@ -109,7 +109,7 @@ bench as the honest comparison.
 
 ## Models in the bench
 
-`jutul-agent eval` uses Inspect's model layer, so model ids there take the
+`makker eval` uses Inspect's model layer, so model ids there take the
 `provider/model` form, preserving any slashes or tags in the model ID, and
 one run can matrix several models. The agent under test runs against the
 bridge regardless of the target provider, which is how the same session

@@ -17,31 +17,31 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from jutul_agent.agent.capabilities import (
+from makker.agent.capabilities import (
     HOST_CONTEXT_CAPABILITY,
     Capability,
     host_context_capability,
     replace_host_context,
 )
-from jutul_agent.interfaces.server.app import create_app
-from jutul_agent.interfaces.server.manager import SessionManager
-from jutul_agent.lab.fakes import (
+from makker.interfaces.server.app import create_app
+from makker.interfaces.server.manager import SessionManager
+from makker.lab.fakes import (
     FakeJulia,
     ScriptedV3Agent,
     echo_agent,
     interrupt_agent,
     make_fake_adapter,
 )
-from jutul_agent.session import (
+from makker.session import (
     HOST_CONTEXT_FILENAME,
     Session,
     default_session_id,
     read_host_context,
 )
-from jutul_agent.session_host import SessionHost
-from jutul_agent.trace import schema
+from makker.session_host import SessionHost
+from makker.trace import schema
 
-# The payload is opaque to jutul-agent: whatever the embedding application calls
+# The payload is opaque to makker: whatever the embedding application calls
 # its own objects. These stand in for that without borrowing any one application's
 # vocabulary.
 SELECTION: dict[str, Any] = {

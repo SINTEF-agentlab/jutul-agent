@@ -14,11 +14,11 @@ errors, so a second pair of eyes, here a capable model, is what catches them.
 
 | Variable | Meaning |
 |---|---|
-| `JUTUL_AGENT_REVIEW` | Set to `1` to review each session automatically when it ends. |
-| `JUTUL_AGENT_REVIEW_MODEL` | Reviewer model (default `openai:gpt-5.4`). Judging plausibility is harder than the agent's own work, so this is usually a more capable model than the one driving the session. Use a `mini` model for quick local iteration. |
+| `MAKKER_REVIEW` | Set to `1` to review each session automatically when it ends. |
+| `MAKKER_REVIEW_MODEL` | Reviewer model (default `openai:gpt-5.4`). Judging plausibility is harder than the agent's own work, so this is usually a more capable model than the one driving the session. Use a `mini` model for quick local iteration. |
 
 ```bash
-JUTUL_AGENT_REVIEW=1 jutul-agent "set up and run a case"
+MAKKER_REVIEW=1 makker "set up and run a case"
 ```
 
 The whole session is reviewed once, when it ends (you quit the TUI, or the `--prompt`
@@ -45,20 +45,20 @@ and where they happen.
 ## The CLI
 
 ```bash
-jutul-agent review                  # curated issues, highest priority first (default)
-jutul-agent review log              # the raw per-review findings log
-jutul-agent review pending          # sessions on this machine not yet reviewed
-jutul-agent review mine [--limit N] # review pending sessions in bulk (API)
-jutul-agent review dashboard        # open the interactive dashboard (serves locally)
-jutul-agent review export           # write a shareable file (see Sharing)
-jutul-agent review curate           # fold the log into issues (re-run after changes)
-jutul-agent review resolve <id>     # mark an issue fixed (a later recurrence re-opens it)
-jutul-agent review dismiss <id>     # hide a not-worth-fixing issue
-jutul-agent review delete <id>      # drop an issue from the store entirely
-jutul-agent review prune --stale    # resolve every issue badged "possibly fixed"
-jutul-agent review fix <id>         # print a fix-this-issue brief for a coding agent
-jutul-agent review --json           # the curated store as JSON (for tooling)
-jutul-agent review <session-id>     # review a past session now, log and curate it
+makker review                  # curated issues, highest priority first (default)
+makker review log              # the raw per-review findings log
+makker review pending          # sessions on this machine not yet reviewed
+makker review mine [--limit N] # review pending sessions in bulk (API)
+makker review dashboard        # open the interactive dashboard (serves locally)
+makker review export           # write a shareable file (see Sharing)
+makker review curate           # fold the log into issues (re-run after changes)
+makker review resolve <id>     # mark an issue fixed (a later recurrence re-opens it)
+makker review dismiss <id>     # hide a not-worth-fixing issue
+makker review delete <id>      # drop an issue from the store entirely
+makker review prune --stale    # resolve every issue badged "possibly fixed"
+makker review fix <id>         # print a fix-this-issue brief for a coding agent
+makker review --json           # the curated store as JSON (for tooling)
+makker review <session-id>     # review a past session now, log and curate it
 ```
 
 Issues are ranked by a priority score (severity times recurrence, decayed by age), so
@@ -71,8 +71,8 @@ Sessions are stored per workspace, but mining is cross-cutting. `review pending`
 whatever already has a logged review (`--all` includes reviewed ones):
 
 ```bash
-jutul-agent review pending --json --limit 20   # the unreviewed queue, as JSON
-jutul-agent review mine --limit 10             # review the 10 most recent, via the API
+makker review pending --json --limit 20   # the unreviewed queue, as JSON
+makker review mine --limit 10             # review the 10 most recent, via the API
 ```
 
 `review <id>`, `review prompt <id>`, and `review ingest <id>` resolve a session id (or
@@ -87,14 +87,14 @@ result is easy to spot. The eval harness persists each sample's session under
 session. A task's expected answer is recorded in the trace, and after scoring the
 run's pass/fail verdict is linked back onto the session. A review is then given both,
 so it judges the result against ground truth, and the dashboard badges each eval
-review PASS or FAIL. Review does not run during `jutul-agent eval`, so the eval itself
+review PASS or FAIL. Review does not run during `makker eval`, so the eval itself
 costs nothing extra; you mine the runs afterwards.
 
 ## The dashboard
 
 ```bash
-jutul-agent review dashboard            # opens http://127.0.0.1:8765
-jutul-agent review dashboard --port N --no-open
+makker review dashboard            # opens http://127.0.0.1:8765
+makker review dashboard --port N --no-open
 ```
 
 ![The review dashboard](images/review-dashboard.png)
@@ -125,9 +125,9 @@ target), and transcript pointers, ready to paste into a coding agent. The
 ## Sharing
 
 ```bash
-jutul-agent review export                 # one self-contained HTML file (transcripts embedded)
-jutul-agent review export --format md     # a ranked Markdown digest of the open issues
-jutul-agent review export -o report.html  # choose the path
+makker review export                 # one self-contained HTML file (transcripts embedded)
+makker review export --format md     # a ranked Markdown digest of the open issues
+makker review export -o report.html  # choose the path
 ```
 
 `export` writes an offline, private artifact. The HTML form is a single file with
@@ -140,8 +140,8 @@ The expensive part is reading the session. You can hand that to a coding agent y
 already pay for (Claude Code and the like) instead of the API:
 
 ```bash
-jutul-agent review prompt <session-id> > req.md            # critic prompt + transcript
-jutul-agent review ingest <session-id> --from findings.json   # log + curate it
+makker review prompt <session-id> > req.md            # critic prompt + transcript
+makker review ingest <session-id> --from findings.json   # log + curate it
 ```
 
 `ingest` logs the findings (tagged `coding-agent`) and curates them like any other
@@ -169,7 +169,7 @@ optional free-form detail, and a fix target that says where the fix belongs:
 - `skill`: clarify or extend a skill so the agent avoids the mistake.
 - `prompt`: adjust the system prompt.
 - `eval`: add the session as a regression case to the eval suite.
-- `code`: a jutul-agent change.
+- `code`: a Makker change.
 
 The category and fix-target labels are a guide, not a fixed checklist; the reviewer
 uses "other" and explains in the detail field when a finding does not fit. The fix

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from jutul_agent.lab.fakes import make_event
-from jutul_agent.transcript import render_markdown
+from makker.lab.fakes import make_event
+from makker.transcript import render_markdown
 
 
 def test_render_full_turn(snapshot) -> None:

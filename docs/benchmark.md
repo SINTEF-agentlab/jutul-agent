@@ -1,6 +1,6 @@
 # Benchmark results
 
-Snapshot generated 2026-06-24 from runs 2026-06-23T23-07-15 … 2026-06-24T01-40-50 (jutul-agent 06251868c). Every sample runs the real agent end to end in a fresh workspace and is graded on the session trace as well as the answer. See [how evaluation works](evaluation.md). Each model ran the suite **3 times**, and cells aggregate across runs, so a fraction like 2/3 means the sample passed two of three runs.
+Snapshot generated 2026-06-24 from runs 2026-06-23T23-07-15 … 2026-06-24T01-40-50 (Makker 06251868c). Every sample runs the real agent end to end in a fresh workspace and is graded on the session trace as well as the answer. See [how evaluation works](evaluation.md). Each model ran the suite **3 times**, and cells aggregate across runs, so a fraction like 2/3 means the sample passed two of three runs.
 
 ## Overview
 
@@ -229,8 +229,8 @@ A sample passes only when every scorer passes: the answer checks *and* the trace
 Composite tasks are noisy at a single epoch, so each model runs the suite a few times and the cells aggregate the runs. Regenerate this page with:
 
 ```sh
-uv run jutul-agent eval <suite> --model <provider/model> --epochs 3
-uv run python -m jutul_agent.eval.report <log-prefix> -o docs/benchmark.md
+uv run makker eval <suite> --model <provider/model> --epochs 3
+uv run python -m makker.eval.report <log-prefix> -o docs/benchmark.md
 ```
 
 To add a model without re-running the others, merge the committed snapshot instead: pass `--records docs/benchmark-records.jsonl` and write it back with `--json docs/benchmark-records.jsonl`.

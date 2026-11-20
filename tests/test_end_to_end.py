@@ -6,17 +6,17 @@ from pathlib import Path
 
 from langgraph.checkpoint.memory import MemorySaver
 
-from jutul_agent.agent.builder import build_agent
-from jutul_agent.agent.turns import TurnRunner, TurnTextDelta
-from jutul_agent.lab.fakes import (
+from makker.agent.builder import build_agent
+from makker.agent.turns import TurnRunner, TurnTextDelta
+from makker.lab.fakes import (
     FakeJulia,
     make_fake_adapter,
     make_scripted_model,
     scripted_final,
     scripted_tool_call,
 )
-from jutul_agent.session import Session
-from jutul_agent.trace import TraceLog
+from makker.session import Session
+from makker.trace import TraceLog
 
 
 async def _run_turn(agent, session: Session, prompt: str):

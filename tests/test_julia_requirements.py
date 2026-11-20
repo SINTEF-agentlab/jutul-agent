@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.julia import requirements
-from jutul_agent.juliakernel import JuliaStartupError
+from makker.julia import requirements
+from makker.juliakernel import JuliaStartupError
 
 
 class _Proc:
@@ -83,7 +83,7 @@ def test_startup_error_surfaces_julia_stderr() -> None:
     err = JuliaStartupError(
         "the Julia process exited before responding",
         julia_executable="julia",
-        julia_project=Path("/tmp/ws/.jutul-agent/julia-env"),
+        julia_project=Path("/tmp/ws/.makker/julia-env"),
         stderr_tail="ERROR: ArgumentError: Package Jutul not found in current path.",
         log_file=Path("/tmp/ws/julia-startup.log"),
     )

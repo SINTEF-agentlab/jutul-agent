@@ -18,8 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from jutul_agent.interfaces.server import update_helper, updates
-from jutul_agent.interfaces.server.updates import RESTARTED_ENV_VAR, Updater
+from makker.interfaces.server import update_helper, updates
+from makker.interfaces.server.updates import RESTARTED_ENV_VAR, Updater
 
 # Stands in for each command: notes how it ran, says so, and exits with the code given.
 FAKE = textwrap.dedent(
@@ -30,7 +30,7 @@ FAKE = textwrap.dedent(
         "name": name,
         "args": sys.argv[4:],
         "cwd": os.getcwd(),
-        "restarted": os.environ.get("JUTUL_AGENT_RESTARTED_AFTER_UPDATE"),
+        "restarted": os.environ.get("MAKKER_RESTARTED_AFTER_UPDATE"),
     }
     with open(record, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\\n")
@@ -43,7 +43,7 @@ FAKE = textwrap.dedent(
 SERVER = textwrap.dedent(
     """
     import json, os, sys, time
-    from jutul_agent.interfaces.server.updates import start_helper
+    from makker.interfaces.server.updates import start_helper
     plan, record = json.loads(sys.argv[1]), sys.argv[2]
     plan["wait_for"] = [os.getpid()]
     start_helper(plan)
@@ -76,13 +76,13 @@ def plan(tmp_path):
         "cwd": str(workspace),
         "steps": [
             {
-                "argv": [*command("uv"), "tool", "upgrade", "jutul-agent"],
-                "shown": "uv tool upgrade jutul-agent",
-                "error": "jutul-agent could not be upgraded.",
+                "argv": [*command("uv"), "tool", "upgrade", "makker"],
+                "shown": "uv tool upgrade makker",
+                "error": "Makker could not be upgraded.",
             },
             {
                 "argv": [*command("env"), "upgrade", "--env-only"],
-                "shown": "jutul-agent upgrade --env-only",
+                "shown": "makker upgrade --env-only",
                 "error": "The Julia environment could not be updated.",
             },
         ],
@@ -123,7 +123,7 @@ def test_the_helper_updates_after_the_server_exits_then_restarts_it(tmp_path, pl
     # Nothing ran until the server had gone, then each step in turn.
     assert [entry["name"] for entry in entries] == ["server exits", "uv", "env", "server"]
     _, upgrade, env, restarted = entries
-    assert upgrade["args"] == ["tool", "upgrade", "jutul-agent"]
+    assert upgrade["args"] == ["tool", "upgrade", "makker"]
     assert os.path.samefile(env["cwd"], plan["cwd"]) and env["restarted"] is None
     # Started again as it was, where it was, knowing it follows an update.
     assert restarted["args"] == ["--port", "8742"]
@@ -133,11 +133,11 @@ def test_the_helper_updates_after_the_server_exits_then_restarts_it(tmp_path, pl
     assert json.loads(Path(plan["outcome"]).read_text("utf-8")) == {"state": "done", "error": None}
     log = _log(plan)
     shown = [
-        "$ uv tool upgrade jutul-agent",
+        "$ uv tool upgrade makker",
         "uv ran",
-        "$ jutul-agent upgrade --env-only",
+        "$ makker upgrade --env-only",
         "env ran",
-        "Starting jutul-agent again...",
+        "Starting Makker again...",
     ]
     assert [line for line in log if line in shown] == shown
 
@@ -150,20 +150,20 @@ def test_a_failed_upgrade_still_restarts_and_is_reported(tmp_path, plan) -> None
     entries = _entries(tmp_path / "record", until="server")
     # The environment is left alone, and the old version starts again.
     assert [entry["name"] for entry in entries] == ["uv", "server"]
-    assert "jutul-agent could not be upgraded." in _log(plan)
+    assert "Makker could not be upgraded." in _log(plan)
 
     # The restarted server reads what the helper left.
     restarted = Updater(tmp_path, local=True)
     restarted.report_last_update()
     job = restarted.status()["job"]
-    assert job["state"] == "failed" and job["error"] == "jutul-agent could not be upgraded."
+    assert job["state"] == "failed" and job["error"] == "Makker could not be upgraded."
     assert "uv ran" in job["lines"]
 
 
 def test_a_relaunch_that_cannot_start_is_said(plan) -> None:
     plan["relaunch"]["argv"] = [str(Path(plan["cwd"]) / "missing-program")]
     assert update_helper.finish_update(plan) is None
-    assert any(line.startswith("Could not start jutul-agent again") for line in _log(plan))
+    assert any(line.startswith("Could not start Makker again") for line in _log(plan))
 
 
 @pytest.mark.parametrize(
@@ -175,7 +175,7 @@ def test_a_relaunch_that_cannot_start_is_said(plan) -> None:
         (1, True),
     ],
 )
-def test_the_window_stays_open_only_when_jutul_agent_fails(
+def test_the_window_stays_open_only_when_makker_fails(
     tmp_path, monkeypatch, capsys, code, stays
 ) -> None:
     plan_file = tmp_path / "plan.json"
@@ -204,7 +204,7 @@ def test_waiting_for_processes() -> None:
 
 
 def test_a_file_nothing_runs_is_free(tmp_path) -> None:
-    unused = tmp_path / "jutul-agent.exe"
+    unused = tmp_path / "makker.exe"
     unused.write_bytes(b"MZ")
     assert update_helper.wait_until_free(str(unused), time.monotonic() + 5)
     assert update_helper.wait_until_free(str(tmp_path / "missing.exe"), time.monotonic() + 5)

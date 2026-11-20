@@ -9,5 +9,5 @@
 
 # Local artifacts inside src that the image must not inherit.
 src/**/__pycache__
-src/jutul_agent/**/Manifest.toml
-src/jutul_agent/simulators/*/julia_env/JutulAgent/
+src/makker/**/Manifest.toml
+src/makker/simulators/*/julia_env/Makker/

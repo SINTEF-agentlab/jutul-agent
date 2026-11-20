@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from jutul_agent.agent import windows_paths
+from makker.agent import windows_paths
 
 
 def _fake_validate_path(path: str, *, allowed_prefixes=None) -> str:

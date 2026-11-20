@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.errors import GraphInterrupt
 
-from jutul_agent.trace import TraceLog, TraceRecorder
+from makker.trace import TraceLog, TraceRecorder
 
 
 def _request(tool_call_id: str = "call-1", name: str = "echo") -> object:

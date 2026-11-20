@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from jutul_agent.credentials import (
+from makker.credentials import (
     key_providers,
     key_status,
     load_user_credentials,
@@ -18,12 +18,12 @@ from jutul_agent.credentials import (
     store_credential_for_provider,
     user_env_path,
 )
-from jutul_agent.paths import state_home
+from makker.paths import state_home
 
 # The autouse ``_reset_workspace_overrides`` fixture isolates state_home per
 # test, so ``user_env_path()`` points at a fresh tmp dir.
 
-_VAR = "JUTUL_AGENT_TEST_KEY"
+_VAR = "MAKKER_TEST_KEY"
 
 
 @pytest.fixture(autouse=True)
@@ -74,14 +74,14 @@ def test_missing_credential_present_absent_and_local(
 def test_load_user_credentials_does_not_override_existing(monkeypatch: pytest.MonkeyPatch) -> None:
     path = user_env_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f'{_VAR}="from-file"\nJUTUL_AGENT_TEST_OTHER="loaded"\n', encoding="utf-8")
+    path.write_text(f'{_VAR}="from-file"\nMAKKER_TEST_OTHER="loaded"\n', encoding="utf-8")
 
     monkeypatch.setenv(_VAR, "from-shell")
     load_user_credentials()
     # Shell value wins; a var only in the file is loaded.
     assert os.environ[_VAR] == "from-shell"
-    assert os.environ.get("JUTUL_AGENT_TEST_OTHER") == "loaded"
-    os.environ.pop("JUTUL_AGENT_TEST_OTHER", None)
+    assert os.environ.get("MAKKER_TEST_OTHER") == "loaded"
+    os.environ.pop("MAKKER_TEST_OTHER", None)
 
 
 @pytest.fixture

@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jutul_agent.agent.plot_julia import make_plot_julia_tool, make_recapture_tool
-from jutul_agent.julia.session import EvalResult
-from jutul_agent.lab.fakes import FakeJulia, make_fake_adapter
-from jutul_agent.session import Session
-from jutul_agent.trace import TraceLog
+from makker.agent.plot_julia import make_plot_julia_tool, make_recapture_tool
+from makker.julia.session import EvalResult
+from makker.lab.fakes import FakeJulia, make_fake_adapter
+from makker.session import Session
+from makker.trace import TraceLog
 
 
 def _contains_key(obj: Any, key: str) -> bool:
@@ -86,9 +86,9 @@ def _make_plot_eval_handler(
             if gl_ok:
                 return EvalResult(output="")
             return EvalResult(output="", error="libGL error: failed to load driver")
-        if stripped == "using JutulAgent":  # loads the precompiled capture helpers
+        if stripped == "using Makker":  # loads the precompiled capture helpers
             return EvalResult(output="")
-        if "JutulAgentPlots.capture" in code:
+        if "MakkerPlots.capture" in code:
             if not accept_figure:
                 return EvalResult(
                     output="",
@@ -99,7 +99,7 @@ def _make_plot_eval_handler(
                 written.append(path)
                 _write_artifact(path)
             return EvalResult(output="")
-        if "JutulAgentPlots.recapture" in code:
+        if "MakkerPlots.recapture" in code:
             path = _extract_path(code)
             if path:
                 written.append(path)
@@ -272,7 +272,7 @@ async def test_plot_julia_opens_window_when_session_can(tmp_path: Path) -> None:
     )
 
     assert "opened window" in result
-    render = next(c for c in seen if "JutulAgentPlots.capture" in c)
+    render = next(c for c in seen if "MakkerPlots.capture" in c)
     assert "GLMakie.activate!(visible = true)" in render
     assert "open_window = true" in render
     assert 'window_key = raw"reservoir"' in render
@@ -289,7 +289,7 @@ async def test_plot_julia_window_false_suppresses(tmp_path: Path) -> None:
         tool, {"code": "plot_reservoir(model)", "window": False}, tool_call_id="call_no_win"
     )
     assert "opened window" not in result
-    render = next(c for c in seen if "JutulAgentPlots.capture" in c)
+    render = next(c for c in seen if "MakkerPlots.capture" in c)
     assert "open_window = false" in render
 
 
@@ -303,7 +303,7 @@ async def test_plot_julia_no_window_when_headless(tmp_path: Path) -> None:
     tool = make_plot_julia_tool(plot_session)
     result = await _plot_call(tool, {"code": "plot_reservoir(model)"}, tool_call_id="call_headless")
     assert "opened window" not in result
-    render = next(c for c in seen if "JutulAgentPlots.capture" in c)
+    render = next(c for c in seen if "MakkerPlots.capture" in c)
     assert "GLMakie.activate!(visible = false)" in render
 
 
@@ -313,7 +313,7 @@ async def test_recapture_returns_image_by_default(tmp_path: Path) -> None:
     julia = FakeJulia(eval_handler=_make_plot_eval_handler(written, seen=seen))
     plot_session = _session(tmp_path, julia, open_windows=True)
 
-    from jutul_agent.agent.plot_julia import make_recapture_tool
+    from makker.agent.plot_julia import make_recapture_tool
 
     tool = make_recapture_tool(plot_session)
     msg = await tool.ainvoke(
@@ -325,14 +325,14 @@ async def test_recapture_returns_image_by_default(tmp_path: Path) -> None:
     assert "image" in [b.get("type") for b in content]
     assert written and "recapture-" in written[0] and written[0].endswith(".png")
     # It re-renders a stored window figure, not arbitrary code.
-    assert any("JutulAgentPlots.recapture" in c for c in seen)
+    assert any("MakkerPlots.recapture" in c for c in seen)
 
 
 async def test_recapture_targets_window_slot(tmp_path: Path) -> None:
     seen: list[str] = []
     julia = FakeJulia(eval_handler=_make_plot_eval_handler([], seen=seen))
     plot_session = _session(tmp_path, julia, open_windows=True)
-    from jutul_agent.agent.plot_julia import make_recapture_tool
+    from makker.agent.plot_julia import make_recapture_tool
 
     tool = make_recapture_tool(plot_session)
     await tool.ainvoke(
@@ -343,7 +343,7 @@ async def test_recapture_targets_window_slot(tmp_path: Path) -> None:
             "args": {"slot": "reservoir", "view": False},
         }
     )
-    call = next(c for c in seen if "JutulAgentPlots.recapture" in c)
+    call = next(c for c in seen if "MakkerPlots.recapture" in c)
     assert 'key = raw"reservoir"' in call
 
 
@@ -358,13 +358,13 @@ async def test_recapture_never_resizes_the_window_it_is_reading(tmp_path: Path) 
     seen: list[str] = []
     julia = FakeJulia(eval_handler=_make_plot_eval_handler([], seen=seen))
     plot_session = _session(tmp_path, julia, open_windows=True)
-    from jutul_agent.agent.plot_julia import make_recapture_tool
+    from makker.agent.plot_julia import make_recapture_tool
 
     tool = make_recapture_tool(plot_session)
     await tool.ainvoke(
         {"type": "tool_call", "name": "recapture_plot", "id": "c_sz", "args": {"view": False}}
     )
-    call = next(c for c in seen if "JutulAgentPlots.recapture" in c)
+    call = next(c for c in seen if "MakkerPlots.recapture" in c)
     assert "size =" not in call  # the path itself can carry the word
 
 
@@ -372,7 +372,7 @@ async def test_close_plots(tmp_path: Path) -> None:
     seen: list[str] = []
     julia = FakeJulia(eval_handler=_make_plot_eval_handler([], seen=seen))
     plot_session = _session(tmp_path, julia, open_windows=True)
-    from jutul_agent.agent.plot_julia import make_close_plots_tool
+    from makker.agent.plot_julia import make_close_plots_tool
 
     tool = make_close_plots_tool(plot_session)
     one = await tool.ainvoke(
@@ -386,13 +386,13 @@ async def test_close_plots(tmp_path: Path) -> None:
 
 async def test_recapture_no_window_errors(tmp_path: Path) -> None:
     async def fake_eval(code: str) -> EvalResult:
-        if "JutulAgentPlots.recapture" in code:
+        if "MakkerPlots.recapture" in code:
             return EvalResult(output="", error="recapture: no interactive window is open.")
         return EvalResult(output="")
 
     julia = FakeJulia(eval_handler=fake_eval)
     plot_session = _session(tmp_path, julia)
-    from jutul_agent.agent.plot_julia import make_recapture_tool
+    from makker.agent.plot_julia import make_recapture_tool
 
     tool = make_recapture_tool(plot_session)
     msg = await tool.ainvoke(
@@ -404,8 +404,8 @@ async def test_recapture_no_window_errors(tmp_path: Path) -> None:
 
 
 def test_all_envs_include_glmakie_and_graphmakie() -> None:
-    from jutul_agent.simulators.battmo import BATTMO
-    from jutul_agent.simulators.jutuldarcy import JUTULDARCY
+    from makker.simulators.battmo import BATTMO
+    from makker.simulators.jutuldarcy import JUTULDARCY
 
     for adapter in (BATTMO, JUTULDARCY):
         text = (adapter.julia_env_template_path / "Project.toml").read_text(encoding="utf-8")

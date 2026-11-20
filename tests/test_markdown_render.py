@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from jutul_agent.agent.tool_output import READ_FILE_GUTTER
-from jutul_agent.transcript.markdown_html import (
+from makker.agent.tool_output import READ_FILE_GUTTER
+from makker.transcript.markdown_html import (
     looks_like_markdown,
     render_markdown_html,
     strip_line_number_prefixes,

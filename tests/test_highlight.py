@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from jutul_agent.transcript.highlight import (
+from makker.transcript.highlight import (
     highlight_code,
     highlight_code_blocks_in_html,
     infer_tool_code_language,

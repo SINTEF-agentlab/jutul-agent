@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from jutul_agent.juliakernel.text import render_terminal_output
+from makker.juliakernel.text import render_terminal_output
 
 
 def test_render_terminal_output_passes_plain_text_through() -> None:

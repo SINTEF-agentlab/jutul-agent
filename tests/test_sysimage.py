@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent import display as sysimage_display
-from jutul_agent import sysimage
-from jutul_agent.sysimage import (
+from makker import display as sysimage_display
+from makker import sysimage
+from makker.sysimage import (
     CURRENT,
     DIVERGENT,
     INCOMPLETE,
@@ -62,9 +62,9 @@ def make_package(root: Path, body: str) -> Path:
 def build_workspace(tmp_path: Path, *, source: str = "original") -> tuple[Path, Path]:
     """A workspace whose env resolves one registry package and one path package."""
     ws = tmp_path / "ws"
-    env = ws / ".jutul-agent" / "julia-env"
-    make_package(env / "JutulAgent", source)
-    write_manifest(env, versions={"JutulDarcy": "0.2.44"}, paths={"JutulAgent": "JutulAgent"})
+    env = ws / ".makker" / "julia-env"
+    make_package(env / "Makker", source)
+    write_manifest(env, versions={"JutulDarcy": "0.2.44"}, paths={"Makker": "Makker"})
     return ws, env
 
 
@@ -84,17 +84,17 @@ def test_env_state_splits_registry_versions_from_path_sources(tmp_path: Path) ->
     state = read_env_state(env)
     assert state.versions == {"JutulDarcy": "0.2.44"}
     # A path package is hashed, not versioned: its source changes without a release.
-    assert set(state.path_packages) == {"JutulAgent"}
-    assert len(state.path_packages["JutulAgent"]) == 64
+    assert set(state.path_packages) == {"Makker"}
+    assert len(state.path_packages["Makker"]) == 64
 
 
 def test_env_state_resolves_a_relative_path_against_the_manifest(tmp_path: Path) -> None:
     _ws, env = build_workspace(tmp_path)
-    relative = read_env_state(env).path_packages["JutulAgent"]
+    relative = read_env_state(env).path_packages["Makker"]
     # The same package named absolutely has to hash identically, or the guard
     # would fire on the two ways Julia writes the same dependency.
-    write_manifest(env, versions={}, paths={"JutulAgent": str(env / "JutulAgent")})
-    assert read_env_state(env).path_packages["JutulAgent"] == relative
+    write_manifest(env, versions={}, paths={"Makker": str(env / "Makker")})
+    assert read_env_state(env).path_packages["Makker"] == relative
 
 
 def test_env_state_of_an_unresolved_env_is_empty(tmp_path: Path) -> None:
@@ -160,7 +160,7 @@ def test_a_changed_package_version_diverges(tmp_path: Path) -> None:
     ws, env = build_workspace(tmp_path)
     install_image(ws)
     write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
-    write_manifest(env, versions={"JutulDarcy": "0.2.45"}, paths={"JutulAgent": "JutulAgent"})
+    write_manifest(env, versions={"JutulDarcy": "0.2.45"}, paths={"Makker": "Makker"})
 
     decision = decide(ws, env, enabled=True)
     assert decision.status == DIVERGENT
@@ -174,12 +174,12 @@ def test_an_edited_path_package_diverges(tmp_path: Path) -> None:
     ws, env = build_workspace(tmp_path)
     install_image(ws)
     write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
-    (env / "JutulAgent" / "Demo.jl").write_text("edited", encoding="utf-8")
+    (env / "Makker" / "Demo.jl").write_text("edited", encoding="utf-8")
 
     decision = decide(ws, env, enabled=True)
     assert decision.status == DIVERGENT
     assert "edited since the image was built" in decision.reason
-    assert "JutulAgent" in decision.reason
+    assert "Makker" in decision.reason
 
 
 def test_removed_or_retracked_package_diverges(tmp_path: Path) -> None:
@@ -188,10 +188,10 @@ def test_removed_or_retracked_package_diverges(tmp_path: Path) -> None:
     write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
 
     write_manifest(env, versions={"JutulDarcy": "0.2.44"}, paths={})
-    assert "JutulAgent" in decide(ws, env, enabled=True).reason
+    assert "Makker" in decide(ws, env, enabled=True).reason
     assert decide(ws, env, enabled=True).status == DIVERGENT
 
-    write_manifest(env, versions={"JutulDarcy": "0.2.44", "JutulAgent": "0.1.0"}, paths={})
+    write_manifest(env, versions={"JutulDarcy": "0.2.44", "Makker": "0.1.0"}, paths={})
     decision = decide(ws, env, enabled=True)
     assert decision.status == DIVERGENT
     assert "source tracking changed" in decision.reason
@@ -274,7 +274,7 @@ def test_a_package_added_after_the_build_is_a_note_not_a_block(tmp_path: Path) -
     write_manifest(
         env,
         versions={"JutulDarcy": "0.2.44", "CSV": "0.10.15"},
-        paths={"JutulAgent": "JutulAgent"},
+        paths={"Makker": "Makker"},
     )
 
     decision = decide(ws, env, enabled=True)
@@ -320,17 +320,17 @@ def test_an_older_build_recipe_diverges(tmp_path: Path) -> None:
     assert decide(ws, env, enabled=True).status == DIVERGENT
 
 
-def test_jutul_agent_version_alone_does_not_diverge(tmp_path: Path) -> None:
+def test_makker_version_alone_does_not_diverge(tmp_path: Path) -> None:
     """A commit that leaves the Julia side alone must not invalidate the image.
 
-    What has to agree with the image is the Julia jutul-agent ships, and that is
+    What has to agree with the image is the Julia Makker ships, and that is
     already covered as a path package once it is copied into the env.
     """
     ws, env = build_workspace(tmp_path)
     install_image(ws)
     write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
     stamp = json.loads(sysimage.stamp_path(ws).read_text(encoding="utf-8"))
-    stamp["jutul_agent_version"] = "0.0.1.dev1+gdeadbee"
+    stamp["makker_version"] = "0.0.1.dev1+gdeadbee"
     sysimage.stamp_path(ws).write_text(json.dumps(stamp), encoding="utf-8")
 
     assert decide(ws, env, enabled=True).status == CURRENT
@@ -342,10 +342,10 @@ def test_jutul_agent_version_alone_does_not_diverge(tmp_path: Path) -> None:
 
 def test_the_refusal_names_the_cause_and_both_ways_out() -> None:
     decision = Decision(status=DIVERGENT, reason="  edited: CapabilityPackage")
-    message = refusal(decision, command="jutul-agent tui")
+    message = refusal(decision, command="makker tui")
     assert "CapabilityPackage" in message
-    assert "jutul-agent sysimage build" in message
-    assert "jutul-agent tui --no-sysimage" in message
+    assert "makker sysimage build" in message
+    assert "makker tui --no-sysimage" in message
 
 
 def test_a_refusal_rebuilding_cannot_fix_says_so_instead() -> None:
@@ -353,7 +353,7 @@ def test_a_refusal_rebuilding_cannot_fix_says_so_instead() -> None:
     message = refusal(decision)
     assert "Install Xvfb" in message
     # Telling someone to spend 20 minutes rebuilding would not help them here.
-    assert "jutul-agent sysimage build" not in message
+    assert "makker sysimage build" not in message
     assert "--no-sysimage" in message
 
 
@@ -376,7 +376,7 @@ def test_a_baked_glmakie_without_a_display_refuses_rather_than_aborting(
 ) -> None:
     """Julia dies with 'no exception handler available' otherwise, which explains nothing."""
     ws, env = build_workspace(tmp_path)
-    write_manifest(env, versions={"GLFW": "3.4.3"}, paths={"JutulAgent": "JutulAgent"})
+    write_manifest(env, versions={"GLFW": "3.4.3"}, paths={"Makker": "Makker"})
     install_image(ws)
     write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
 
@@ -401,7 +401,7 @@ def test_an_image_without_opengl_in_it_is_fine_headless(tmp_path: Path, monkeypa
 
 def test_a_virtual_display_is_enough(tmp_path: Path, monkeypatch) -> None:
     ws, env = build_workspace(tmp_path)
-    write_manifest(env, versions={"GLFW": "3.4.3"}, paths={"JutulAgent": "JutulAgent"})
+    write_manifest(env, versions={"GLFW": "3.4.3"}, paths={"Makker": "Makker"})
     install_image(ws)
     write_stamp(ws, env, cpu_target="native", build_seconds=1.0, julia=JULIA)
 

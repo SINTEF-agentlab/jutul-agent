@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.lab.fakes import FakeJulia, echo_agent, interrupt_agent, make_fake_adapter
-from jutul_agent.session import Session
-from jutul_agent.session_host import SessionHost
+from makker.lab.fakes import FakeJulia, echo_agent, interrupt_agent, make_fake_adapter
+from makker.session import Session
+from makker.session_host import SessionHost
 
 
 def _host(agent, tmp_path: Path, *, approval_mode: str = "ask") -> SessionHost:
@@ -61,7 +61,7 @@ async def test_maybe_title_upgrades_once_after_the_first_turn(
         assert "User:" in conversation
         return "A Fine Title"
 
-    monkeypatch.setattr("jutul_agent.agent.titling.generate_session_title", fake_title)
+    monkeypatch.setattr("makker.agent.titling.generate_session_title", fake_title)
     host = _host(echo_agent(), tmp_path)
     await host.runner.run_prompt("hello")  # records the first user message
 

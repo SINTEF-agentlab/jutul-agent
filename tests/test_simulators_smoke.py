@@ -1,6 +1,6 @@
 """Per-simulator smoke test: each env instantiates and its package loads.
 
-This is the cheapest signal that an upstream change broke jutul-agent: if a
+This is the cheapest signal that an upstream change broke makker: if a
 simulator (or Jutul underneath it) ships a breaking release, ``using <Sim>``
 fails to precompile/load and this test goes red. It runs in the dedicated
 ``Simulators`` workflow (Linux matrix, every simulator on every PR), not in
@@ -18,9 +18,9 @@ import shutil
 
 import pytest
 
-from jutul_agent.juliakernel import JuliaKernel, KernelConfig
-from jutul_agent.simulators import registry
-from jutul_agent.simulators.base import SimulatorAdapter
+from makker.juliakernel import JuliaKernel, KernelConfig
+from makker.simulators import registry
+from makker.simulators.base import SimulatorAdapter
 
 pytestmark = pytest.mark.integration
 
@@ -59,7 +59,7 @@ def warm_display():
     ``display.managed_display``; the test does the same. Yields ``None`` when a
     real display is already present.
     """
-    from jutul_agent.display import has_display, managed_display, xvfb_available
+    from makker.display import has_display, managed_display, xvfb_available
 
     if has_display():
         yield None

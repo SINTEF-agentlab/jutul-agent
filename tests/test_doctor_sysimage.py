@@ -1,4 +1,4 @@
-"""Tests for `jutul-agent doctor`'s system-image line.
+"""Tests for `makker doctor`'s system-image line.
 
 The check is deliberately quiet for the workspaces that never build an image, so
 the tests pin both halves: silence when there is nothing to say, and a FAIL that
@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent import sysimage
-from jutul_agent.interfaces.cli import doctor
-from jutul_agent.interfaces.cli.doctor import FAIL, PASS, _check_sysimage, _Report
-from jutul_agent.workspace import WorkspaceConfig, write_workspace_config
+from makker import sysimage
+from makker.interfaces.cli import doctor
+from makker.interfaces.cli.doctor import FAIL, PASS, _check_sysimage, _Report
+from makker.workspace import WorkspaceConfig, write_workspace_config
 
 
 def _install_image(ws: Path) -> Path:
@@ -52,7 +52,7 @@ def test_a_folder_that_wants_a_missing_image_fails_with_the_reason(
     assert report.worst == FAIL
     out = capsys.readouterr().out
     assert "no system image has been built" in out
-    assert "jutul-agent sysimage build" in out
+    assert "makker sysimage build" in out
 
 
 def test_a_usable_image_reports_when_it_was_built(

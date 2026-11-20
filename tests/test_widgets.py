@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from jutul_agent.interfaces.tui.tool_display import display_tool_body
-from jutul_agent.interfaces.tui.widgets import (
+from makker.interfaces.tui.tool_display import display_tool_body
+from makker.interfaces.tui.widgets import (
     ToolBlock,
     _render_request_preview,
     _render_tool_body,
@@ -156,7 +156,7 @@ async def test_tool_block_coalesces_streamed_renders() -> None:
 
 
 async def test_reasoning_block_streams_tail_then_collapses() -> None:
-    from jutul_agent.interfaces.tui.widgets import ReasoningBlock
+    from makker.interfaces.tui.widgets import ReasoningBlock
 
     block = ReasoningBlock()
 

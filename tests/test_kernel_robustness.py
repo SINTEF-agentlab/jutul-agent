@@ -6,14 +6,14 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-from jutul_agent.juliakernel import JuliaKernel, KernelConfig
-from jutul_agent.juliakernel.connection import (
+from makker.juliakernel import JuliaKernel, KernelConfig
+from makker.juliakernel.connection import (
     EVAL_BUFFER_HEAD,
     EVAL_BUFFER_TAIL,
     KernelConnection,
     PendingEval,
 )
-from jutul_agent.lab.fakes import make_fake_adapter
+from makker.lab.fakes import make_fake_adapter
 
 
 async def test_eval_output_buffer_keeps_head_and_tail() -> None:
@@ -50,7 +50,7 @@ def test_adapter_problem_catches_late_failures(tmp_path: Path) -> None:
     """The registry validates adapters at discovery, not at first-session time."""
     import dataclasses
 
-    from jutul_agent.simulators.registry import _adapter_problem
+    from makker.simulators.registry import _adapter_problem
 
     adapter = make_fake_adapter(tmp_path)
     # The fake has no julia_env template on disk.
@@ -70,7 +70,7 @@ def test_bundled_adapters_survive_a_broken_subpackage(monkeypatch, capsys) -> No
     """One bad simulator folder warns and is skipped; the rest keep working."""
     import pkgutil
 
-    from jutul_agent.simulators import registry
+    from makker.simulators import registry
 
     real_iter = pkgutil.iter_modules
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from jutul_agent.agent.approval import (
+from makker.agent.approval import (
     ALLOWLIST_FILE_EDITS,
     ApprovalMode,
     ToolAllowlist,

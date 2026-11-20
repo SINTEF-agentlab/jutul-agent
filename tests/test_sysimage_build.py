@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent import sysimage, sysimage_build
-from jutul_agent.sysimage_build import (
+from makker import sysimage, sysimage_build
+from makker.sysimage_build import (
     _VSCALE_GUARDED,
     _VSCALE_UNGUARDED,
     SysimageBuildError,
@@ -136,11 +136,11 @@ def test_a_project_with_nothing_in_it_is_refused(tmp_path: Path, julia: _FakeJul
 
 
 def test_verification_looks_for_the_packages_before_loading_them() -> None:
-    script = _verify_script(("JutulDarcy", "JutulAgent"), deps=set())
+    script = _verify_script(("JutulDarcy", "Makker"), deps=set())
     # Bound into Main at startup is the only evidence that the bake took; a
     # `using` would succeed either way and prove nothing.
     assert "isdefined(Main, Symbol(p))" in script
-    assert '"JutulDarcy"' in script and '"JutulAgent"' in script
+    assert '"JutulDarcy"' in script and '"Makker"' in script
 
 
 def test_verification_covers_plotting_only_where_the_env_can(tmp_path: Path) -> None:
@@ -463,10 +463,10 @@ def test_a_current_image_is_not_rebuilt_when_the_caller_allows_skipping(
     """``init`` re-runs the build step on every run of an opted-in folder, so an
     image that still matches the environment must short-circuit there. The
     explicit ``sysimage build`` never skips: asking for a build gets one."""
-    from jutul_agent.interfaces.cli import sysimage as cmd
-    from jutul_agent.workspace import WorkspaceConfig
+    from makker.interfaces.cli import sysimage as cmd
+    from makker.workspace import WorkspaceConfig
 
-    env = write_project(workspace / ".jutul-agent" / "julia-env", {"JutulDarcy": "a"})
+    env = write_project(workspace / ".makker" / "julia-env", {"JutulDarcy": "a"})
     monkeypatch.setattr(cmd, "prepare_environment", lambda *a, **k: None)
     config = WorkspaceConfig(simulator="jutuldarcy", sysimage=True)
 
@@ -487,13 +487,13 @@ def test_the_command_turns_the_folder_on_after_a_build(
     workspace: Path, monkeypatch: pytest.MonkeyPatch, julia: _FakeJulia
 ) -> None:
     """Building one and then not using it is the failure the design exists to stop."""
-    from jutul_agent.interfaces.cli import sysimage as cmd
-    from jutul_agent.workspace import WorkspaceConfig, load_workspace_config, write_workspace_config
+    from makker.interfaces.cli import sysimage as cmd
+    from makker.workspace import WorkspaceConfig, load_workspace_config, write_workspace_config
 
-    write_project(workspace / ".jutul-agent" / "julia-env", {"JutulDarcy": "a"})
+    write_project(workspace / ".makker" / "julia-env", {"JutulDarcy": "a"})
     write_workspace_config(WorkspaceConfig(simulator="jutuldarcy"), workspace=workspace)
     monkeypatch.setattr(cmd, "prepare_environment", lambda *a, **k: None)
-    monkeypatch.setattr("jutul_agent.julia.requirements.require_julia", lambda *a, **k: None)
+    monkeypatch.setattr("makker.julia.requirements.require_julia", lambda *a, **k: None)
 
     args = cmd.build_parser().parse_args(["build"])
     assert cmd.run(args) == 0
@@ -504,10 +504,10 @@ def test_the_command_turns_the_folder_off_when_the_image_goes(
     workspace: Path, julia: _FakeJulia
 ) -> None:
     """Or the next launch refuses over an image the user just deleted on purpose."""
-    from jutul_agent.interfaces.cli import sysimage as cmd
-    from jutul_agent.workspace import WorkspaceConfig, load_workspace_config, write_workspace_config
+    from makker.interfaces.cli import sysimage as cmd
+    from makker.workspace import WorkspaceConfig, load_workspace_config, write_workspace_config
 
-    write_project(workspace / ".jutul-agent" / "julia-env", {"JutulDarcy": "a"})
+    write_project(workspace / ".makker" / "julia-env", {"JutulDarcy": "a"})
     write_workspace_config(
         WorkspaceConfig(simulator="jutuldarcy", sysimage=True), workspace=workspace
     )
@@ -519,8 +519,8 @@ def test_the_command_turns_the_folder_off_when_the_image_goes(
 def test_failed_clear_keeps_the_folder_using_its_image(
     workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from jutul_agent.interfaces.cli import sysimage as cmd
-    from jutul_agent.workspace import WorkspaceConfig, load_workspace_config, write_workspace_config
+    from makker.interfaces.cli import sysimage as cmd
+    from makker.workspace import WorkspaceConfig, load_workspace_config, write_workspace_config
 
     write_workspace_config(WorkspaceConfig(sysimage=True), workspace=workspace)
 
@@ -550,7 +550,7 @@ def test_the_build_and_the_status_agree_on_how_big_the_image_is(
 
 def test_status_says_what_to_do_when_there_is_no_image(tmp_path: Path) -> None:
     env = write_project(tmp_path / "env", {"JutulDarcy": "a"})
-    assert "jutul-agent sysimage build" in describe(tmp_path / "ws", env)
+    assert "makker sysimage build" in describe(tmp_path / "ws", env)
 
 
 def test_status_names_what_moved_once_the_env_changes(tmp_path: Path, julia: _FakeJulia) -> None:
@@ -759,16 +759,16 @@ def test_without_a_workload_the_build_asks_for_none(tmp_path: Path, julia: _Fake
 def test_the_command_bakes_capability_warm_code(
     tmp_path: Path, julia: _FakeJulia, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from jutul_agent.agent.capabilities import Capability
-    from jutul_agent.interfaces.cli import sysimage as cmd
-    from jutul_agent.workspace import WorkspaceConfig
+    from makker.agent.capabilities import Capability
+    from makker.interfaces.cli import sysimage as cmd
+    from makker.workspace import WorkspaceConfig
 
     ws = tmp_path / "ws"
     ws.mkdir()
-    env = write_project(ws / ".jutul-agent" / "julia-env", {"JutulDarcy": "a"})
+    env = write_project(ws / ".makker" / "julia-env", {"JutulDarcy": "a"})
     monkeypatch.setattr(cmd, "prepare_environment", lambda *a, **k: None)
     monkeypatch.setattr(
-        "jutul_agent.agent.capabilities.discover_extensions",
+        "makker.agent.capabilities.discover_extensions",
         lambda: [Capability(name="geo", warm_code=("Geo.warm()",))],
     )
     received: dict[str, object] = {}

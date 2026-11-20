@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.paths import set_state_home, set_workspace_root, workspace_state_dir
-from jutul_agent.session import Session, read_last_session, sessions_root, write_last_session
+from makker.paths import set_state_home, set_workspace_root, workspace_state_dir
+from makker.session import Session, read_last_session, sessions_root, write_last_session
 
 
 def test_last_session_round_trip_via_state_root(tmp_path: Path) -> None:
@@ -32,8 +32,8 @@ def test_sessions_root_honours_explicit_state_root(tmp_path: Path) -> None:
 def test_default_session_id_is_dated_and_sortable() -> None:
     from datetime import datetime
 
-    from jutul_agent.paths import is_dated_session_id
-    from jutul_agent.session import default_session_id
+    from makker.paths import is_dated_session_id
+    from makker.session import default_session_id
 
     earlier = default_session_id(datetime(2026, 6, 12, 9, 5))
     later = default_session_id(datetime(2026, 6, 12, 23, 15))
@@ -44,7 +44,7 @@ def test_default_session_id_is_dated_and_sortable() -> None:
 
 
 def test_session_output_dir_uses_dated_id_directly(tmp_path: Path) -> None:
-    from jutul_agent.paths import session_output_dir
+    from makker.paths import session_output_dir
 
     dated = session_output_dir("2026-06-12-2315-3f2a", workspace=tmp_path)
     assert dated.name == "2026-06-12-2315-3f2a"
@@ -53,7 +53,7 @@ def test_session_output_dir_uses_dated_id_directly(tmp_path: Path) -> None:
 
 
 def test_derive_session_title_and_slug() -> None:
-    from jutul_agent.session import _slugify_title, derive_session_title
+    from makker.session import _slugify_title, derive_session_title
 
     title = derive_session_title("  Set up a constant-current discharge\nplot it too")
     assert title == "Set up a constant-current discharge"
@@ -66,7 +66,7 @@ def test_derive_session_title_and_slug() -> None:
 
 
 def _title_session(tmp_path: Path):
-    from jutul_agent.trace import TraceLog
+    from makker.trace import TraceLog
 
     state = tmp_path / "state-dir"
     state.mkdir(parents=True)
@@ -84,7 +84,7 @@ def _title_session(tmp_path: Path):
 
 
 def test_adopt_title_renames_output_and_records(tmp_path: Path) -> None:
-    from jutul_agent.session import read_session_title
+    from makker.session import read_session_title
 
     session = _title_session(tmp_path)
     session.adopt_title("Run a chen_2020 discharge and plot voltage")
@@ -107,8 +107,8 @@ def test_existing_output_dir_prefers_the_folder_with_artifacts(tmp_path: Path) -
     # A stray empty ``<sid>/`` next to the real ``<sid>-<slug>/`` (the title slug)
     # must not shadow it on resume, or the resumed session's artifacts 404. Prefer
     # whichever folder actually holds the ``artifacts/``.
-    from jutul_agent.paths import session_output_dir
-    from jutul_agent.session import existing_output_dir
+    from makker.paths import session_output_dir
+    from makker.session import existing_output_dir
 
     sid = "2026-06-12-0101-abcd"
     bare = session_output_dir(sid)  # workspace is the autouse tmp_path
@@ -125,8 +125,8 @@ def test_existing_output_dir_prefers_nonempty_dir_for_report_only_session(tmp_pa
     # ``artifacts/``. With a stray empty ``<sid>/`` beside the real ``<sid>-<slug>/``,
     # the artifacts check matches neither, so it must fall back to the NON-EMPTY dir
     # (the slug one holding the report), not the empty ``<sid>/`` that sorts first.
-    from jutul_agent.paths import session_output_dir
-    from jutul_agent.session import existing_output_dir
+    from makker.paths import session_output_dir
+    from makker.session import existing_output_dir
 
     sid = "2026-06-12-0202-bbbb"
     bare = session_output_dir(sid)
@@ -142,8 +142,8 @@ def test_existing_output_dir_ignores_stray_with_empty_artifacts_subdir(tmp_path:
     # A stray ``<sid>/`` whose only content is an empty ``artifacts/`` subdir must
     # not count as having output and win over the real ``<sid>-<slug>/`` that holds
     # report.html at its root.
-    from jutul_agent.paths import session_output_dir
-    from jutul_agent.session import existing_output_dir
+    from makker.paths import session_output_dir
+    from makker.session import existing_output_dir
 
     sid = "2026-06-12-0303-cccc"
     bare = session_output_dir(sid)
@@ -156,7 +156,7 @@ def test_existing_output_dir_ignores_stray_with_empty_artifacts_subdir(tmp_path:
 
 
 def test_retitle_overwrites_title_but_keeps_output_dir(tmp_path: Path) -> None:
-    from jutul_agent.session import read_session_title
+    from makker.session import read_session_title
 
     session = _title_session(tmp_path)
     session.adopt_title("Run a chen_2020 discharge and plot voltage")
@@ -184,8 +184,8 @@ def test_adopt_title_without_usable_slug_keeps_dir(tmp_path: Path) -> None:
 
 
 def test_adopt_title_skips_rename_when_output_is_state_dir(tmp_path: Path) -> None:
-    from jutul_agent.session import read_session_title
-    from jutul_agent.trace import TraceLog
+    from makker.session import read_session_title
+    from makker.trace import TraceLog
 
     state = tmp_path / "solo"
     state.mkdir()
@@ -205,8 +205,8 @@ def test_adopt_title_skips_rename_when_output_is_state_dir(tmp_path: Path) -> No
 
 
 def test_list_sessions_sorts_newest_first_with_titles(tmp_path: Path) -> None:
-    from jutul_agent.session import list_sessions
-    from jutul_agent.trace import TraceLog
+    from makker.session import list_sessions
+    from makker.trace import TraceLog
 
     root = tmp_path / "sessions"
     for sid, title in [
@@ -229,8 +229,8 @@ def test_list_sessions_sorts_newest_first_with_titles(tmp_path: Path) -> None:
 
 
 def test_resolve_session_id_exact_and_prefix(tmp_path: Path) -> None:
-    from jutul_agent.session import resolve_session_id
-    from jutul_agent.trace import TraceLog
+    from makker.session import resolve_session_id
+    from makker.trace import TraceLog
 
     root = tmp_path / "sessions"
     for sid in ("2026-06-10-0900-aaaa", "2026-06-10-0900-abcd", "2026-06-12-2300-bbbb"):

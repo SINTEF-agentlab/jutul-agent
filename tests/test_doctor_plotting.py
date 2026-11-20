@@ -1,4 +1,4 @@
-"""Tests for `jutul-agent doctor`'s plotting-display check.
+"""Tests for `makker doctor`'s plotting-display check.
 
 It must only ever WARN (never FAIL): plotting is optional, so a headless box
 without xvfb is usable for simulation. The remediation differs between "xvfb not
@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from jutul_agent.interfaces.cli.doctor import PASS, WARN, _check_plotting_display, _Report
+from makker.interfaces.cli.doctor import PASS, WARN, _check_plotting_display, _Report
 
-_MOD = "jutul_agent.interfaces.cli.doctor"
+_MOD = "makker.interfaces.cli.doctor"
 
 
 def test_plotting_check_passes_with_display(
@@ -46,4 +46,4 @@ def test_plotting_check_warns_when_opted_out(
     report = _Report()
     _check_plotting_display(report)
     assert report.worst == WARN
-    assert "JUTUL_AGENT_NO_XVFB" in capsys.readouterr().out
+    assert "MAKKER_NO_XVFB" in capsys.readouterr().out

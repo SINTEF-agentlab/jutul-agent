@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from jutul_agent.agent.tool_output import strip_read_file_gutter
-from jutul_agent.interfaces.tui.tool_display import (
+from makker.agent.tool_output import strip_read_file_gutter
+from makker.interfaces.tui.tool_display import (
     compact_tool_summary,
     display_path,
     display_tool_body,

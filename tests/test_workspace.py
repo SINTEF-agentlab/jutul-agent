@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.workspace import (
+from makker.workspace import (
     SimulatorConfig,
     WorkspaceConfig,
     auto_detect_simulator,
@@ -42,7 +42,7 @@ def test_workspace_config_persists_model(tmp_path: Path) -> None:
         WorkspaceConfig(simulator="battmo", model="anthropic:claude-sonnet-4-6"),
         workspace=tmp_path,
     )
-    text = (tmp_path / ".jutul-agent" / "config.toml").read_text(encoding="utf-8")
+    text = (tmp_path / ".makker" / "config.toml").read_text(encoding="utf-8")
     # Top-level `model` key must precede the [workspace] table to be valid TOML.
     assert text.index("model =") < text.index("[workspace]")
 
@@ -67,13 +67,13 @@ def test_workspace_config_persists_the_sysimage_choice(tmp_path: Path) -> None:
 def test_workspace_config_without_a_sysimage_choice_omits_the_key(tmp_path: Path) -> None:
     """Unset has to stay unset: it is what lets the flag and the env fill in."""
     write_workspace_config(WorkspaceConfig(simulator="battmo"), workspace=tmp_path)
-    assert "sysimage" not in (tmp_path / ".jutul-agent" / "config.toml").read_text(encoding="utf-8")
+    assert "sysimage" not in (tmp_path / ".makker" / "config.toml").read_text(encoding="utf-8")
     assert load_workspace_config(tmp_path).sysimage is None
 
 
 def test_workspace_config_without_model_omits_key(tmp_path: Path) -> None:
     write_workspace_config(WorkspaceConfig(simulator="battmo"), workspace=tmp_path)
-    text = (tmp_path / ".jutul-agent" / "config.toml").read_text(encoding="utf-8")
+    text = (tmp_path / ".makker" / "config.toml").read_text(encoding="utf-8")
     assert "model" not in text
     assert load_workspace_config(tmp_path).model is None
 
@@ -112,7 +112,7 @@ def test_bootstrap_julia_env_uses_root_project(tmp_path: Path) -> None:
 def test_resolve_julia_project_prefers_julia_env_without_root_project(tmp_path: Path) -> None:
     ws = tmp_path / "ws"
     ws.mkdir()
-    env = ws / ".jutul-agent" / "julia-env"
+    env = ws / ".makker" / "julia-env"
     env.mkdir(parents=True)
     (env / "Project.toml").write_text('[deps]\nJutul = "uuid"\n', encoding="utf-8")
 
@@ -129,9 +129,9 @@ def test_bootstrap_julia_env_copies_template(tmp_path: Path) -> None:
     project = bootstrap_julia_env(template, workspace=ws)
     assert project.name == "julia-env"
     assert (project / "Project.toml").exists()
-    # The shared JutulAgent package is synced in from julia_runtime/ alongside the
+    # The shared Makker package is synced in from julia_runtime/ alongside the
     # template (the env's relative [sources] entry resolves only after this copy).
-    assert (project / "JutulAgent" / "Project.toml").exists()
+    assert (project / "Makker" / "Project.toml").exists()
 
 
 def test_bootstrap_julia_env_copies_template_sources(tmp_path: Path) -> None:
@@ -667,7 +667,7 @@ def test_sync_brings_path_sourced_dep_with_its_source_entry_and_dir(
     assert (env / "FooWarm" / "Project.toml").exists()  # the package dir copied in
 
 
-def test_env_declares_warm_packages_detects_the_jutulagent_prefix(tmp_path: Path) -> None:
+def test_env_declares_warm_packages_detects_the_makker_prefix(tmp_path: Path) -> None:
     env = tmp_path / "env"
     env.mkdir()
     proj = env / "Project.toml"
@@ -676,7 +676,7 @@ def test_env_declares_warm_packages_detects_the_jutulagent_prefix(tmp_path: Path
     assert not env_declares_warm_packages(env)
 
     proj.write_text(
-        '[deps]\nJutulAgentJutulDarcy = "69df87d8-8b4b-4157-81d2-8b93ff139141"\n',
+        '[deps]\nMakkerJutulDarcy = "4b91d94b-bab6-4ec5-a649-083be1735a47"\n',
         encoding="utf-8",
     )
     assert env_declares_warm_packages(env)
@@ -685,7 +685,7 @@ def test_env_declares_warm_packages_detects_the_jutulagent_prefix(tmp_path: Path
 def test_env_precompile_marker_tracks_the_manifest(tmp_path: Path) -> None:
     import os
 
-    from jutul_agent.workspace import PRECOMPILE_MARKER
+    from makker.workspace import PRECOMPILE_MARKER
 
     env = tmp_path / "env"
     env.mkdir()
@@ -710,7 +710,7 @@ def test_dependency_source_change_is_seen_even_though_the_manifest_is_not(tmp_pa
     """A capability's package is path-sourced and lives outside the env, so editing it
     leaves the Manifest untouched. Without this check launch skips the bake and the
     session's first `using` pays it, silently, inside a tool call."""
-    from jutul_agent.workspace import (
+    from makker.workspace import (
         dependency_source_is_current,
         env_precompile_is_current,
         mark_dependency_source,
@@ -743,10 +743,23 @@ def test_dependency_source_change_is_seen_even_though_the_manifest_is_not(tmp_pa
 
 
 def test_dependency_source_is_not_current_for_an_env_that_never_recorded_one(tmp_path) -> None:
-    from jutul_agent.workspace import dependency_source_is_current
+    from makker.workspace import dependency_source_is_current
 
     env = tmp_path / "env"
     env.mkdir()
     assert not dependency_source_is_current(env, [tmp_path / "Nope" / "Project.toml"])
     # No capability packages at all is a stable, satisfiable state, not a forced bake.
     assert not dependency_source_is_current(env, [])
+
+
+def test_workspace_folder_keeps_itself_out_of_git(tmp_path: Path) -> None:
+    from makker.workspace import ensure_workspace_dir, write_workspace_config
+
+    write_workspace_config(WorkspaceConfig(simulator="jutuldarcy"), workspace=tmp_path)
+    gitignore = tmp_path / ".makker" / ".gitignore"
+    assert gitignore.read_text(encoding="utf-8") == "*\n"
+
+    # Someone who wants to commit part of the folder edits the file; it is theirs then.
+    gitignore.write_text("julia-env/\nsysimage/\n", encoding="utf-8")
+    ensure_workspace_dir(tmp_path)
+    assert gitignore.read_text(encoding="utf-8") == "julia-env/\nsysimage/\n"

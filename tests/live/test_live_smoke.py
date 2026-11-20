@@ -9,16 +9,16 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.agent.builder import build_agent
-from jutul_agent.agent.turns import TurnRunner
-from jutul_agent.juliakernel import JuliaKernel, KernelConfig
-from jutul_agent.paths import set_workspace_root
-from jutul_agent.session import Session
-from jutul_agent.simulators.jutuldarcy import JUTULDARCY
-from jutul_agent.trace import TraceLog
+from makker.agent.builder import build_agent
+from makker.agent.turns import TurnRunner
+from makker.juliakernel import JuliaKernel, KernelConfig
+from makker.paths import set_workspace_root
+from makker.session import Session
+from makker.simulators.jutuldarcy import JUTULDARCY
+from makker.trace import TraceLog
 
 _PROVIDER_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY")
-_LIVE_MODEL_ENV = "JUTUL_AGENT_LIVE_MODEL"
+_LIVE_MODEL_ENV = "MAKKER_LIVE_MODEL"
 _DEFAULT_LIVE_MODEL = "openai:gpt-5.4-mini"
 _EXPECTED_SUM = "105"
 

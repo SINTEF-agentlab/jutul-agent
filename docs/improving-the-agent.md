@@ -76,7 +76,7 @@ unusually systematic one.
 
 ## Verify with the bench
 
-Every lever above changes an input that jutul-bench hashes (prompt, skills,
+Every lever above changes an input that makker-bench hashes (prompt, skills,
 manifest, code version). The workflow:
 
 1. Run the relevant suite before the change.

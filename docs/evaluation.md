@@ -4,8 +4,8 @@ Evaluation answers one question with numbers: did this change to the
 harness, a prompt, a skill, or the model help or hurt? It runs the real
 agent, end to end, and grades what actually happened.
 
-The code in `src/jutul_agent/eval` is the harness: the solver, the scorers,
-RunConfig, and the `jutul-agent eval` command. jutul-bench is the benchmark
+The code in `src/makker/eval` is the harness: the solver, the scorers,
+RunConfig, and the `makker eval` command. makker-bench is the benchmark
 built on that harness. Its public suites live in this repository under
 `eval/tasks/`. A private holdout suite lives in a separate repository so
 its answers stay out of training data.
@@ -14,23 +14,23 @@ The harness is built on [Inspect AI](https://inspect.aisi.org.uk). Inspect
 provides the runner: model providers (OpenAI, Anthropic, Google, local
 Ollama), repeated epochs, per-sample token and time limits, logs, and a
 viewer. Ours is the part Inspect cannot know: a solver that runs one full
-jutul-agent session per sample, and scorers that read the session trace.
+Makker session per sample, and scorers that read the session trace.
 
 ## Running
 
 ```sh
 uv sync --extra eval
 
-uv run jutul-agent eval --list
-uv run jutul-agent eval canary
-uv run jutul-agent eval --all --model <provider/model>
-uv run jutul-agent eval canary guardrails --model <provider/model>,<provider/model>
-uv run jutul-agent eval canary --epochs 5 --epochs-reducer mean,pass_at_2
+uv run makker eval --list
+uv run makker eval canary
+uv run makker eval --all --model <provider/model>
+uv run makker eval canary guardrails --model <provider/model>,<provider/model>
+uv run makker eval canary --epochs 5 --epochs-reducer mean,pass_at_2
 ```
 
-`jutul-agent eval` loads provider keys the way the app does (the user-global
+`makker eval` loads provider keys the way the app does (the user-global
 `.env` plus the working directory's) before Inspect resolves the model, and
-runs samples one at a time. Logs land in the jutul-agent home under
+runs samples one at a time. Logs land in the Makker home under
 `eval-logs/`. Inspect them with `uv run inspect view --log-dir <dir>`.
 
 `--model` takes Inspect's `provider/model` ids and defaults to the agent's
@@ -103,7 +103,7 @@ procedure, never by re-running the agent until it agrees.
 
 Each sample stores a RunConfig (`eval/runconfig.py`): hashes of the
 assembled system prompt, every active skill file, and the instantiated Julia
-manifest, plus the jutul-agent commit (and whether the tree was dirty) and
+manifest, plus the Makker commit (and whether the tree was dirty) and
 dependency versions. Two runs that differ in exactly one hash answer "did
 that change help" mechanically. Treat dirty-tree runs as exploratory, never
 as baselines.
@@ -127,7 +127,7 @@ The suites then hold the behavior in place. See
 | `calibration` | nothing | iterative two-parameter fit, graded on the recorded attempt tree |
 
 The first `needs_env` run per simulator builds a golden environment under
-the jutul-agent home (`eval-envs/<sim>`). Later samples start from a copy
+the Makker home (`eval-envs/<sim>`). Later samples start from a copy
 of it, so env preparation takes seconds instead of minutes. A cached env
 would otherwise freeze whatever upstream served when it was built, so each
 run re-resolves it against the registry on first use: a new upstream
@@ -143,8 +143,8 @@ new module under `eval/tasks/`:
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 from inspect_ai.scorer import includes
-from jutul_agent.eval.scorers import used_tools
-from jutul_agent.eval.solver import jutul_agent_solver, load_eval_credentials
+from makker.eval.scorers import used_tools
+from makker.eval.solver import makker_solver, load_eval_credentials
 
 load_eval_credentials()
 
@@ -163,7 +163,7 @@ def my_suite() -> Task:
     )
     return Task(
         dataset=[sample],
-        solver=jutul_agent_solver(),
+        solver=makker_solver(),
         scorer=[includes(), used_tools(["run_julia"])],
         time_limit=600,
         token_limit=200_000,
@@ -177,7 +177,7 @@ sessions run ~20x the billed input. Size sim-task budgets in the millions
 and let `time_limit`/`message_limit` carry the real cost guard. A suite
 module exposes one task named like the module, or several through a
 module-level `TASKS` list of task factories. New suite modules are picked
-up by `jutul-agent eval --list` automatically, and a unit test in
+up by `makker eval --list` automatically, and a unit test in
 `tests/test_eval_bench.py` imports every suite so API drift fails fast.
 
 ## Public and private task sets
@@ -190,7 +190,7 @@ benchmarks use:
   on GitHub eventually enters model training data.
 - The private set is a holdout for honest measurement: a separate private
   repository with the same layout plus an agent-free reference solution
-  per task, run by passing paths (`jutul-agent eval path/to/task.py`),
+  per task, run by passing paths (`makker eval path/to/task.py`),
   since nothing in the harness assumes the bundled location. Every task
   file carries a canary GUID. Results from the holdout are the reportable
   numbers. If it is ever published, it stops being a holdout, and a new
@@ -219,9 +219,9 @@ docker compose run --rm eval battmo --model <provider/model>
 
 Provider keys come from `./.env`, and `network_mode: host` lets
 `ollama/<model>` reach the host's Ollama. Two named volumes do the heavy
-lifting: the Julia depot and the jutul-agent state home (golden envs, eval
+lifting: the Julia depot and the Makker state home (golden envs, eval
 logs). Only the first run per simulator pays the instantiate-and-precompile
-cost. Everything after reuses the caches. Logs land on the `jutul-state`
+cost. Everything after reuses the caches. Logs land on the `makker-state`
 volume. Copy them out, or point `--log-dir` at a bind mount to keep them on
 the host.
 

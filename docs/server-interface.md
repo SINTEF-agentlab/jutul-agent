@@ -1,6 +1,6 @@
 # The server interface
 
-jutul-agent runs the same agent behind a command line and a terminal UI. The
+Makker runs the same agent behind a command line and a terminal UI. The
 server interface adds a third way to reach it: a network service that lets a
 webapp, or any other graphical application, drive a session over HTTP and
 WebSocket. It is how a non-expert works with the agent through a graphical app,
@@ -16,7 +16,7 @@ contract described here, so it can be written in any language with any framework
 ```mermaid
 flowchart LR
     FE["Front end (webapp or GUI)"]
-    subgraph server [jutul-agent server]
+    subgraph server [makker server]
         direction TB
         REST["REST: sessions, models, artifacts"]
         WS["WebSocket: live turn stream and UI control"]
@@ -32,13 +32,13 @@ flowchart LR
 
 ## The web UI
 
-`jutul-agent`, run with no command, starts the server with a built-in web app:
-the chat interface jutul-agent is normally used through (`jutul-agent web` is the
+`makker`, run with no command, starts the server with a built-in web app:
+the chat interface Makker is normally used through (`makker web` is the
 same command). The web stack ships in the core install, so nothing extra is
 needed. Point it at a simulator and open the browser:
 
 ```
-jutul-agent --sim jutuldarcy
+makker --sim jutuldarcy
 ```
 
 Open <http://127.0.0.1:8742>. Type a task and watch the agent stream its reply,
@@ -53,7 +53,7 @@ command line is: the folder is its launch directory (or `--workspace`), and the
 simulator comes from `--sim`, the folder's saved `[workspace] simulator`, or
 auto-detection, and is then remembered for next time. Every session in that
 folder shares one simulator and one Julia environment; the UI does not switch
-simulators in place. To work with a different simulator, run `jutul-agent`
+simulators in place. To work with a different simulator, run `makker`
 from a different folder. (A future central launcher that opens sessions across folders is a
 deliberate later step; the create/resume API already accepts a folder and a
 simulator per request, so it can grow into that without a protocol change.)
@@ -112,7 +112,7 @@ turn.
 | `GET` | `/credentials` | Which providers have keys, and whether a shell variable shadows a saved one |
 | `POST` | `/credentials` | Save a provider API key (used by the missing-key prompt) |
 | `GET` | `/simulators` | List installed simulators (the server is bound to one, returned as `default`), each with its display name and starter prompts, plus the `branding` an installed capability puts in their place |
-| `GET` | `/version` | The jutul-agent version, a newer release if the update check knows of one, the simulator version the folder's Julia environment resolved (each `null` when unknown), whether that environment needs updating (`env_update`), and a `boot` id that changes when the server restarts |
+| `GET` | `/version` | The Makker version, a newer release if the update check knows of one, the simulator version the folder's Julia environment resolved (each `null` when unknown), whether that environment needs updating (`env_update`), and a `boot` id that changes when the server restarts |
 | `GET` | `/update` | What an update would do here (newer release, whether this install can upgrade itself and how to otherwise, whether it does so in a separate window, outdated simulator packages), and the output of a running update (`?since=` skips lines already read). A server restarted by an update reports that update's output and outcome as its `job` |
 | `POST` | `/update` | Start an update: `{"install": bool, "sysimage": "rebuild" \| "off" \| null}`. Accepted only from this computer's own page; refused (409) while a session is starting or working. With `install`, the server restarts into the new version when done. On Windows it exits instead, and a helper in a new console window runs the update and starts the server again there |
 
@@ -247,7 +247,7 @@ page, not of a session: every session it creates or resumes is told the current
 selection, so all of a user's conversations agree with what they see in the
 application. Because the URL can only change by reloading the frame, a host that
 wants to update the selection *without* losing the conversation posts a message
-to the frame instead, sending `{type: "jutul-agent:host-context", context}` (or `data`,
+to the frame instead, sending `{type: "makker:host-context", context}` (or `data`,
 the same base64 string), accepted only from the embedding window.
 
 Adopting a selection rebuilds the agent, which is safe mid-session (the kernel,
@@ -410,7 +410,7 @@ A front end served from another origin (your own web app, say) must be allowed
 by name:
 
 ```sh
-jutul-agent --allowed-origin https://app.example.org
+makker --allowed-origin https://app.example.org
 ```
 
 Behind a reverse proxy (`--base-path`), the `Host` check is off, since the

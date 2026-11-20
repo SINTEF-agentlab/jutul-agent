@@ -1,7 +1,7 @@
 # The web UI
 
-`jutul-agent`, run with no command, serves a browser interface for a session
-(`jutul-agent web` is the same command). It is the default way to work with the
+`makker`, run with no command, serves a browser interface for a session
+(`makker web` is the same command). It is the default way to work with the
 agent, and the surface most users and extensions build on. It speaks the same [server interface](server-interface.md) any
 front end would, and reuses the same agent core as the command line and the
 terminal UI.
@@ -11,7 +11,7 @@ terminal UI.
 Start it from a simulator workspace:
 
 ```sh
-jutul-agent
+makker
 ```
 
 This serves the UI at `http://127.0.0.1:8742` by default. Open that address in a
@@ -38,7 +38,7 @@ Type `/` in the message box for commands (switch the model, set the approval
 policy, compact the conversation, download a transcript, and more). Past sessions
 are listed in the left sidebar and reopen where you left off.
 
-The foot of the sidebar names the jutul-agent and simulator versions. When a new
+The foot of the sidebar names the Makker and simulator versions. When a new
 release or an environment update is due, a link there opens the update dialog,
 which runs the update and reloads the page when it is done (see
 [Upgrading](usage.md#upgrading)).
@@ -46,15 +46,15 @@ which runs the update and reloads the page when it is done (see
 ## How it is built and shipped
 
 The UI is a React and TypeScript application, built with Vite. The source lives in
-`src/jutul_agent/interfaces/server/webapp`. It is compiled ahead of time into
-`src/jutul_agent/interfaces/server/web_dist`, which is committed and shipped in the
+`src/makker/interfaces/server/webapp`. It is compiled ahead of time into
+`src/makker/interfaces/server/web_dist`, which is committed and shipped in the
 package. Users install with `uv` or `pip` and never need Node; the server serves
 the prebuilt bundle.
 
 Contributors who change the UI rebuild that bundle:
 
 ```sh
-cd src/jutul_agent/interfaces/server/webapp
+cd src/makker/interfaces/server/webapp
 npm install        # first time only
 npm run build      # writes ../web_dist
 npm test           # unit and component tests (vitest)

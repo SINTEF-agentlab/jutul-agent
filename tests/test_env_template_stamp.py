@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jutul_agent.simulators import env_setup
-from jutul_agent.simulators.base import SimulatorAdapter
-from jutul_agent.workspace import (
+from makker.simulators import env_setup
+from makker.simulators.base import SimulatorAdapter
+from makker.workspace import (
     TEMPLATE_STAMP_FILENAME,
     bootstrap_julia_env,
     ensure_env_template_stamp,
@@ -18,8 +18,8 @@ from jutul_agent.workspace import (
 )
 
 # A template Project.toml that declares a warm package, so the env reads as a
-# managed jutul-agent env (env_declares_warm_packages → True).
-_TEMPLATE_PROJECT = '[deps]\nFoo = "uuid"\nJutulAgent = "ja-uuid"\n'
+# managed Makker env (env_declares_warm_packages → True).
+_TEMPLATE_PROJECT = '[deps]\nFoo = "uuid"\nMakker = "ja-uuid"\n'
 
 
 def _adapter(module_dir: Path) -> SimulatorAdapter:
@@ -146,9 +146,9 @@ def _managed_env(tmp_path: Path) -> tuple[Path, Path]:
     """A workspace + its managed julia-env declaring a warm package."""
 
     ws = tmp_path / "ws"
-    env_dir = ws / ".jutul-agent" / "julia-env"
+    env_dir = ws / ".makker" / "julia-env"
     env_dir.mkdir(parents=True)
-    (env_dir / "Project.toml").write_text('[deps]\nJutulAgent = "x"\n', encoding="utf-8")
+    (env_dir / "Project.toml").write_text('[deps]\nMakker = "x"\n', encoding="utf-8")
     return ws, env_dir
 
 
@@ -156,8 +156,8 @@ def test_doctor_ignores_a_changed_template_alone(tmp_path: Path) -> None:
     """Only the simulator's version is reported; a changed template is not a finding."""
     import json
 
-    from jutul_agent.interfaces.cli import doctor
-    from jutul_agent.simulators import registry
+    from makker.interfaces.cli import doctor
+    from makker.simulators import registry
 
     ws, env_dir = _managed_env(tmp_path)
     (env_dir / TEMPLATE_STAMP_FILENAME).write_text(
@@ -170,8 +170,8 @@ def test_doctor_ignores_a_changed_template_alone(tmp_path: Path) -> None:
 
 
 def test_doctor_passes_current_env(tmp_path: Path) -> None:
-    from jutul_agent.interfaces.cli import doctor
-    from jutul_agent.simulators import registry
+    from makker.interfaces.cli import doctor
+    from makker.simulators import registry
 
     ws, env_dir = _managed_env(tmp_path)
     sim = registry.names()[0]
@@ -184,8 +184,8 @@ def test_doctor_passes_current_env(tmp_path: Path) -> None:
 
 def test_doctor_fails_an_outdated_simulator(tmp_path: Path, capsys) -> None:
     """The report users paste names the versions and the command that fixes them."""
-    from jutul_agent.interfaces.cli import doctor
-    from jutul_agent.simulators import registry
+    from makker.interfaces.cli import doctor
+    from makker.simulators import registry
 
     ws, env_dir = _managed_env(tmp_path)
     write_env_template_stamp(env_dir, registry.get("jutuldarcy").julia_env_template_path)
@@ -197,13 +197,13 @@ def test_doctor_fails_an_outdated_simulator(tmp_path: Path, capsys) -> None:
     doctor._check_simulator_version(report, ws, env_dir, "jutuldarcy")
     assert report.worst == doctor.FAIL
     out = capsys.readouterr().out
-    assert "JutulDarcy 0.3.12" in out and "jutul-agent upgrade" in out
+    assert "JutulDarcy 0.3.12" in out and "makker upgrade" in out
 
 
 def test_doctor_warns_about_a_newer_simulator(tmp_path: Path, capsys) -> None:
     """A newer simulator runs; the report says so without calling it a failure."""
-    from jutul_agent.interfaces.cli import doctor
-    from jutul_agent.simulators import registry
+    from makker.interfaces.cli import doctor
+    from makker.simulators import registry
 
     ws, env_dir = _managed_env(tmp_path)
     write_env_template_stamp(env_dir, registry.get("jutuldarcy").julia_env_template_path)
@@ -215,4 +215,4 @@ def test_doctor_warns_about_a_newer_simulator(tmp_path: Path, capsys) -> None:
     doctor._check_simulator_version(report, ws, env_dir, "jutuldarcy")
     assert report.worst == doctor.WARN
     out = capsys.readouterr().out
-    assert "JutulDarcy 9.0.0, newer than this jutul-agent was made for" in out
+    assert "JutulDarcy 9.0.0, newer than this Makker was made for" in out

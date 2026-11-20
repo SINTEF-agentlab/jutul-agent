@@ -48,7 +48,7 @@ than restating the strings, and the table below is the payload contract.
 | `ui_event` | web server | `payload` of an interaction the front end reported (recorded for later analysis) |
 | `host_context` | web server | `session_id` and the `context` object the embedding application had selected, recorded each time it is adopted or changes (the system prompt only ever states the current one, so this is where the earlier selections survive) |
 | `eval_target` | bench solver | `expected` golden answer for an eval session |
-| `eval_result` | `jutul-agent review eval-link` | `passed`, `task`, `scores` (written onto the session after scoring) |
+| `eval_result` | `makker review eval-link` | `passed`, `task`, `scores` (written onto the session after scoring) |
 
 The recorder is an agent middleware (`trace/recorder.py`), so it observes
 the same stream the model produces: every model turn and every tool
@@ -63,7 +63,7 @@ the bench's process scorers both read that structure.
 
 ## Consumers
 
-- `jutul-agent transcript` renders the trace as HTML or markdown, with
+- `makker transcript` renders the trace as HTML or markdown, with
   `--bundle` zipping the referenced artifacts alongside.
 - Bench scorers read tool calls, arguments, artifacts, and attempts to
   verify the agent did the work it claims
@@ -74,7 +74,7 @@ the bench's process scorers both read that structure.
 ## Reading one
 
 ```python
-from jutul_agent.trace import TraceLog
+from makker.trace import TraceLog
 
 with TraceLog.open_readonly(path_to_trace) as log:
     for event in log.iter_events():

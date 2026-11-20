@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from jutul_agent.agent.backend import WorkspaceShellBackend
-from jutul_agent.agent.builder import PackageSource, build_backend
+from makker.agent.backend import WorkspaceShellBackend
+from makker.agent.builder import PackageSource, build_backend
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def test_developed_source_outside_the_depot_is_writable(tmp_path: Path, source_d
 
 
 def test_depot_readonly_roots_guard_the_packages_dir(tmp_path: Path) -> None:
-    from jutul_agent.agent.builder import _depot_readonly_roots
+    from makker.agent.builder import _depot_readonly_roots
 
     depot = tmp_path / ".julia" / "packages"
     registry = depot / "JutulDarcy" / "abc123"
@@ -168,7 +168,7 @@ def test_delete_removes_a_workspace_directory(tmp_path: Path) -> None:
 
 
 def test_execute_refuses_shell_julia_only(tmp_path) -> None:
-    from jutul_agent.agent.backend import WorkspaceShellBackend
+    from makker.agent.backend import WorkspaceShellBackend
 
     backend = WorkspaceShellBackend(root_dir=tmp_path, virtual_mode=False)
     for command in (
